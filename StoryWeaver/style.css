@@ -1,0 +1,22 @@
+.storyweaver-drawer {
+    margin-top: 8px;
+}
+
+.storyweaver-summary {
+    margin-bottom: 10px;
+    color: var(--SmartThemeBodyColor, #ddd);
+    font-size: 0.92rem;
+}
+
+.storyweaver-summary p {
+    margin: 0;
+}
+
+.storyweaver-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.storyweaver-primary-btn {
+    min-width: 190px;
+}

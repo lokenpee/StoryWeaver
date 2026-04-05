@@ -1,0 +1,952 @@
+﻿<!-- drawer-component.html (V4 - Final Fix) -->
+
+<!-- 
+    核心修改：
+    1. 将 id="beat-tracker-component-wrapper" 和 class="drawer" 合并到同一个根元素上。
+    2. 这个根元素现在既是JS的查找起点，也是CSS的样式目标，从而完美融入SillyTavern的顶栏布局。
+    3. 内容面板现在是这个根元素的直接子元素。
+-->
+<div id="beat-tracker-component-wrapper" class="drawer">
+
+    <!-- 按钮部分：现在是根元素的直接子元素 -->
+    <div class="drawer-toggle" title="打开叙事流引擎控制室">
+        <div id="beat-tracker-icon" class="drawer-icon fa-solid fa-compass fa-fw interactable closedIcon" tabindex="0"></div>
+    </div>
+
+    <!-- 内容面板：现在也是根元素的直接子元素，与按钮是兄弟关系 -->
+      <div id="beat-tracker-content-panel" class="drawer-content"> 
+        <div class="drawer-header">
+            <h3><i class="fa-solid fa-rocket fa-fw"></i> 叙事流引擎 - 控制室</h3>
+                <div class="sbt-header-indicators">
+                    <div class="sbt-anchor-group">
+                    <span class="sbt-anchor-refresh-label">数据不同步？点击刷新</span>
+                    <button id="sbt-anchor-refresh-btn" type="button" title="重新拉取聊天数据">
+                        <i class="fa-solid fa-rotate-right fa-fw"></i>
+                    </button>
+                    <div id="sbt-chapter-anchor" title="这是当前章节的起始消息楼层。&#10;为保证史官能正确分析历史，请在本章结束前，不要隐藏或删除此楼层之后的消息。">
+                        <i class="fa-solid fa-anchor fa-fw"></i>
+                        <span id="sbt-chapter-anchor-index">--</span>
+                    </div>
+                </div>
+                <div id="sbt-engine-status-indicator" title="引擎当前状态">
+                    <i id="sbt-engine-status-icon" class="fa-solid fa-coffee"></i>
+                    <span id="sbt-engine-status-text">空闲</span>
+                </div>
+            </div>
+        </div>
+        <div id="sbt-static-mode-banner" class="sbt-static-edit-banner" style="display: none;">
+            <i class="fa-solid fa-database"></i>
+            当前正处于「静态档案预编辑模式」，所有修改会直接写入世界档案缓存，并用于下一次章节规划。
+        </div>
+        
+        <!-- 标签页导航栏 -->
+        <nav id="sbt-tab-nav">
+            <button id="btn-show-monitor" class="sbt-tab-btn active" data-panel="sbt-monitor-panel"><i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> 章节概览</button>
+            <button id="btn-show-archive" class="sbt-tab-btn" data-panel="sbt-archive-panel"><i class="fa-solid fa-book-atlas fa-fw"></i> 世界档案</button>
+            <button id="btn-show-compass" class="sbt-tab-btn" data-panel="sbt-compass-panel"><i class="fa-solid fa-compass-drafting fa-fw"></i> 引擎控制</button>
+            <button id="btn-show-console" class="sbt-tab-btn" data-panel="sbt-console-panel"><i class="fa-solid fa-terminal fa-fw"></i> 控制台</button>
+            <button id="btn-show-settings" class="sbt-tab-btn" data-panel="sbt-settings-panel"><i class="fa-solid fa-cog fa-fw"></i> 设置</button>
+        </nav>
+
+        <div class="sbt-panels-wrapper">
+
+            <!-- ======================= 1. 创作工坊面板 ======================= -->
+            <div id="sbt-monitor-panel" class="sbt-tab-panel active">
+                <div class="sbt-panel-grid sbt-panel-grid-monitor">
+                    <div class="sbt-panel-col sbt-col-main">
+                        <!-- 故事摘要 -->
+                                        
+                        <div id="sbt-conductor-summary-category" class="sbt-library-category" style="display: none;">
+                            <h5 class="sbt-category-header collapsed">
+                                <i class="fa-solid fa-gauge-high fa-fw"></i> 回合执导概览
+                            </h5>
+                            <div id="sbt-conductor-summary-panel" class="sbt-library-items collapsed">
+                                <div class="sbt-summary-body">
+                                    <div class="sbt-summary-progress">
+                                        <div class="sbt-summary-progress-bar" id="sbt-conductor-progress-bar"></div>
+                                    </div>
+                                    <div class="sbt-summary-progress-text" id="sbt-conductor-progress-text">节拍进度：- / -</div>
+                                    <div class="sbt-summary-meta">
+                                        <span class="sbt-summary-chip" id="sbt-conductor-decision-chip">裁判：-</span>
+                                        <span class="sbt-summary-chip" id="sbt-conductor-intent-chip">倾向：-</span>
+                                    </div>
+                                    <div class="sbt-summary-text" id="sbt-conductor-summary-text">暂无回合执导记录。</div>
+                                </div>
+                                <div class="sbt-summary-footer" id="sbt-conductor-summary-time">最近更新：--</div>
+                            </div>
+                        </div>
+
+<div class="sbt-library-category">
+                            <h5 class="sbt-category-header collapsed">
+                                <i class="fa-solid fa-scroll fa-fw"></i> 故事摘要
+                            </h5>
+                            <div id="sbt-story-summary-content" class="sbt-library-items collapsed" style="white-space: pre-wrap;"></div>
+                        </div>
+
+                        <!-- 当前小章剧本 -->
+                        <div class="sbt-library-category">
+                            <h5 class="sbt-category-header collapsed">
+                                <span class="sbt-category-title">
+                                    <i class="fa-solid fa-file-contract fa-fw"></i> 当前小章剧本
+                                </span>
+                                <button id="sbt-reroll-blueprint-btn" class="sbt-reroll-btn" title="让建筑师重新分析并生成章节剧本" style="display: none;">
+                                    <i class="fa-solid fa-dice fa-fw"></i> 重roll
+                                </button>
+                            </h5>
+                            <div id="sbt-active-script-content" class="sbt-library-items collapsed"></div>
+                        </div>
+
+                        <!-- 建筑师的设计笔记 -->
+                        <div class="sbt-library-category" id="sbt-design-notes-category">
+                            <h5 class="sbt-category-header collapsed">
+                                <i class="fa-solid fa-feather-pointed fa-fw"></i> 建筑师的设计笔记
+                            </h5>
+                            <div id="sbt-design-notes-content" class="sbt-library-items collapsed" style="white-space: pre-wrap;"></div>
+                        </div>
+                    </div>
+
+                    <div class="sbt-panel-col sbt-col-side">
+<div id="sbt-conductor-stream-panel" style="display: none;">
+                            <div class="sbt-stream-header">
+                                <div class="sbt-stream-header-title">
+                                    <i class="fa-solid fa-satellite-dish"></i>
+                                    <span>回合裁判分析过程</span>
+                                </div>
+                                <button class="sbt-stream-toggle-btn" id="sbt-stream-toggle">折叠</button>
+                            </div>
+                            <pre id="sbt-stream-content"></pre>
+                            <div class="sbt-stream-status" id="sbt-stream-status">等待执行...</div>
+                        </div>
+                    </div>
+                </div>
+            </div> <!-- 创作工坊面板结束 -->
+
+            <!-- ======================= 2. 世界档案面板 ======================= -->
+            <div id="sbt-archive-panel" class="sbt-tab-panel">
+                <div class="sbt-panel-grid sbt-panel-grid-archive">
+                    <div class="sbt-panel-col sbt-col-main">
+
+                <!-- 角色档案馆 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-users fa-fw"></i> 角色档案馆
+                    </h4>
+
+                    <!-- 角色详情展开区域 -->
+                    <div id="sbt-character-detail-panel" class="sbt-character-detail-panel" style="display: none;">
+                        <div class="sbt-character-detail-close">
+                            <button id="sbt-close-character-detail" class="sbt-secondary-btn">
+                                <i class="fa-solid fa-times fa-fw"></i> 关闭详情
+                            </button>
+                        </div>
+                        <div id="sbt-character-detail-content"></div>
+                    </div>
+
+                    <div id="sbt-archive-characters" class="sbt-library-shelf">
+                        <p class="sbt-instructions">暂无角色档案。</p>
+                    </div>
+                </div>
+
+                <!-- V3.0: 关系图谱 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-diagram-project fa-fw"></i> 关系图谱
+                    </h4>
+
+                    <!-- 关系图谱详情展开区域 -->
+                    <div id="sbt-relationship-detail-panel" class="sbt-character-detail-panel" style="display: none;">
+                        <div class="sbt-character-detail-close">
+                            <button id="sbt-close-relationship-detail" class="sbt-secondary-btn">
+                                <i class="fa-solid fa-times fa-fw"></i> 关闭详情
+                            </button>
+                        </div>
+                        <div id="sbt-relationship-detail-content"></div>
+                    </div>
+
+                    <div id="sbt-relationship-graph-container" class="sbt-library-shelf">
+                        <p class="sbt-instructions">暂无关系图谱数据。</p>
+                    </div>
+                </div>
+
+                    </div>
+                    <div class="sbt-panel-col sbt-col-side">
+                <!-- 世界观图书馆 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-globe fa-fw"></i> 世界观图书馆
+                    </h4>
+
+                    <!-- 世界观详情展开区域 -->
+                    <div id="sbt-worldview-detail-panel" class="sbt-character-detail-panel" style="display: none;">
+                        <div class="sbt-character-detail-close">
+                            <button id="sbt-close-worldview-detail" class="sbt-secondary-btn">
+                                <i class="fa-solid fa-times fa-fw"></i> 关闭详情
+                            </button>
+                        </div>
+                        <div id="sbt-worldview-detail-content"></div>
+                    </div>
+
+                    <!-- 地点索引 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-map-location-dot fa-fw"></i> 地点索引
+                        </h5>
+                        <div id="sbt-archive-locations" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无地点记录。</p>
+                        </div>
+                    </div>
+
+                    <!-- 物品目录 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-box fa-fw"></i> 物品目录
+                        </h5>
+                        <div id="sbt-archive-items" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无物品记录。</p>
+                        </div>
+                    </div>
+
+                    <!-- 势力档案 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-flag fa-fw"></i> 势力档案
+                        </h5>
+                        <div id="sbt-archive-factions" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无势力记录。</p>
+                        </div>
+                    </div>
+
+                    <!-- 概念辞典 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-lightbulb fa-fw"></i> 概念辞典
+                        </h5>
+                        <div id="sbt-archive-concepts" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无概念记录。</p>
+                        </div>
+                    </div>
+
+                    <!-- 历史事件 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-clock-rotate-left fa-fw"></i> 历史事件
+                        </h5>
+                        <div id="sbt-archive-events" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无历史事件记录。</p>
+                        </div>
+                    </div>
+
+                    <!-- 种族图鉴 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-dragon fa-fw"></i> 种族图鉴
+                        </h5>
+                        <div id="sbt-archive-races" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无种族记录。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 故事线索引 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-book-bookmark fa-fw"></i> 故事线索引
+                    </h4>
+
+                    <!-- 故事线详情展开区域 -->
+                    <div id="sbt-storyline-detail-panel" class="sbt-character-detail-panel" style="display: none;">
+                        <div class="sbt-character-detail-close">
+                            <button id="sbt-close-storyline-detail" class="sbt-secondary-btn">
+                                <i class="fa-solid fa-times fa-fw"></i> 关闭详情
+                            </button>
+                        </div>
+                        <div id="sbt-storyline-detail-content"></div>
+                    </div>
+
+                    <!-- 主线任务 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-star fa-fw"></i> 主线任务
+                        </h5>
+                        <div id="sbt-archive-main-quests" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无主线任务。</p>
+                        </div>
+                    </div>
+
+                    <!-- 支线任务 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-compass fa-fw"></i> 支线任务
+                        </h5>
+                        <div id="sbt-archive-side-quests" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无支线任务。</p>
+                        </div>
+                    </div>
+
+                    <!-- 关系弧光 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-heart fa-fw"></i> 关系弧光
+                        </h5>
+                        <div id="sbt-archive-relationship-arcs" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无关系弧光。</p>
+                        </div>
+                    </div>
+
+                    <!-- 个人弧光 -->
+                    <div class="sbt-library-category">
+                        <h5 class="sbt-category-header collapsed">
+                            <i class="fa-solid fa-user-circle fa-fw"></i> 个人弧光
+                        </h5>
+                        <div id="sbt-archive-personal-arcs" class="sbt-library-items collapsed">
+                            <p class="sbt-instructions">暂无个人弧光。</p>
+                        </div>
+                    </div>
+                </div>
+
+                    </div>
+                </div>
+            </div> <!-- 世界档案面板结束 -->
+
+            <!-- ======================= 3. 叙事罗盘面板======================= -->
+            <div id="sbt-compass-panel" class="sbt-tab-panel">
+
+                <!-- 启动与转换 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-play-circle fa-fw"></i> 启动与转换
+                    </h4>
+
+                    <!-- V4.2: 手动输入开场白 -->
+                    <div class="sbt-control-card">
+                        <label for="sbt-manual-opening-scene" class="sbt-toggle-label">
+                            <span class="sbt-toggle-text">创世纪开场白（可选）</span>
+                            <i class="fa-solid fa-circle-info fa-fw" title="如果AI无法读取角色自带的开场白，可以在此手动输入。留空则由AI自由创作开篇场景。"></i>
+                        </label>
+                        <textarea
+                            id="sbt-manual-opening-scene"
+                            class="sbt-manual-opening-textarea"
+                            placeholder="在此输入开场白内容（可选）&#10;&#10;提示：如果角色卡自带开场白但AI读取失败，可以复制粘贴到此处作为临时补丁。留空则由AI自动创作。"
+                            rows="4"
+                        ></textarea>
+                    </div>
+
+                    <!-- V8.0: 世界书筛选器 -->
+                    <div class="sbt-control-card">
+                        <label class="sbt-toggle-label">
+                            <span class="sbt-toggle-text">
+                                <i class="fa-solid fa-book-atlas fa-fw"></i> 世界书筛选器
+                            </span>
+                            <i class="fa-solid fa-circle-info fa-fw" title="控制创世纪时AI读取哪些世界书内容。自动模式会读取角色绑定的所有世界书，手动模式允许你精确选择要读取的条目。"></i>
+                        </label>
+
+                        <!-- 模式选择 -->
+                        <div class="sbt-worldbook-source-selection" style="margin-top: 10px;">
+                            <label class="sbt-radio-label">
+                                <input type="radio" name="sbt-wb-source" value="auto" id="sbt-wb-source-auto" checked>
+                                <span>自动读取（角色绑定）</span>
+                            </label>
+                            <label class="sbt-radio-label">
+                                <input type="radio" name="sbt-wb-source" value="manual" id="sbt-wb-source-manual">
+                                <span>手动选择（精确控制）</span>
+                            </label>
+                        </div>
+
+                        <!-- 手动选择面板 -->
+                        <div id="sbt-wb-manual-panel" class="sbt-wb-manual-panel" style="display: none; margin-top: 15px;">
+                            <div class="sbt-wb-selection-container">
+                                <!-- 世界书列表 -->
+                                <div class="sbt-wb-books-section">
+                                    <div class="sbt-wb-section-header">
+                                        <h6><i class="fa-solid fa-books fa-fw"></i> 选择世界书</h6>
+                                        <button id="sbt-wb-refresh-books-btn" class="sbt-icon-btn" title="刷新世界书列表">
+                                            <i class="fa-solid fa-sync"></i>
+                                        </button>
+                                    </div>
+                                    <input type="text" id="sbt-wb-books-search" class="sbt-search-input" placeholder="搜索世界书...">
+                                    <div id="sbt-wb-books-list" class="sbt-wb-checkbox-list">
+                                        <p class="sbt-instructions-small">加载中...</p>
+                                    </div>
+                                </div>
+
+                                <!-- 条目列表 -->
+                                <div class="sbt-wb-entries-section">
+                                    <div class="sbt-wb-section-header">
+                                        <h6><i class="fa-solid fa-file-lines fa-fw"></i> 选择条目</h6>
+                                        <button id="sbt-wb-refresh-entries-btn" class="sbt-icon-btn" title="刷新条目列表">
+                                            <i class="fa-solid fa-sync"></i>
+                                        </button>
+                                    </div>
+                                    <input type="text" id="sbt-wb-entries-search" class="sbt-search-input" placeholder="搜索条目...">
+                                    <div class="sbt-wb-selection-controls">
+                                        <button id="sbt-wb-select-all-entries" class="sbt-mini-btn">全选</button>
+                                        <button id="sbt-wb-deselect-all-entries" class="sbt-mini-btn">全不选</button>
+                                        <span id="sbt-wb-entries-count" class="sbt-count-badge">0 / 0</span>
+                                    </div>
+                                    <div id="sbt-wb-entries-list" class="sbt-wb-checkbox-list">
+                                        <p class="sbt-instructions-small">请先选择世界书</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="sbt-start-genesis-btn" class="sbt-primary-btn">
+                        <i class="fa-solid fa-book-sparkles fa-fw"></i> 开始新的叙事篇章
+                    </button>
+
+                    <div id="sbt-force-transition-btn-wrapper" style="display: none; margin-top: 15px;">
+                        <button id="sbt-force-transition-btn" class="sbt-primary-btn">
+                            <i class="fa-solid fa-wand-magic-sparkles fa-fw"></i> 立即进行章节转换
+                        </button>
+                        <p class="sbt-instructions-small" style="text-align: center; margin-top: 8px;">
+                            将以当前聊天为终点，立刻开始史官复盘并规划下一章。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 引擎控制 - 大分区 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-sliders fa-fw"></i> 引擎控制
+                    </h4>
+
+                    <div class="sbt-control-group">
+                        <div class="sbt-control-group-title">核心运行</div>
+                        <div class="sbt-control-card">
+                            <label for="sbt-master-enable-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">启用叙事流引擎</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="这是插件的总开关。关闭后，SBT将不会对AI的回复进行任何干预或注入，恢复为经典聊天模式。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-master-enable-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="sbt-control-group">
+                        <div class="sbt-control-group-title">剧情指导</div>
+                        <!-- V4.2: 章节节拍数量区间控制 -->
+                        <div class="sbt-control-card">
+                            <label for="sbt-beat-count-range" class="sbt-toggle-label">
+                                <span class="sbt-toggle-text">章节节拍数量区间</span>
+                                <i class="fa-solid fa-circle-info fa-fw" title="设置每章期望的节拍数量区间。建筑师AI会根据事件复杂度，在此区间内决定实际节拍数。区间越大，给予AI的规划自由度越高。"></i>
+                            </label>
+                            <select id="sbt-beat-count-range" class="sbt-beat-count-dropdown">
+                                <option value="4-6">4-6 节拍</option>
+                                <option value="7-9" selected>7-9 节拍</option>
+                                <option value="10-12">10-12 节拍</option>
+                                <option value="13-15">13-15 节拍</option>
+                                <option value="16-18">16-18 节拍</option>
+                                <option value="19-21">19-21 节拍</option>
+                                <option value="custom">自定义节拍区间</option>
+                            </select>
+                            <div id="sbt-beat-count-custom-wrap" style="display: none; margin-top: 8px;">
+                                <label class="sbt-toggle-label" style="margin-bottom: 6px;">
+                                    <span class="sbt-toggle-text">自定义节拍区间</span>
+                                </label>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input id="sbt-beat-count-custom-min" type="number" min="1" step="1" class="sbt-beat-count-dropdown" style="width: 100%;" placeholder="最小值">
+                                    <span style="opacity: 0.7;">至</span>
+                                    <input id="sbt-beat-count-custom-max" type="number" min="1" step="1" class="sbt-beat-count-dropdown" style="width: 100%;" placeholder="最大值">
+                                </div>
+                                <div style="margin-top: 6px; font-size: 12px; opacity: 0.85;">
+                                    自定义区间下不做额外上限限制，仅按区间要求生成。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sbt-control-group">
+                        <div class="sbt-control-group-title">数据库适配</div>
+                        <div class="sbt-control-card">
+                            <label for="sbt-db-adapter-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">数据库适配模式（测试中）</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="启用后：使用世界书+数据库(总结/大纲)+前文上下文作为建筑师与回合执导输入，同时跳过史官复盘与创世纪情报官分析。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-db-adapter-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                            <p id="sbt-db-adapter-status" class="sbt-instructions-small" style="margin-top: 6px;">
+                                数据库适配模式：未启用（测试中）
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="sbt-control-group">
+                        <div class="sbt-control-group-title">实验与调试</div>
+                        <!-- 调试模式开关 -->
+                        <div class="sbt-control-card">
+                            <label for="sbt-debug-mode-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">开启调试模式</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="开启后，将在浏览器控制台输出详细的调试日志（LOG/INFO/WARN）。关闭后仅输出错误诊断信息（DIAGNOSE），保持控制台清爽。建议开发调试时开启，正常使用时关闭。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-debug-mode-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- 回合执导摘要展示开关 -->
+                        <div class="sbt-control-card">
+                            <label for="sbt-conductor-summary-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">显示回合执导摘要</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="开启后，在创作工坊侧栏显示回合执导的进度与摘要。默认关闭。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-conductor-summary-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- 建筑师设计笔记展示开关 -->
+                        <div class="sbt-control-card">
+                            <label for="sbt-design-notes-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">显示建筑师设计笔记</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="开启后，创作工坊侧栏会渲染建筑师的设计笔记。关闭可减少前端渲染压力。默认开启。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-design-notes-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- 实体召回开关（测试功能） -->
+                        <div class="sbt-control-card">
+                            <label for="sbt-enable-entity-recall-toggle" class="sbt-toggle-switch-container">
+                                <div class="sbt-toggle-label">
+                                    <span class="sbt-toggle-text">🧪 启用实体召回（测试中）</span>
+                                    <i class="fa-solid fa-circle-info fa-fw" title="【测试功能】开启后，回合指导AI需要识别并输出本回合涉及的实体ID。关闭（默认）时，所有实体数据会完整注入，AI无需识别，响应更快。建议保持关闭状态，除非测试召回功能。"></i>
+                                </div>
+                                <div class="sbt-toggle-switch">
+                                    <input type="checkbox" id="sbt-enable-entity-recall-toggle">
+                                    <span class="sbt-slider"></span>
+                                </div>
+                            </label>
+                        </div>
+
+                        
+                    </div>
+
+                    <!-- V13.0: 已移除叙事模式选择器 - 多巴胺工程已整合到主prompt中 -->
+                    <!--
+                    <div class="sbt-control-card" style="margin-top: 15px;">
+                        <label class="sbt-toggle-label">
+                            <span class="sbt-toggle-text"><i class="fa-solid fa-masks-theater fa-fw"></i> 叙事策略模式</span>
+                            <i class="fa-solid fa-circle-info fa-fw" title="全局默认设置，创世纪时自动应用。如果已有章节，也会同步更新当前章节。"></i>
+                        </label>
+
+                        <div class="sbt-narrative-mode-selector">
+                            <label class="sbt-mode-option-compact" data-mode="classic_rpg">
+                                <input type="radio" name="narrative_mode" value="classic_rpg" checked>
+                                <span class="sbt-mode-icon-compact">🎭</span>
+                                <div class="sbt-mode-info-compact">
+                                    <strong>正剧模式</strong>
+                                    <span>尊重叙事呼吸、允许留白、体验生活</span>
+                                </div>
+                            </label>
+
+                            <label class="sbt-mode-option-compact" data-mode="web_novel">
+                                <input type="radio" name="narrative_mode" value="web_novel">
+                                <span class="sbt-mode-icon-compact">🔥</span>
+                                <div class="sbt-mode-info-compact">
+                                    <strong>网文模式</strong>
+                                    <span>环环相扣、章章有梗、拒绝平淡</span>
+                                </div>
+                            </label>
+
+                            <button id="sbt-apply-narrative-mode" class="sbt-primary-btn" style="margin-top: 12px; width: 100%;">
+                                <i class="fa-solid fa-check fa-fw"></i> 应用叙事模式
+                            </button>
+                        </div>
+                    </div>
+                    -->
+                </div>
+
+                <!-- 高级操作 - 大分区 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-wrench fa-fw"></i> 高级操作
+                    </h4>
+
+                    <button id="sbt-reanalyze-worldbook-btn" class="sbt-danger-btn" style="width: 100%;">
+                        <i class="fa-solid fa-book-skull fa-fw"></i> 重新分析世界书
+                    </button>
+                    <p class="sbt-instructions-small" style="text-align: center; margin-top: 8px;">
+                        将清除此角色的<strong>静态设定缓存</strong>。当您更新了世界书后，点击此按钮，然后开始新游戏，AI将会使用最新的世界书内容。
+                    </p>
+                </div>
+
+            </div> <!-- 叙事罗盘面板结束 -->
+
+            <!-- ======================= 4. 控制台面板 ======================= -->
+            <div id="sbt-console-panel" class="sbt-tab-panel">
+
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-terminal fa-fw"></i> 前端控制台
+                    </h4>
+                    <p class="sbt-instructions">
+                        💡 碰到 bug 可以开启控制台，截图或导出日志，在 Discord 反馈。
+                    </p>
+
+                    <div class="sbt-console-toolbar">
+                        <div class="sbt-console-toolbar-row">
+                            <div class="sbt-console-filters">
+                                <button class="sbt-console-filter-btn active" data-filter="all" title="显示所有类型">
+                                    <i class="fa-solid fa-list fa-fw"></i> 全部
+                                </button>
+                                <button class="sbt-console-filter-btn" data-filter="info" title="仅显示信息">
+                                    <i class="fa-solid fa-info-circle fa-fw"></i> INFO
+                                </button>
+                                <button class="sbt-console-filter-btn" data-filter="warn" title="仅显示警告">
+                                    <i class="fa-solid fa-triangle-exclamation fa-fw"></i> WARN
+                                </button>
+                                <button class="sbt-console-filter-btn" data-filter="error" title="仅显示错误">
+                                    <i class="fa-solid fa-circle-exclamation fa-fw"></i> ERROR
+                                </button>
+                            </div>
+
+                            <label class="sbt-console-enable-label" title="开启后才会记录和显示日志">
+                                <input type="checkbox" id="sbt-console-enable-toggle">
+                                <span>启用控制台</span>
+                            </label>
+
+                            <div class="sbt-console-controls">
+                                <button id="sbt-console-clear-btn" class="sbt-secondary-btn" title="清空控制台">
+                                    <i class="fa-solid fa-trash fa-fw"></i> 清空
+                                </button>
+                                <button id="sbt-console-export-btn" class="sbt-secondary-btn" title="导出日志到文件">
+                                    <i class="fa-solid fa-download fa-fw"></i> 导出
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sbt-console-content" class="sbt-console-content">
+                        <!-- 日志将动态添加到这里 -->
+                    </div>
+                </div>
+
+            </div> <!-- 控制台面板结束 -->
+
+            <!-- ======================= 5. 设置面板 ======================= -->
+            <div id="sbt-settings-panel" class="sbt-tab-panel">
+                <div class="sbt-panel-grid sbt-panel-grid-settings">
+                    <div class="sbt-panel-col sbt-col-main">
+
+                <!-- 核心大脑 AI 配置 - 大分区 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-brain fa-fw"></i> 核心大脑 AI (后台规划)
+                    </h4>
+                    <p class="sbt-instructions">
+                        用于章节总结、剧本创作等复杂任务。推荐使用能力最强的模型 (如 Gemini Pro, GPT-4)。
+                    </p>
+
+                    <div class="sbt-settings-card">
+                        <div class="sbt-settings-form">
+                            <div class="sbt-form-group">
+                                <label for="sbt-api-provider-select">
+                                    API 提供商模式
+                                    <i class="fa-solid fa-circle-info fa-fw" title="SillyTavern预设: 使用酒馆已配置的预设 (最简单, 零配置)&#10;SillyTavern代理: 通过SillyTavern后端转发 (推荐, 可解决CORS问题)&#10;直接调用: 浏览器直接访问API (可能遇到跨域问题)" style="cursor: help;"></i>
+                                </label>
+                                <select id="sbt-api-provider-select" class="sbt-select">
+                                    <option value="sillytavern_proxy_openai">SillyTavern 代理（推荐）</option>
+                                    <option value="direct_openai">直接调用</option>
+                                    <option value="sillytavern_preset">SillyTavern 预设（无key可以用） </option>
+                                </select>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-preset-selector-wrapper" style="display: none;">
+                                <label for="sbt-preset-select">
+                                    选择预设
+                                    <i class="fa-solid fa-circle-info fa-fw" title="使用您在 SillyTavern 连接管理器中已配置的预设" style="cursor: help;"></i>
+                                </label>
+                                <select id="sbt-preset-select" class="sbt-select">
+                                    <option value="">-- 请选择预设 --</option>
+                                </select>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-api-url-wrapper">
+                                <label for="sbt-api-url-input">API URL</label>
+                                <input type="text" id="sbt-api-url-input" placeholder="例如: https://.../gemini-pro:generateContent">
+                            </div>
+                            <div class="sbt-form-group">
+                                <label for="sbt-api-key-input">API Key</label>
+                                <div class="sbt-password-wrapper">
+                                    <input type="password" id="sbt-api-key-input" placeholder="在此输入您的API密钥">
+                                    <i id="sbt-toggle-api-key" class="fa-solid fa-eye fa-fw"></i>
+                                </div>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-model-selector-wrapper">
+                                <label for="sbt-model-name-select">
+                                    模型名称
+                                    <button id="sbt-refresh-models-btn" class="sbt-inline-refresh-btn" type="button" title="刷新模型列表">
+                                        <i class="fa-solid fa-sync fa-fw"></i>
+                                    </button>
+                                </label>
+                                <select id="sbt-model-name-select" class="sbt-select">
+                                    <option value="">-- 请先刷新模型列表 --</option>
+                                    <option value="__manual__">手动输入...</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    id="sbt-model-name-input"
+                                    placeholder="例如: gemini-pro"
+                                    style="display: none; margin-top: 8px;">
+                            </div>
+                        </div>
+                        <button id="sbt-test-api-btn" class="sbt-secondary-btn" style="margin-top: 15px;">
+                            <i class="fa-solid fa-plug-circle-check fa-fw"></i> 测试核心大脑连接
+                        </button>
+                    </div>
+                </div>
+
+                    </div>
+                    <div class="sbt-panel-col sbt-col-side">
+                <!-- 回合裁判 AI 配置 - 大分区 -->
+                <div class="sbt-library-section">
+                    <h4 class="sbt-library-title">
+                        <i class="fa-solid fa-bolt fa-fw"></i> 回合裁判 AI (快速响应)
+                    </h4>
+                    <p class="sbt-instructions">
+                        用于每次对话的快速指导。推荐使用响应速度最快的模型 (如 Gemini Flash, GPT-3.5-Turbo)。
+                    </p>
+
+                    <div class="sbt-settings-card">
+                        <div class="sbt-settings-form">
+                            <div class="sbt-form-group">
+                                <label for="sbt-conductor-api-provider-select">
+                                    API 提供商模式
+                                    <i class="fa-solid fa-circle-info fa-fw" title="SillyTavern预设: 使用酒馆已配置的预设 (最简单, 零配置)&#10;SillyTavern代理: 通过SillyTavern后端转发 (推荐, 可解决CORS问题)&#10;直接调用: 浏览器直接访问API (可能遇到跨域问题)" style="cursor: help;"></i>
+                                </label>
+                                <select id="sbt-conductor-api-provider-select" class="sbt-select">
+                                    <option value="sillytavern_proxy_openai">SillyTavern 代理（推荐）</option>
+                                    <option value="direct_openai">直接调用</option>
+                                    <option value="sillytavern_preset">SillyTavern 预设（无key可以用） </option>
+                                </select>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-conductor-preset-selector-wrapper" style="display: none;">
+                                <label for="sbt-conductor-preset-select">
+                                    选择预设
+                                    <i class="fa-solid fa-circle-info fa-fw" title="使用您在 SillyTavern 连接管理器中已配置的预设" style="cursor: help;"></i>
+                                </label>
+                                <select id="sbt-conductor-preset-select" class="sbt-select">
+                                    <option value="">-- 请选择预设 --</option>
+                                </select>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-conductor-api-url-wrapper">
+                                <label for="sbt-conductor-api-url-input">API URL</label>
+                                <input type="text" id="sbt-conductor-api-url-input" placeholder="例如: https://.../gemini-1.5-flash:generateContent">
+                            </div>
+                            <div class="sbt-form-group">
+                                <label for="sbt-conductor-api-key-input">API Key</label>
+                                <div class="sbt-password-wrapper">
+                                    <input type="password" id="sbt-conductor-api-key-input" placeholder="可与核心大脑共用，或使用独立的密钥">
+                                    <i id="sbt-toggle-conductor-api-key" class="fa-solid fa-eye fa-fw"></i>
+                                </div>
+                            </div>
+                            <div class="sbt-form-group" id="sbt-conductor-model-selector-wrapper">
+                                <label for="sbt-conductor-model-name-select">
+                                    模型名称
+                                    <button id="sbt-refresh-conductor-models-btn" class="sbt-inline-refresh-btn" type="button" title="刷新模型列表">
+                                        <i class="fa-solid fa-sync fa-fw"></i>
+                                    </button>
+                                </label>
+                                <select id="sbt-conductor-model-name-select" class="sbt-select">
+                                    <option value="">-- 请先刷新模型列表 --</option>
+                                    <option value="__manual__">手动输入...</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    id="sbt-conductor-model-name-input"
+                                    placeholder="例如: gemini-1.5-flash"
+                                    style="display: none; margin-top: 8px;">
+                            </div>
+                        </div>
+                        <button id="sbt-test-conductor-api-btn" class="sbt-secondary-btn" style="margin-top: 15px;">
+                            <i class="fa-solid fa-plug-circle-check fa-fw"></i> 测试回合裁判连接
+                        </button>
+                    </div>
+                </div>
+
+                    </div>
+                </div>
+
+                <!-- 保存设置 -->
+                <div class="sbt-library-section">
+                    <button id="sbt-save-settings-btn" class="sbt-primary-btn">
+                        <i class="fa-solid fa-save fa-fw"></i> 保存并应用所有设置
+                    </button>
+                </div>
+
+                <!-- 角色档案字段管理 - 可折叠 -->
+                <div class="sbt-library-section">
+                    <h5 class="sbt-category-header collapsed">
+                        <i class="fa-solid fa-id-card fa-fw"></i> 角色档案字段管理
+                    </h5>
+                    <div class="sbt-library-items collapsed">
+                        <p class="sbt-instructions">
+                            按角色卡保存字段方案，可增删改名、排序，支持文本与标签字段。删除字段后保存将清空对应数据。
+                        </p>
+                        <div class="sbt-settings-card sbt-dossier-schema-card">
+                            <div class="sbt-dossier-schema-header">
+                                <div class="sbt-dossier-schema-meta">
+                                    当前角色卡：<span id="sbt-dossier-schema-character">未选择角色卡</span>
+                                </div>
+                                <div class="sbt-dossier-schema-actions">
+                                    <button id="sbt-dossier-add-field" class="sbt-secondary-btn">
+                                        <i class="fa-solid fa-plus fa-fw"></i> 新增字段
+                                    </button>
+                                    <button id="sbt-dossier-reset-default" class="sbt-secondary-btn">
+                                        <i class="fa-solid fa-rotate-left fa-fw"></i> 恢复默认
+                                    </button>
+                                    <button id="sbt-dossier-save-schema" class="sbt-primary-btn">
+                                        <i class="fa-solid fa-save fa-fw"></i> 保存到该角色卡
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sbt-dossier-schema-list-header">
+                                <span>字段名</span>
+                                <span>Key</span>
+                                <span>类型</span>
+                                <span class="sbt-dossier-actions-label">操作</span>
+                            </div>
+                            <div id="sbt-dossier-schema-list" class="sbt-dossier-schema-list"></div>
+                            <p class="sbt-instructions sbt-dossier-schema-tip">
+                                自定义字段数据统一存放在 custom.*；内置字段可移除（核心信息与关系区固定保留）。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 提示词管理 - 可折叠 -->
+                <div class="sbt-library-section">
+                    <h5 class="sbt-category-header collapsed">
+                        <i class="fa-solid fa-file-code fa-fw"></i> 提示词管理
+                    </h5>
+                    <div class="sbt-library-items collapsed">
+                        <p class="sbt-instructions">
+                            自定义建筑师和回合执导的提示词。可以导出、导入或恢复默认设置。
+                        </p>
+
+                        <div class="sbt-settings-card">
+                            <!-- 建筑师提示词 -->
+                            <div class="sbt-library-category" style="margin-bottom: 20px;">
+                                <h5 class="sbt-category-header collapsed">
+                                    <i class="fa-solid fa-feather-pointed fa-fw"></i> 建筑师提示词
+                                </h5>
+                                <div class="sbt-library-items collapsed" style="margin-top: 10px;">
+                                    <p class="sbt-instructions" style="margin-bottom: 10px;">
+                                        <i class="fa-solid fa-info-circle fa-fw"></i>
+                                        点击标题展开查看和编辑提示词。留空将使用系统默认提示词。
+                                    </p>
+                                    <textarea
+                                        id="sbt-architect-prompt"
+                                        class="sbt-prompt-textarea"
+                                        rows="6"
+                                        placeholder="加载中..."
+                                    ></textarea>
+                                    <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                                        <button id="sbt-save-architect-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-save fa-fw"></i> 保存
+                                        </button>
+                                        <button id="sbt-export-architect-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-download fa-fw"></i> 导出
+                                        </button>
+                                        <button id="sbt-import-architect-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-upload fa-fw"></i> 导入
+                                        </button>
+                                        <button id="sbt-reset-architect-prompt" class="sbt-danger-btn">
+                                            <i class="fa-solid fa-rotate-left fa-fw"></i> 恢复默认
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 回合执导提示词 -->
+                            <div class="sbt-library-category">
+                                <h5 class="sbt-category-header collapsed">
+                                    <i class="fa-solid fa-compass-drafting fa-fw"></i> 回合执导提示词
+                                </h5>
+                                <div class="sbt-library-items collapsed" style="margin-top: 10px;">
+                                    <p class="sbt-instructions" style="margin-bottom: 10px;">
+                                        <i class="fa-solid fa-info-circle fa-fw"></i>
+                                        点击标题展开查看和编辑提示词。留空将使用系统默认提示词。
+                                    </p>
+                                    <textarea
+                                        id="sbt-conductor-prompt"
+                                        class="sbt-prompt-textarea"
+                                        rows="6"
+                                        placeholder="加载中..."
+                                    ></textarea>
+                                    <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                                        <button id="sbt-save-conductor-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-save fa-fw"></i> 保存
+                                        </button>
+                                        <button id="sbt-export-conductor-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-download fa-fw"></i> 导出
+                                        </button>
+                                        <button id="sbt-import-conductor-prompt" class="sbt-secondary-btn">
+                                            <i class="fa-solid fa-upload fa-fw"></i> 导入
+                                        </button>
+                                        <button id="sbt-reset-conductor-prompt" class="sbt-danger-btn">
+                                            <i class="fa-solid fa-rotate-left fa-fw"></i> 恢复默认
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据库管理 - 可折叠 -->
+                <div class="sbt-library-section">
+                    <h5 class="sbt-category-header collapsed">
+                        <i class="fa-solid fa-database fa-fw"></i> 数据库管理
+                    </h5>
+                    <div class="sbt-library-items collapsed">
+                        <p class="sbt-instructions">
+                            管理各角色卡的静态数据缓存与动态 leader 锚点。如果某个角色的世界观/动态数据出现问题，可以在此删除后重新分析。
+                        </p>
+
+                        <div class="sbt-settings-card">
+                            <div id="sbt-static-db-list" class="sbt-db-list">
+                                <!-- 动态填充角色数据列表 -->
+                                <p class="sbt-instructions">正在加载数据库...</p>
+                            </div>
+                            <div class="sbt-db-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+                                <button id="sbt-refresh-db-btn" class="sbt-secondary-btn">
+                                    <i class="fa-solid fa-sync fa-fw"></i> 刷新列表
+                                </button>
+                                <button id="sbt-export-current-role-btn" class="sbt-secondary-btn">
+                                    <i class="fa-solid fa-download fa-fw"></i> 导出当前角色
+                                </button>
+                                <button id="sbt-import-current-role-btn" class="sbt-secondary-btn">
+                                    <i class="fa-solid fa-upload fa-fw"></i> 导入当前角色
+                                </button>
+                                <button id="sbt-clear-all-db-btn" class="sbt-danger-btn">
+                                    <i class="fa-solid fa-trash fa-fw"></i> 清空全部数据
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div> <!-- sbt-panels-wrapper 结束 -->
+    </div> <!-- beat-tracker-content-panel 结束 -->
+
+</div>

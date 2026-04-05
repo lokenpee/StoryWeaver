@@ -1,0 +1,162 @@
+<div id="revt-wrapper" class="drawer">
+  <div class="drawer-toggle" title="随机事件池">
+    <div id="revt-toolbar-icon" class="drawer-icon fa-solid fa-shuffle fa-fw interactable closedIcon" tabindex="0"></div>
+  </div>
+
+  <div id="revt-content-panel" class="drawer-content closedDrawer">
+    <div class="drawer-header">
+      <h3><i class="fa-solid fa-shuffle fa-fw"></i> 随机事件池控制室</h3>
+    </div>
+
+    <nav class="revt-tab-nav">
+      <button class="revt-tab-btn active" data-panel="revt-panel-overview">
+        <i class="fa-solid fa-gauge-high"></i> 概览
+      </button>
+      <button class="revt-tab-btn" data-panel="revt-panel-events">
+        <i class="fa-solid fa-list-check"></i> 事件池
+      </button>
+      <button class="revt-tab-btn" data-panel="revt-panel-api">
+        <i class="fa-solid fa-plug-circle-bolt"></i> API与日志
+      </button>
+    </nav>
+
+    <section id="revt-panel-overview" class="revt-tab-panel active">
+      <div class="revt-row revt-toolbar">
+        <label class="revt-switch-wrap">
+          <input id="revt-enabled" type="checkbox" checked />
+          <span>启用事件注入</span>
+        </label>
+        <button id="revt-refresh" class="menu_button">刷新</button>
+        <button id="revt-generate" class="menu_button">空池补充</button>
+        <span id="revt-chat-hint" class="revt-chat-hint">chat: --</span>
+      </div>
+
+      <div class="revt-row revt-card">
+        <label for="revt-preference"><b>玩家偏好（高优先级）</b></label>
+        <textarea id="revt-preference" rows="4" placeholder="输入偏好/禁区/风格要求"></textarea>
+        <div class="revt-actions">
+          <button id="revt-save-pref" class="menu_button">保存偏好</button>
+        </div>
+      </div>
+
+      <div class="revt-row revt-card">
+        <label for="revt-ai-rules"><b>AI生成规则（用于事件生成提示词）</b></label>
+        <textarea id="revt-ai-rules" rows="10" placeholder="从“任务/能力/要求”到“输出格式示例”前的规则内容，粘贴到这里"></textarea>
+        <div class="revt-actions">
+          <button id="revt-save-ai-rules" class="menu_button">保存生成规则</button>
+        </div>
+      </div>
+
+      <div class="revt-row revt-card">
+        <label for="revt-story-outline"><b>故事梗概（AI自动追加，可手动修改）</b></label>
+        <textarea id="revt-story-outline" rows="6" placeholder="每轮事件生成前会尝试总结最新一轮并追加到这里；你也可以手动编辑"></textarea>
+        <div class="revt-actions">
+          <button id="revt-save-outline" class="menu_button">保存梗概</button>
+        </div>
+      </div>
+
+      <div class="revt-row revt-card">
+        <label class="revt-toggle-label">
+          <span>
+            <i class="fa-solid fa-book-atlas fa-fw"></i>
+            <b>世界书筛选器（事件生成上下文）</b>
+          </span>
+        </label>
+
+        <div class="revt-worldbook-source-selection">
+          <label class="revt-radio-label">
+            <input type="radio" name="revt-wb-source" value="auto" id="revt-wb-source-auto" checked />
+            <span>自动读取（角色绑定）</span>
+          </label>
+          <label class="revt-radio-label">
+            <input type="radio" name="revt-wb-source" value="manual" id="revt-wb-source-manual" />
+            <span>手动选择（精确控制）</span>
+          </label>
+        </div>
+
+        <div id="revt-wb-manual-panel" class="revt-wb-manual-panel" style="display: none;">
+          <div class="revt-wb-selection-container">
+            <div class="revt-wb-books-section">
+              <div class="revt-wb-section-header">
+                <h6><i class="fa-solid fa-books fa-fw"></i> 选择世界书</h6>
+                <button id="revt-wb-refresh-books-btn" class="menu_button" title="刷新世界书列表">刷新</button>
+              </div>
+              <input type="text" id="revt-wb-books-search" class="text_pole" placeholder="搜索世界书..." />
+              <div id="revt-wb-books-list" class="revt-wb-checkbox-list">
+                <p class="revt-muted">加载中...</p>
+              </div>
+            </div>
+
+            <div class="revt-wb-entries-section">
+              <div class="revt-wb-section-header">
+                <h6><i class="fa-solid fa-file-lines fa-fw"></i> 选择条目</h6>
+                <button id="revt-wb-refresh-entries-btn" class="menu_button" title="刷新条目列表">刷新</button>
+              </div>
+              <input type="text" id="revt-wb-entries-search" class="text_pole" placeholder="搜索条目..." />
+              <div class="revt-wb-selection-controls">
+                <button id="revt-wb-select-all-entries" class="menu_button">全选</button>
+                <button id="revt-wb-deselect-all-entries" class="menu_button">全不选</button>
+                <span id="revt-wb-entries-count" class="revt-count-badge">0 / 0</span>
+              </div>
+              <div id="revt-wb-entries-list" class="revt-wb-checkbox-list">
+                <p class="revt-muted">请先选择世界书</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="revt-row revt-card">
+        <div class="revt-muted">运行规则：按聊天隔离；空池才生成3-5条；自动清理失效/已发生；用户可手动删除。</div>
+      </div>
+    </section>
+
+    <section id="revt-panel-events" class="revt-tab-panel">
+      <div class="revt-row">
+        <b>当前事件池</b>
+        <div id="revt-empty" class="revt-muted">暂无事件</div>
+        <div id="revt-list"></div>
+      </div>
+    </section>
+
+    <section id="revt-panel-api" class="revt-tab-panel">
+      <div class="revt-row revt-card">
+        <b>API 设置</b>
+        <div class="revt-grid">
+          <label for="revt-api-provider">提供商</label>
+          <select id="revt-api-provider">
+            <option value="sillytavern_preset">SillyTavern 预设（推荐）</option>
+            <option value="sillytavern_proxy_openai">通过SillyTavern代理（OpenAI兼容）</option>
+            <option value="direct_openai">浏览器直连（可能受CORS限制）</option>
+          </select>
+
+          <label for="revt-api-url">API URL</label>
+          <input id="revt-api-url" type="text" placeholder="https://.../v1 或 .../chat/completions" />
+
+          <label for="revt-api-key">API Key</label>
+          <input id="revt-api-key" type="password" placeholder="sk-..." />
+
+          <label for="revt-model-name">模型名</label>
+          <input id="revt-model-name" list="revt-model-options" type="text" placeholder="gpt-4o-mini / gemini..." />
+          <datalist id="revt-model-options"></datalist>
+        </div>
+        <div class="revt-actions">
+          <button id="revt-save-api" class="menu_button">保存API设置</button>
+          <button id="revt-fetch-models" class="menu_button">拉取模型</button>
+          <button id="revt-test-api" class="menu_button">测试连接</button>
+        </div>
+        <div id="revt-model-fetch-status" class="revt-muted">填写 URL + Key 后会自动拉取模型</div>
+      </div>
+
+      <div class="revt-row">
+        <b>自动清理日志（最近）</b>
+        <div id="revt-log-list" class="revt-log-box"></div>
+      </div>
+
+      <div class="revt-row">
+        <b>运行锚点日志（最近）</b>
+        <div id="revt-anchor-log-list" class="revt-log-box"></div>
+      </div>
+    </section>
+  </div>
+</div>

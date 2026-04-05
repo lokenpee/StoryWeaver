@@ -1,0 +1,11 @@
+{
+  "display_name": "StoryWeaver",
+  "loading_order": 9998,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "lokenpee",
+  "version": "0.1.0",
+  "description": "TXT to worldbook and character card converter for SillyTavern"
+}

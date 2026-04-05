@@ -1,0 +1,56 @@
+export const EXTENSION_ID = 'random-event-pool';
+
+export const STORAGE_KEYS = {
+  ENABLED: `${EXTENSION_ID}:enabled`,
+  PREFERENCE_PREFIX: `${EXTENSION_ID}:preference:`,
+  AI_RULES_PREFIX: `${EXTENSION_ID}:ai-rules:`,
+  STORY_OUTLINE_PREFIX: `${EXTENSION_ID}:story-outline:`,
+  WORLDBOOK_SOURCE_PREFIX: `${EXTENSION_ID}:worldbook-source:`,
+  POOL_PREFIX: `${EXTENSION_ID}:pool:`,
+  DELETED_HISTORY_PREFIX: `${EXTENSION_ID}:deleted-history:`,
+  API_SETTINGS: `${EXTENSION_ID}:api-settings`,
+};
+
+export const RULES = {
+  POOL_MAX: 5,
+  GENERATE_MIN: 3,
+  GENERATE_MAX: 5,
+  OCCURRED_DETECT_KEYWORD_LIMIT: 8,
+  MAX_DELETED_HISTORY: 50,
+  RECENT_USER_SEND_WINDOW_MS: 45_000,
+  FAIL_OPEN_ON_AI_ERROR: true,
+  PROMPT_HANDLER_TIMEOUT_MS: 120_000,
+  PROMPT_COOLDOWN_MS: 1200,
+  CHAT_CHANGED_DEBOUNCE_MS: 180,
+  FAIL_OPEN_AUTO_PAUSE_THRESHOLD: 3,
+  FAIL_OPEN_AUTO_PAUSE_MS: 60_000,
+};
+
+export const CONTEXT_LIMITS = {
+  LAST_USER_MAX: 500,
+  LAST_AI_MAX: 700,
+  PREFERENCE_MAX: 600,
+  AI_RULES_MAX: 6000,
+  WORLDBOOK_MAX: 2200,
+  OUTLINE_MAX: 1800,
+  DB_OUTLINE_ROWS_MAX: 12,
+  DB_SUMMARY_ROWS_MAX: 6,
+  WORLD_ENTRIES_MAX: 24,
+  PROMPT_MAX: 5200,
+};
+
+export const DELETE_REASON = {
+  USER: '用户删除',
+  INVALID: '失效',
+  OCCURRED: '已发生',
+  CONFLICT: '冲突',
+  DUPLICATE: '重复',
+};
+
+export const EVIDENCE_TYPE = {
+  PREFERENCE: 'preference',
+  WORLDBOOK: 'worldbook',
+  OUTLINE: 'outline',
+  LAST_TURN: 'last_turn',
+  COMMON_SENSE: 'common_sense',
+};

@@ -1,0 +1,8 @@
+{
+  "display_name": "随机事件池",
+  "version": "0.1.0",
+  "author": "local",
+  "js": "index.js",
+  "css": ["style.css"],
+  "html": ["drawer-component.html"]
+}
