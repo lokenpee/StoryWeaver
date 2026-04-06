@@ -1,11 +1,4 @@
-﻿import {
-    areNamesObviouslySame,
-    mergeContentWithDedup,
-    normalizeEntryName,
-    normalizeNameForComparison,
-} from './nameNormalizationService.js';
-
-export function createMergeService(deps = {}) {
+﻿export function createMergeService(deps = {}) {
     const {
         AppState,
         Logger,
@@ -25,83 +18,6 @@ export function createMergeService(deps = {}) {
             }
         }
         return pairs;
-    }
-
-    function mergeKeywordList(entries, names) {
-        const keywords = [];
-        for (const name of names) {
-            if (!entries[name]) continue;
-            const sourceKeywords = Array.isArray(entries[name]['关键词']) ? entries[name]['关键词'] : [entries[name]['关键词']];
-            for (const keyword of sourceKeywords) {
-                if (keyword) keywords.push(String(keyword).trim());
-            }
-            keywords.push(name);
-            const canonical = normalizeEntryName(name);
-            if (canonical && canonical !== name) keywords.push(canonical);
-        }
-        return [...new Set(keywords.filter(Boolean))];
-    }
-
-    function pickMainNameByQuality(entries, names) {
-        let bestName = names[0];
-        let bestScore = -Infinity;
-
-        for (const name of names) {
-            const entry = entries[name] || {};
-            const canonical = normalizeEntryName(name);
-            const contentLength = String(entry['内容'] || '').length;
-            const keywordCount = Array.isArray(entry['关键词']) ? entry['关键词'].length : (entry['关键词'] ? 1 : 0);
-            const hasSuffixPenalty = canonical !== name ? -50 : 0;
-            const readabilityBonus = /[\u4e00-\u9fa5a-zA-Z0-9]{2,}/.test(name) ? 5 : 0;
-            const score = contentLength + keywordCount * 20 + hasSuffixPenalty + readabilityBonus;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestName = name;
-            }
-        }
-
-        return bestName;
-    }
-
-    function getCanonicalDuplicateGroups(categoryName) {
-        const entries = AppState.worldbook.generated?.[categoryName];
-        if (!entries) return [];
-
-        const groups = new Map();
-        const names = Object.keys(entries);
-        for (const name of names) {
-            const canonical = normalizeNameForComparison(name);
-            if (!canonical) continue;
-            if (!groups.has(canonical)) groups.set(canonical, []);
-            groups.get(canonical).push(name);
-        }
-
-        const conflictGroups = [];
-        for (const namesInGroup of groups.values()) {
-            if (namesInGroup.length < 2) continue;
-            const uniqueNames = [...new Set(namesInGroup)];
-            if (uniqueNames.length < 2) continue;
-            const canonicalLabel = normalizeEntryName(uniqueNames[0]);
-            conflictGroups.push({ canonicalLabel, names: uniqueNames });
-        }
-        return conflictGroups;
-    }
-
-    async function autoMergeCanonicalConflicts(categoryName) {
-        const entries = AppState.worldbook.generated?.[categoryName];
-        if (!entries) return { mergedCount: 0, mergedGroups: [] };
-
-        const canonicalGroups = getCanonicalDuplicateGroups(categoryName);
-        if (canonicalGroups.length === 0) return { mergedCount: 0, mergedGroups: [] };
-
-        const mergedGroups = canonicalGroups.map((group) => ({
-            names: group.names,
-            mainName: pickMainNameByQuality(entries, group.names),
-        }));
-
-        const mergedCount = await mergeConfirmedDuplicates({ mergedGroups }, categoryName);
-        return { mergedCount, mergedGroups };
     }
 
     class UnionFind {
@@ -287,15 +203,14 @@ export function createMergeService(deps = {}) {
     }
 
     function checkShortNameMatch(nameA, nameB) {
-        if (areNamesObviouslySame(nameA, nameB)) return true;
+        const extractName = (fullName) => {
+            if (fullName.length <= 3) return fullName;
+            return fullName.slice(-2);
+        };
 
-        const cleanA = normalizeEntryName(nameA);
-        const cleanB = normalizeEntryName(nameB);
-        if (cleanA === cleanB) return true;
-
-        const coreA = cleanA.length <= 3 ? cleanA : cleanA.slice(-3);
-        const coreB = cleanB.length <= 3 ? cleanB : cleanB.slice(-3);
-        return coreA === coreB || cleanA.includes(coreB) || cleanB.includes(coreA);
+        const shortA = extractName(nameA);
+        const shortB = extractName(nameB);
+        return shortA === shortB || nameA.includes(shortB) || nameB.includes(shortA);
     }
 
     function findPotentialDuplicates(categoryName) {
@@ -317,7 +232,7 @@ export function createMergeService(deps = {}) {
 
                 const keywordsB = new Set(entries[names[j]]['关键词'] || []);
                 const intersection = [...keywordsA].filter((k) => keywordsB.has(k));
-                const nameContains = areNamesObviouslySame(names[i], names[j]);
+                const nameContains = names[i].includes(names[j]) || names[j].includes(names[i]);
                 const shortNameMatch = checkShortNameMatch(names[i], names[j]);
 
                 if (intersection.length > 0 || nameContains || shortNameMatch) {
@@ -520,46 +435,32 @@ ${pairsContent}
 
     async function mergeConfirmedDuplicates(aiResult, categoryName = '角色') {
         const entries = AppState.worldbook.generated[categoryName];
-        if (!entries) return 0;
-
         let mergedCount = 0;
         const mergedGroups = aiResult.mergedGroups || [];
 
         for (const groupInfo of mergedGroups) {
             const { names, mainName } = groupInfo;
-            if (!names || names.length < 2) continue;
+            if (!names || names.length < 2 || !mainName) continue;
 
-            const existingNames = names.filter((name) => !!entries[name]);
-            if (existingNames.length < 2) continue;
-
-            const finalMainName = entries[mainName] ? mainName : pickMainNameByQuality(entries, existingNames);
-
-            const mergedKeywords = mergeKeywordList(entries, existingNames);
+            let mergedKeywords = [];
             let mergedContent = '';
-            let roleType = '';
 
-            for (const name of existingNames) {
+            for (const name of names) {
                 if (!entries[name]) continue;
+                mergedKeywords.push(...(entries[name]['关键词'] || []));
+                mergedKeywords.push(name);
                 if (entries[name]['内容']) {
-                    mergedContent = mergeContentWithDedup(mergedContent, entries[name]['内容']);
+                    mergedContent += entries[name]['内容'] + '\n\n---\n\n';
                 }
-
-                const candidateRoleType = String(entries[name]['角色类型'] || '').trim();
-                if (!roleType && candidateRoleType) roleType = candidateRoleType;
             }
 
-            entries[finalMainName] = {
-                ...(entries[finalMainName] || {}),
-                '关键词': mergedKeywords,
-                '内容': mergedContent,
+            entries[mainName] = {
+                '关键词': [...new Set(mergedKeywords)],
+                '内容': mergedContent.replace(/\n\n---\n\n$/, '')
             };
 
-            if (roleType) {
-                entries[finalMainName]['角色类型'] = roleType;
-            }
-
-            for (const name of existingNames) {
-                if (name !== finalMainName && entries[name]) {
+            for (const name of names) {
+                if (name !== mainName && entries[name]) {
                     delete entries[name];
                 }
             }
@@ -597,13 +498,11 @@ ${pairsContent}
     }
 
     return {
-        autoMergeCanonicalConflicts,
         checkShortNameMatch,
         collectAliasMergeGroups,
         executeAliasMergeByCategory,
         findPotentialDuplicates,
         generatePairs,
-        getCanonicalDuplicateGroups,
         getManualMergeViewWorldbook,
         mergeConfirmedDuplicates,
         resolveDisplayedEntrySource,

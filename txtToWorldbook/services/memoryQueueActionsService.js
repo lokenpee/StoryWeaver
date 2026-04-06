@@ -12,15 +12,6 @@ export function createMemoryQueueActionsService(deps = {}) {
             if (!memory.title.includes('-')) {
                 memory.title = `记忆${index + 1}`;
             }
-            if (!memory.chapterTitle || !String(memory.chapterTitle).trim()) {
-                memory.chapterTitle = `第${index + 1}章`;
-            }
-            if (!memory.chapterOutlineStatus) {
-                memory.chapterOutlineStatus = 'pending';
-            }
-            if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-                memory.chapterScript = { goal: '', flow: '', keyNodes: [] };
-            }
         });
     }
 
@@ -37,16 +28,6 @@ export function createMemoryQueueActionsService(deps = {}) {
             } else if (AppState.memory.userSelectedIndex >= AppState.memory.queue.length) {
                 AppState.memory.userSelectedIndex = null;
             }
-        }
-
-        if (AppState.experience) {
-            if (AppState.experience.currentChapterIndex > index) {
-                AppState.experience.currentChapterIndex -= 1;
-            }
-            AppState.experience.currentChapterIndex = Math.max(
-                0,
-                Math.min(AppState.experience.currentChapterIndex, Math.max(0, AppState.memory.queue.length - 1)),
-            );
         }
     }
 
@@ -86,37 +67,8 @@ export function createMemoryQueueActionsService(deps = {}) {
             suffix2 = '-2';
         }
 
-        const baseChapterTitle = memory.chapterTitle || `第${memoryIndex + 1}章`;
-        const memory1 = {
-            title: baseName + suffix1,
-            chapterTitle: `${baseChapterTitle}(上)`,
-            content: content1,
-            processed: false,
-            failed: false,
-            failedError: null,
-            chapterOutline: '',
-            chapterOutlineStatus: 'pending',
-            chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [] },
-            chapterOpeningPreview: '',
-            chapterOpeningSent: false,
-            chapterOpeningError: '',
-        };
-        const memory2 = {
-            title: baseName + suffix2,
-            chapterTitle: `${baseChapterTitle}(下)`,
-            content: content2,
-            processed: false,
-            failed: false,
-            failedError: null,
-            chapterOutline: '',
-            chapterOutlineStatus: 'pending',
-            chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [] },
-            chapterOpeningPreview: '',
-            chapterOpeningSent: false,
-            chapterOpeningError: '',
-        };
+        const memory1 = { title: baseName + suffix1, content: content1, processed: false, failed: false, failedError: null };
+        const memory2 = { title: baseName + suffix2, content: content2, processed: false, failed: false, failedError: null };
         AppState.memory.queue.splice(memoryIndex, 1, memory1, memory2);
         return { part1: memory1, part2: memory2 };
     }
@@ -165,13 +117,6 @@ export function createMemoryQueueActionsService(deps = {}) {
 
         AppState.ui.selectedIndices.clear();
         AppState.ui.isMultiSelectMode = false;
-
-        if (AppState.experience) {
-            AppState.experience.currentChapterIndex = Math.max(
-                0,
-                Math.min(AppState.experience.currentChapterIndex, Math.max(0, AppState.memory.queue.length - 1)),
-            );
-        }
 
         updateMemoryQueueUI();
         updateStartButtonState(false);

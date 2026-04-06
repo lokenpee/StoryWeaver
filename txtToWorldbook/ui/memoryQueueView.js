@@ -11,17 +11,6 @@ export function createMemoryQueueView(deps = {}) {
         showRollHistorySelector,
     } = deps;
 
-    function resetDerivedChapterData(memory) {
-        if (!memory) return;
-        memory.chapterOutline = '';
-        memory.chapterOutlineStatus = 'pending';
-        memory.chapterOutlineError = '';
-        memory.chapterScript = { goal: '', flow: '', keyNodes: [] };
-        memory.chapterOpeningPreview = '';
-        memory.chapterOpeningSent = false;
-        memory.chapterOpeningError = '';
-    }
-
     function updateMemoryQueueUI() {
         const container = document.getElementById('ttw-memory-queue');
         if (!container) return;
@@ -187,7 +176,6 @@ ${resultHtml}
                 memory.processed = false;
                 memory.failed = false;
                 memory.result = null;
-                resetDerivedChapterData(memory);
                 updateMemoryQueueUI();
                 updateStartButtonState(false);
             }
@@ -222,7 +210,6 @@ ${resultHtml}
                 prevMemory.processed = false;
                 prevMemory.failed = false;
                 prevMemory.result = null;
-                resetDerivedChapterData(prevMemory);
                 AppState.memory.queue.splice(index, 1);
                 AppState.memory.queue.forEach((m, i) => {
                     if (!m.title.includes('-')) m.title = `记忆${i + 1}`;
@@ -248,7 +235,6 @@ ${resultHtml}
                 nextMemory.processed = false;
                 nextMemory.failed = false;
                 nextMemory.result = null;
-                resetDerivedChapterData(nextMemory);
                 AppState.memory.queue.splice(index, 1);
                 AppState.memory.queue.forEach((m, i) => {
                     if (!m.title.includes('-')) m.title = `记忆${i + 1}`;

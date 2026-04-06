@@ -62,7 +62,6 @@ export function createImportExportService(deps = {}) {
                     addMemo: entry.addMemo !== undefined ? entry.addMemo : true,
                     scan_depth: entry.scanDepth !== undefined ? entry.scanDepth : null,
                     match_whole_words: entry.matchWholeWords !== undefined ? entry.matchWholeWords : false,
-                    character_role_type: entry.storyweaverRoleType || '',
                 },
             }));
 

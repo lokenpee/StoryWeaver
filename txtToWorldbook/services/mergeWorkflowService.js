@@ -52,59 +52,12 @@ export function createMergeWorkflowService(deps = {}) {
 
     let lastConsolidateFailedEntries = [];
 
-    function dedupeStructuredContent(content) {
-        const lines = String(content || '').split(/\r?\n/);
-        const fieldMap = new Map();
-        const fieldOrder = [];
-        const freeText = [];
-        const seenFreeText = new Set();
-
-        for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line) continue;
-
-            const fieldMatch = line.match(/^[-*\s]*(?:\*\*)?([^:：\n]{1,30})(?:\*\*)?\s*[:：]\s*(.+)$/);
-            if (fieldMatch) {
-                const fieldName = fieldMatch[1].trim();
-                const fieldValue = fieldMatch[2].trim();
-                const fieldKey = fieldName.toLowerCase().replace(/[\s\-_/（）()【】]/g, '');
-                const existing = fieldMap.get(fieldKey);
-                if (!existing) {
-                    fieldMap.set(fieldKey, { name: fieldName, value: fieldValue });
-                    fieldOrder.push(fieldKey);
-                } else if (fieldValue.length > existing.value.length) {
-                    fieldMap.set(fieldKey, { name: existing.name, value: fieldValue });
-                }
-                continue;
-            }
-
-            const normalized = line.toLowerCase().replace(/[\s，。！？；：,.!?;:'"“”‘’]/g, '');
-            if (!normalized || seenFreeText.has(normalized)) continue;
-            seenFreeText.add(normalized);
-            freeText.push(line);
-        }
-
-        const output = [];
-        for (const key of fieldOrder) {
-            const field = fieldMap.get(key);
-            if (!field) continue;
-            output.push(`${field.name}: ${field.value}`);
-        }
-
-        if (freeText.length > 0) {
-            if (output.length > 0) output.push('');
-            output.push(...freeText);
-        }
-
-        return output.join('\n').trim();
-    }
-
     async function consolidateEntry(category, entryName, promptTemplate) {
         const entry = AppState.worldbook.generated[category]?.[entryName];
         if (!entry || !entry['内容']) return;
 
         const template = (promptTemplate && promptTemplate.trim()) ? promptTemplate.trim() : defaultConsolidatePrompt;
-        const prompt = `${template.replace('{CONTENT}', entry['内容'])}\n\n【强制输出要求】\n1. 不要重复同一字段；同义字段合并为一条。\n2. 尽量采用“字段: 值”的结构化格式输出。\n3. 不要输出解释文字，只输出整理后的正文。`;
+        const prompt = template.replace('{CONTENT}', entry['内容']);
         let response = await callAPI(getLanguagePrefix() + prompt);
 
         response = filterResponseContent(response);
@@ -114,7 +67,7 @@ export function createMergeWorkflowService(deps = {}) {
             throw new Error('AI 返回了空内容，保留原条目内容');
         }
 
-        entry['内容'] = dedupeStructuredContent(finalContent);
+        entry['内容'] = finalContent;
         if (Array.isArray(entry['关键词'])) {
             entry['关键词'] = [...new Set(entry['关键词'])];
         }
@@ -566,10 +519,8 @@ export function createMergeWorkflowService(deps = {}) {
         let msg = `条目整理完成！\n成功: ${completed}\n失败: ${failed}`;
         if (failed > 0) {
             msg += '\n\n再次点击"整理条目"可以只选失败项重试';
-            ErrorHandler.showUserError(msg);
-            return;
         }
-        ErrorHandler.showUserSuccess(msg);
+        ErrorHandler.showUserError(msg);
     }
 
     function showManualMergeUI(onMergeComplete) {
@@ -989,20 +940,6 @@ export function createMergeWorkflowService(deps = {}) {
 
         if (!selectedCategories || selectedCategories.length === 0) return;
 
-        updateStreamContent('\n🧪 预处理：自动合并明显同名冲突...\n');
-        let autoMergedTotal = 0;
-        for (const cat of selectedCategories) {
-            const { mergedCount } = await mergedService.autoMergeCanonicalConflicts(cat);
-            if (mergedCount > 0) {
-                autoMergedTotal += mergedCount;
-                updateStreamContent(`  [${cat}] 自动合并 ${mergedCount} 组（明显同名/卷号后缀）\n`);
-            }
-        }
-        if (autoMergedTotal > 0) {
-            updateWorldbookPreview();
-            updateStreamContent(`✅ 预处理完成：自动合并 ${autoMergedTotal} 组\n`);
-        }
-
         updateStreamContent('\n🔍 第一阶段：扫描疑似重复条目...\n');
 
         const allSuspectedByCategory = {};
@@ -1024,11 +961,7 @@ export function createMergeWorkflowService(deps = {}) {
         }
 
         if (totalGroups === 0) {
-            if (autoMergedTotal > 0) {
-                ErrorHandler.showUserSuccess(`已自动合并 ${autoMergedTotal} 组明显重复条目，未发现需要AI判断的剩余重复组`);
-            } else {
-                ErrorHandler.showUserError('在所有选中的分类中未发现疑似重复条目');
-            }
+            ErrorHandler.showUserError('在所有选中的分类中未发现疑似重复条目');
             return;
         }
 

@@ -437,45 +437,12 @@ function buildResultSectionHtml() {
                 <button id="ttw-replace-btn" class="ttw-btn">🔄 替换</button>
                 <button id="ttw-view-worldbook" class="ttw-btn">📖 查看世界书</button>
                 <button id="ttw-view-history" class="ttw-btn">📜 修改历史</button>
-                <button id="ttw-open-story-outline" class="ttw-btn ttw-btn-secondary">🧭 故事大纲</button>
-                <button id="ttw-open-current-chapter" class="ttw-btn ttw-btn-secondary">🎬 当前章节概览</button>
                 <button id="ttw-consolidate-entries" class="ttw-btn" title="用AI整理条目，去除重复信息">🧹 整理条目</button>
                 <button id="ttw-clean-tags" class="ttw-btn" title="清除条目中的标签内容（不消耗Token）">🏷️ 清除标签</button>
                 <button id="ttw-alias-merge" class="ttw-btn" title="识别各分类中同一事物的不同称呼并合并">🔗 别名合并</button>
                 <button id="ttw-export-json" class="ttw-btn ttw-btn-primary">🃏 导出角色卡</button>
                 <button id="ttw-export-volumes" class="ttw-btn" style="display:none;">📦 分卷导出</button>
                 <button id="ttw-export-st" class="ttw-btn ttw-btn-primary">📥 导出世界书</button>
-            </div>
-
-            <div id="ttw-story-outline-section" class="ttw-story-panel" style="display:none;">
-                <div class="ttw-story-panel-header">
-                    <h4>🧭 故事大纲</h4>
-                    <button id="ttw-start-reading-first" class="ttw-btn ttw-btn-small">▶ 从第一章开始</button>
-                </div>
-                <div id="ttw-story-outline-list" class="ttw-story-outline-list"></div>
-            </div>
-
-            <div id="ttw-current-chapter-section" class="ttw-story-panel" style="display:none;">
-                <div class="ttw-story-panel-header">
-                    <h4 id="ttw-current-chapter-title">当前章节概览</h4>
-                    <button id="ttw-next-chapter-btn" class="ttw-btn ttw-btn-small">⏭ 下一章</button>
-                </div>
-                <div id="ttw-current-chapter-hint" class="ttw-current-hint">进入章节后将自动发送开场白。</div>
-
-                <div class="ttw-current-block">
-                    <div class="ttw-current-block-title">故事摘要</div>
-                    <div id="ttw-current-story-summary" class="ttw-current-block-content">暂无摘要</div>
-                </div>
-
-                <div class="ttw-current-block">
-                    <div class="ttw-current-block-title">当前小章剧本</div>
-                    <div id="ttw-current-script" class="ttw-current-block-content">暂无剧本</div>
-                </div>
-
-                <div class="ttw-current-block">
-                    <div class="ttw-current-block-title">本章开场白</div>
-                    <div id="ttw-current-opening" class="ttw-current-block-content">暂无开场白</div>
-                </div>
             </div>
         </div>
     </div>`;
@@ -484,10 +451,10 @@ function buildResultSectionHtml() {
 function buildModalBodyHtml() {
     return `
     <div class="ttw-modal-body">
-        ${buildFileUploadSectionHtml()}
         ${buildSettingsHtml()}
         ${buildDefaultEntriesSectionHtml()}
         ${buildPromptConfigHtml()}
+        ${buildFileUploadSectionHtml()}
         ${buildQueueSectionHtml()}
         ${buildProgressSectionHtml()}
         ${buildResultSectionHtml()}

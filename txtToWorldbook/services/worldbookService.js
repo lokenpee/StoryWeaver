@@ -1,6 +1,4 @@
-﻿import { mergeContentWithDedup } from './nameNormalizationService.js';
-
-export function createWorldbookService(deps = {}) {
+﻿export function createWorldbookService(deps = {}) {
     const {
         getIncrementalMode = () => false,
         saveHistory = async () => {},
@@ -18,28 +16,7 @@ export function createWorldbookService(deps = {}) {
             entry['内容'] = entry.content;
             delete entry.content;
         }
-
-        if (entry['角色类型'] !== undefined) {
-            const roleType = normalizeRoleType(entry['角色类型']);
-            if (roleType) {
-                entry['角色类型'] = roleType;
-            } else {
-                delete entry['角色类型'];
-            }
-        }
-
         return entry;
-    }
-
-    function normalizeRoleType(value) {
-        const text = String(value || '').trim();
-        if (!text) return '';
-
-        if (text.includes('主角')) return '主角';
-        if (text.includes('重要配角')) return '重要配角';
-        if (text.includes('普通配角') || text.includes('配角')) return '普通配角';
-        if (text.toUpperCase() === 'NPC' || text.includes('路人') || text.includes('龙套') || text.includes('NPC')) return 'NPC';
-        return '';
     }
 
     function normalizeWorldbookData(data) {
@@ -52,9 +29,6 @@ export function createWorldbookService(deps = {}) {
                     for (const entryName in data[category]) {
                         if (typeof data[category][entryName] === 'object') {
                             normalizeWorldbookEntry(data[category][entryName]);
-                            if (category === '角色' && !data[category][entryName]['角色类型']) {
-                                data[category][entryName]['角色类型'] = '普通配角';
-                            }
                         }
                     }
                 }
@@ -93,23 +67,12 @@ export function createWorldbookService(deps = {}) {
                     if (sourceEntry['内容']) {
                         const existingContent = targetEntry['内容'] || '';
                         const newContent = sourceEntry['内容'];
-                        targetEntry['内容'] = mergeContentWithDedup(existingContent, newContent);
-                    }
-
-                    if (category === '角色') {
-                        const sourceRoleType = normalizeRoleType(sourceEntry['角色类型']);
-                        const targetRoleType = normalizeRoleType(targetEntry['角色类型']);
-                        if (sourceRoleType) {
-                            targetEntry['角色类型'] = sourceRoleType;
-                        } else if (!targetRoleType) {
-                            targetEntry['角色类型'] = '普通配角';
+                        if (newContent && !existingContent.includes(newContent.substring(0, 50))) {
+                            targetEntry['内容'] = existingContent + '\n\n---\n\n' + newContent;
                         }
                     }
                 } else {
                     target[category][entryName] = JSON.parse(JSON.stringify(sourceEntry));
-                    if (category === '角色' && !target[category][entryName]['角色类型']) {
-                        target[category][entryName]['角色类型'] = '普通配角';
-                    }
                 }
             }
         }

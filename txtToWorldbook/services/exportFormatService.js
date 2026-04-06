@@ -9,16 +9,6 @@ export function createExportFormatService(deps = {}) {
     } = deps;
 
     function convertToSillyTavernFormat(worldbook) {
-        const normalizeRoleType = (value) => {
-            const role = String(value || '').trim();
-            if (!role) return '';
-            if (role.includes('主角')) return '主角';
-            if (role.includes('重要配角')) return '重要配角';
-            if (role.includes('普通配角') || role.includes('配角')) return '普通配角';
-            if (role.toUpperCase() === 'NPC' || role.includes('NPC') || role.includes('路人') || role.includes('龙套')) return 'NPC';
-            return '';
-        };
-
         const entries = [];
         let entryId = 0;
         const categoryEntryIndex = {};
@@ -79,7 +69,6 @@ export function createExportFormatService(deps = {}) {
                     matchWholeWords: false,
                     automationId: '',
                     role: 0,
-                    storyweaverRoleType: category === '角色' ? (normalizeRoleType(itemData['角色类型']) || '普通配角') : '',
                     vectorized: false,
                     sticky: null,
                     cooldown: null,

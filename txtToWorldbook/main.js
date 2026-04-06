@@ -130,7 +130,6 @@ import { createStartButtonView } from './ui/startButtonView.js';
 import { createStopButtonView } from './ui/stopButtonView.js';
 import { createUiHelpers } from './ui/createUiHelpers.js';
 import { createWorldbookViewRuntime } from './ui/createWorldbookViewRuntime.js';
-import { createChapterExperienceView } from './ui/chapterExperienceView.js';
 import { ensureModalStyles } from './ui/modalStyles.js';
 
 const STORYWEAVER_TTW_API_KEY = 'StoryWeaverTxtToWorldbook';
@@ -823,10 +822,6 @@ async function processMemoryChunk(index, retryCount = 0) {
     return getProcessingService().processMemoryChunk(index, retryCount);
 }
 
-async function retryChapterOutline(index) {
-    return getProcessingService().retryChapterOutline(index);
-}
-
 function handleStopProcessing() {
     return getProcessingService().handleStopProcessing();
 }
@@ -920,18 +915,6 @@ const {
     handleFetchModelList,
     handleQuickTestModel,
 });
-
-const chapterExperienceView = createChapterExperienceView({
-    AppState,
-    ErrorHandler,
-    callAPI,
-    getLanguagePrefix,
-    retryChapterOutline,
-});
-const {
-    showStoryOutlinePanel,
-    showCurrentChapterPanel,
-} = chapterExperienceView;
 
     // ========== UI ==========
 let {
@@ -1170,8 +1153,6 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     showConsolidateCategorySelector: (...args) => showConsolidateCategorySelector(...args),
     showCleanTagsModal: (...args) => showCleanTagsModal(...args),
     showAliasMergeUI: (...args) => showAliasMergeUI(...args),
-    showStoryOutlinePanel: (...args) => showStoryOutlinePanel(...args),
-    showCurrentChapterPanel: (...args) => showCurrentChapterPanel(...args),
     updateStreamContent,
     showPromptPreview: (...args) => showPromptPreview(...args),
     showPlotOutlineConfigModal: (...args) => showPlotOutlineConfigModal(...args),

@@ -59,9 +59,6 @@ export function createFileImportService(deps = {}) {
             if (novelNameRow) novelNameRow.style.display = 'flex';
 
             splitContentIntoMemory(content);
-            if (AppState.experience) {
-                AppState.experience.currentChapterIndex = 0;
-            }
             showQueueSection(true);
             updateMemoryQueueUI();
 
@@ -131,7 +128,6 @@ export function createFileImportService(deps = {}) {
             }
 
             let currentChunk = '';
-            let currentChunkTitles = [];
             let chunkIndex = 1;
 
             for (let i = 0; i < mergedChapters.length; i++) {
@@ -139,14 +135,12 @@ export function createFileImportService(deps = {}) {
 
                 if (chapter.content.length > chunkSize) {
                     if (currentChunk.length > 0) {
-                        AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex, currentChunkTitles.join('+')));
+                        AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex));
                         currentChunk = '';
-                        currentChunkTitles = [];
                         chunkIndex++;
                     }
 
                     let remaining = chapter.content;
-                    let splitPart = 1;
                     while (remaining.length > 0) {
                         let endPos = Math.min(chunkSize, remaining.length);
                         if (endPos < remaining.length) {
@@ -161,24 +155,20 @@ export function createFileImportService(deps = {}) {
                             }
                         }
 
-                        const partTitle = splitPart === 1 ? chapter.title : `${chapter.title}-分段${splitPart}`;
-                        AppState.memory.queue.push(createMemoryChunk(remaining.slice(0, endPos), chunkIndex, partTitle));
+                        AppState.memory.queue.push(createMemoryChunk(remaining.slice(0, endPos), chunkIndex));
                         remaining = remaining.slice(endPos);
-                        splitPart++;
                         chunkIndex++;
                     }
                     continue;
                 }
 
                 if (currentChunk.length + chapter.content.length > chunkSize && currentChunk.length > 0) {
-                    AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex, currentChunkTitles.join('+')));
+                    AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex));
                     currentChunk = '';
-                    currentChunkTitles = [];
                     chunkIndex++;
                 }
 
                 currentChunk += chapter.content;
-                currentChunkTitles.push(chapter.title);
             }
 
             if (currentChunk.length > 0) {
@@ -186,17 +176,11 @@ export function createFileImportService(deps = {}) {
                     const lastMemory = AppState.memory.queue[AppState.memory.queue.length - 1];
                     if (lastMemory.content.length + currentChunk.length <= chunkSize * 1.2) {
                         lastMemory.content += currentChunk;
-                        if (currentChunkTitles.length > 0) {
-                            const titleTail = currentChunkTitles.join('+');
-                            if (!String(lastMemory.chapterTitle || '').includes(titleTail)) {
-                                lastMemory.chapterTitle = `${lastMemory.chapterTitle || ''}+${titleTail}`.replace(/^\+/, '');
-                            }
-                        }
                     } else {
-                        AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex, currentChunkTitles.join('+')));
+                        AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex));
                     }
                 } else {
-                    AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex, currentChunkTitles.join('+')));
+                    AppState.memory.queue.push(createMemoryChunk(currentChunk, chunkIndex));
                 }
             }
         } else {
@@ -217,7 +201,7 @@ export function createFileImportService(deps = {}) {
                     }
                 }
 
-                AppState.memory.queue.push(createMemoryChunk(content.slice(i, endIndex), chunkIndex, `第${chunkIndex}章`));
+                AppState.memory.queue.push(createMemoryChunk(content.slice(i, endIndex), chunkIndex));
                 i = endIndex;
                 chunkIndex++;
             }
@@ -235,16 +219,6 @@ export function createFileImportService(deps = {}) {
 
         AppState.memory.queue.forEach((memory, index) => {
             memory.title = `记忆${index + 1}`;
-            if (!memory.chapterTitle || !String(memory.chapterTitle).trim()) {
-                memory.chapterTitle = `第${index + 1}章`;
-            }
-            memory.chapterOutline = memory.chapterOutline || '';
-            memory.chapterOutlineStatus = memory.chapterOutlineStatus || 'pending';
-            memory.chapterOutlineError = memory.chapterOutlineError || '';
-            memory.chapterScript = memory.chapterScript || { goal: '', flow: '', keyNodes: [] };
-            memory.chapterOpeningPreview = memory.chapterOpeningPreview || '';
-            memory.chapterOpeningSent = memory.chapterOpeningSent === true;
-            memory.chapterOpeningError = memory.chapterOpeningError || '';
         });
     }
 
@@ -260,9 +234,6 @@ export function createFileImportService(deps = {}) {
         AppState.file.hash = null;
         AppState.ui.isMultiSelectMode = false;
         AppState.ui.selectedIndices.clear();
-        if (AppState.experience) {
-            AppState.experience.currentChapterIndex = 0;
-        }
 
         try {
             await MemoryHistoryDB.clearAllHistory();
@@ -321,21 +292,13 @@ export function createFileImportService(deps = {}) {
         ErrorHandler.showUserSuccess(`重新分块完成！\n当前共 ${AppState.memory.queue.length} 个章节`);
     }
 
-    function createMemoryChunk(content, chunkIndex, chapterTitle = '') {
+    function createMemoryChunk(content, chunkIndex) {
         return {
             title: `记忆${chunkIndex}`,
-            chapterTitle: chapterTitle || `第${chunkIndex}章`,
             content,
             processed: false,
             failed: false,
             processing: false,
-            chapterOutline: '',
-            chapterOutlineStatus: 'pending',
-            chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [] },
-            chapterOpeningPreview: '',
-            chapterOpeningSent: false,
-            chapterOpeningError: '',
         };
     }
 

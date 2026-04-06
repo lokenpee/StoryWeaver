@@ -50,221 +50,6 @@
         return AppState.processing.status || 'idle';
     };
 
-    function buildRelevantWorldbookContext(memoryContent, maxEntries = 8) {
-        const content = String(memoryContent || '');
-        if (!content.trim()) return '';
-
-        const categoryData = AppState.worldbook.generated || {};
-        const candidates = [];
-
-        for (const category in categoryData) {
-            const entries = categoryData[category];
-            if (!entries || typeof entries !== 'object') continue;
-            for (const entryName in entries) {
-                const entry = entries[entryName];
-                if (!entry || typeof entry !== 'object') continue;
-
-                let score = 0;
-                if (content.includes(entryName)) score += 5;
-
-                const keywords = Array.isArray(entry['关键词']) ? entry['关键词'] : [entry['关键词']];
-                for (const keyword of keywords) {
-                    const kw = String(keyword || '').trim();
-                    if (!kw || kw.length < 2) continue;
-                    if (content.includes(kw)) score += 2;
-                }
-
-                if (score <= 0) continue;
-                candidates.push({
-                    category,
-                    entryName,
-                    score,
-                    content: String(entry['内容'] || '').slice(0, 180),
-                });
-            }
-        }
-
-        if (candidates.length === 0) return '';
-
-        candidates.sort((a, b) => b.score - a.score);
-        const top = candidates.slice(0, maxEntries);
-        const lines = top.map((item) => `- [${item.category}] ${item.entryName}: ${item.content}`);
-        return `\n\n相关世界书摘录（精简，不是全量）：\n${lines.join('\n')}\n`;
-    }
-
-    function ensureChapterRuntime(memory, index) {
-        if (!memory) return;
-        if (!memory.chapterTitle || !String(memory.chapterTitle).trim()) {
-            memory.chapterTitle = `第${index + 1}章`;
-        }
-        if (typeof memory.chapterOutline !== 'string') {
-            memory.chapterOutline = '';
-        }
-        if (!memory.chapterOutlineStatus) {
-            memory.chapterOutlineStatus = 'pending';
-        }
-        if (typeof memory.chapterOutlineError !== 'string') {
-            memory.chapterOutlineError = '';
-        }
-        if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { goal: '', flow: '', keyNodes: [] };
-        }
-        if (!Array.isArray(memory.chapterScript.keyNodes)) {
-            memory.chapterScript.keyNodes = [];
-        }
-        if (typeof memory.chapterOpeningPreview !== 'string') {
-            memory.chapterOpeningPreview = '';
-        }
-        if (typeof memory.chapterOpeningSent !== 'boolean') {
-            memory.chapterOpeningSent = false;
-        }
-        if (typeof memory.chapterOpeningError !== 'string') {
-            memory.chapterOpeningError = '';
-        }
-    }
-
-    function extractJsonObject(text) {
-        const raw = String(text || '').trim();
-        if (!raw) return null;
-
-        const fenceCleaned = raw
-            .replace(/^```json\s*/i, '')
-            .replace(/^```\s*/i, '')
-            .replace(/\s*```$/i, '')
-            .trim();
-
-        try {
-            const parsed = JSON.parse(fenceCleaned);
-            if (parsed && typeof parsed === 'object') return parsed;
-        } catch (_) {
-            // ignore and try fallback
-        }
-
-        const start = fenceCleaned.indexOf('{');
-        const end = fenceCleaned.lastIndexOf('}');
-        if (start !== -1 && end > start) {
-            const candidate = fenceCleaned.slice(start, end + 1);
-            try {
-                const parsed = JSON.parse(candidate);
-                if (parsed && typeof parsed === 'object') return parsed;
-            } catch (_) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    function toShortOutline(text, maxLen = 120) {
-        const plain = String(text || '').replace(/\s+/g, ' ').trim();
-        if (!plain) return '';
-        const sentences = plain
-            .split(/[。！？!?]/)
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .slice(0, 2);
-        const joined = sentences.join('，');
-        const result = joined || plain;
-        return result.length > maxLen ? `${result.slice(0, maxLen)}...` : result;
-    }
-
-    function normalizeScript(rawScript, outline) {
-        const script = rawScript && typeof rawScript === 'object' ? rawScript : {};
-        const keyNodes = Array.isArray(script.keyNodes)
-            ? script.keyNodes.map((n) => String(n || '').trim()).filter(Boolean).slice(0, 3)
-            : [];
-
-        const flow = String(script.flow || '').trim() || outline;
-        const goal = String(script.goal || '').trim() || '围绕本章核心冲突推进剧情并保持叙事连续。';
-
-        return {
-            goal,
-            flow,
-            keyNodes: keyNodes.length > 0
-                ? keyNodes
-                : (outline ? outline.split(/[，,。]/).map((n) => n.trim()).filter(Boolean).slice(0, 3) : []),
-        };
-    }
-
-    function parseChapterAssetsResponse(response, memory, index) {
-        const fallbackOutline = toShortOutline(memory.content, 140) || `${memory.chapterTitle || `第${index + 1}章`}剧情推进。`;
-        const parsed = extractJsonObject(response);
-
-        if (!parsed) {
-            const plain = toShortOutline(response, 140) || fallbackOutline;
-            return {
-                outline: plain,
-                script: normalizeScript({}, plain),
-            };
-        }
-
-        const outline = toShortOutline(parsed.outline || parsed.summary || parsed.chapter_outline || '', 140) || fallbackOutline;
-        const script = normalizeScript(parsed.script || parsed.chapterScript || {}, outline);
-        return { outline, script };
-    }
-
-    function buildChapterAssetsPrompt(memory, index) {
-        const chapterIndex = index + 1;
-        const chapterTitle = memory.chapterTitle || `第${chapterIndex}章`;
-        const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
-        const previousOutline = previousMemory?.chapterOutline ? `\n上一章摘要：${previousMemory.chapterOutline}` : '';
-
-        return `${getLanguagePrefix()}你是小说章节分析助手。请基于以下内容输出本章摘要和简版小章剧本。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 为简版剧本，包含 goal、flow、keyNodes(最多3条)。\n5) 禁止剧透后续章节。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
-    }
-
-    async function generateChapterAssets(index, options = {}) {
-        const memory = AppState.memory.queue[index];
-        if (!memory) throw new Error('章节不存在');
-        ensureChapterRuntime(memory, index);
-
-        const {
-            force = false,
-            taskId = index + 1,
-            maxRetries = AppState.settings.chapterOutlineMaxRetries ?? 1,
-        } = options;
-
-        if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
-            return {
-                outline: memory.chapterOutline,
-                script: memory.chapterScript,
-            };
-        }
-
-        memory.chapterOutlineStatus = 'generating';
-        memory.chapterOutlineError = '';
-        updateMemoryQueueUI();
-
-        const prompt = buildChapterAssetsPrompt(memory, index);
-        let lastError = null;
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                const response = await callAPI(prompt, taskId);
-                const assets = parseChapterAssetsResponse(response, memory, index);
-                memory.chapterOutline = assets.outline;
-                memory.chapterScript = assets.script;
-                memory.chapterOutlineStatus = 'done';
-                memory.chapterOutlineError = '';
-                updateStreamContent(`🧭 [第${index + 1}章] 大纲生成完成\n`);
-                updateMemoryQueueUI();
-                return assets;
-            } catch (error) {
-                lastError = error;
-                if (attempt < maxRetries && !AppState.processing.isStopped) {
-                    const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-                    updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败，${delay / 1000}秒后重试...\n`);
-                    await new Promise((resolve) => setTimeout(resolve, delay));
-                    continue;
-                }
-            }
-        }
-
-        memory.chapterOutlineStatus = 'failed';
-        memory.chapterOutlineError = String(lastError?.message || '大纲生成失败');
-        updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败: ${memory.chapterOutlineError}\n`);
-        updateMemoryQueueUI();
-        throw lastError || new Error(memory.chapterOutlineError);
-    }
-
     async function processMemoryChunkIndependent(options) {
         const { index, retryCount = 0, customPromptSuffix = '' } = options;
         const memory = AppState.memory.queue[index];
@@ -274,7 +59,6 @@
 
         if (!AppState.processing.isRerolling && AppState.processing.isStopped) throw new Error('ABORTED');
 
-        ensureChapterRuntime(memory, index);
         memory.processing = true;
         updateMemoryQueueUI();
 
@@ -335,12 +119,6 @@
 
             debugLog(`[第${chapterIndex}章] 后处理章节索引...`);
             memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
-
-            try {
-                await generateChapterAssets(index, { taskId, force: true });
-            } catch (_) {
-                // 章节大纲失败不阻断世界书主流程
-            }
 
             debugLog(`[第${chapterIndex}章] 处理完成`);
             updateStreamContent(`✅ [第${chapterIndex}章] 处理完成\n`);
@@ -454,8 +232,6 @@ ${'='.repeat(50)}
         const maxRetries = 3;
         const chapterIndex = index + 1;
 
-        ensureChapterRuntime(memory, index);
-
         debugLog(`[串行][第${chapterIndex}章] 开始, 重试=${retryCount}`);
         updateProgress(progress, `正在处理: ${memory.title} (第${chapterIndex}章)${retryCount > 0 ? ` (重试 ${retryCount})` : ''}`);
 
@@ -474,10 +250,7 @@ ${'='.repeat(50)}
 
         if (index > 0) {
             prompt += `\n\n上次阅读结尾：\n---\n${AppState.memory.queue[index - 1].content.slice(-500)}\n---\n`;
-            const relevantContext = buildRelevantWorldbookContext(memory.content);
-            if (relevantContext) {
-                prompt += relevantContext;
-            }
+            prompt += `\n当前世界书：\n${JSON.stringify(AppState.worldbook.generated, null, 2)}\n`;
         }
         prompt += `\n现在阅读的部分（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
 
@@ -530,13 +303,6 @@ ${'='.repeat(50)}
             await mergeWorldbookDataWithHistory({ target: AppState.worldbook.generated, source: memoryUpdate, memoryIndex: index, memoryTitle: memory.title });
             debugLog(`[串行][第${chapterIndex}章] 保存Roll结果...`);
             await MemoryHistoryDB.saveRollResult(index, memoryUpdate);
-
-            try {
-                await generateChapterAssets(index, { taskId: chapterIndex, force: true });
-            } catch (_) {
-                // 章节大纲失败不阻断世界书主流程
-            }
-
             debugLog(`[串行][第${chapterIndex}章] 完成`);
 
             memory.processed = true;
@@ -753,21 +519,6 @@ ${'='.repeat(50)}
         updateMemoryQueueUI();
     }
 
-    async function retryChapterOutline(index) {
-        if (index < 0 || index >= AppState.memory.queue.length) {
-            throw new Error('章节索引无效');
-        }
-        const result = await generateChapterAssets(index, {
-            force: true,
-            taskId: index + 1,
-            maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
-        });
-
-        const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
-        await MemoryHistoryDB.saveState(processedCount);
-        return result;
-    }
-
     return {
         processMemoryChunkIndependent,
         processMemoryChunksParallel,
@@ -775,6 +526,5 @@ ${'='.repeat(50)}
         handleStopProcessing,
         handleStartProcessing,
         handleRepairFailedMemories,
-        retryChapterOutline,
     };
 }

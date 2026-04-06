@@ -37,9 +37,6 @@
             streamContent: '',
             activeTasks: new Set()
         },
-        experience: {
-            currentChapterIndex: 0,
-        },
         ui: {
             isMultiSelectMode: false,
             selectedIndices: new Set(),

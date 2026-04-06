@@ -57,19 +57,6 @@ export function createListRenderer(deps = {}) {
     } = deps;
 
     return {
-        getEntryRoleType(category, entry) {
-            if (category !== '角色' || !entry || typeof entry !== 'object') return '';
-
-            const direct = String(entry['角色类型'] || '').trim();
-            if (direct) return direct;
-
-            const content = String(entry['内容'] || '');
-            const match = content.match(/角色类型\s*[:：]\s*(主角|重要配角|普通配角|NPC)/i);
-            if (match) return match[1].toUpperCase() === 'NPC' ? 'NPC' : match[1];
-
-            return '';
-        },
-
         renderItems(items, renderItem, options = {}) {
             const { emptyMessage = '暂无数据' } = options;
             if (!items || items.length === 0) {
@@ -176,10 +163,6 @@ export function createListRenderer(deps = {}) {
             const mergedBadge = isManualMergedHighlight
                 ? `<span style="font-size:10px;color:#f1c40f;background:rgba(241,196,15,0.2);border:1px solid rgba(241,196,15,0.45);padding:1px 6px;border-radius:999px;">✨ 新合并</span>`
                 : '';
-            const roleType = this.getEntryRoleType(category, entry);
-            const roleBadge = roleType
-                ? `<span style="font-size:10px;color:#2ecc71;background:rgba(46,204,113,0.16);border:1px solid rgba(46,204,113,0.5);padding:1px 6px;border-radius:999px;">${this.escapeHtml(roleType)}</span>`
-                : '';
             const keywordSource = Array.isArray(entry?.['关键词']) ? entry['关键词'].join(', ') : (entry?.['关键词'] || '');
             const keywordTokens = keywordSource && typeof estimateTokenCount === 'function' ? estimateTokenCount(keywordSource) : 0;
             const contentSource = entry?.['内容'] || '';
@@ -204,7 +187,7 @@ export function createListRenderer(deps = {}) {
             return `
                 <div class="${isManualMergedHighlight ? 'ttw-entry-merged-highlight' : ''}" style="margin:8px;border:1px solid #555;border-radius:6px;overflow:hidden;">
                     <div class="ttw-entry-toggle" style="background:#3a3a3a;padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;${highlightStyle}">
-                        <span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${warningIcon}📄 ${safeEntryNameText}${roleBadge}${mergedBadge}<button class="ttw-entry-config-btn ttw-config-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="配置位置/深度/顺序">⚙️</button><button class="ttw-entry-reroll-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="单独重Roll此条目" style="background:rgba(155,89,182,0.4);border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:#fff;">🎯</button></span>
+                        <span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${warningIcon}📄 ${safeEntryNameText}${mergedBadge}<button class="ttw-entry-config-btn ttw-config-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="配置位置/深度/顺序">⚙️</button><button class="ttw-entry-reroll-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="单独重Roll此条目" style="background:rgba(155,89,182,0.4);border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:#fff;">🎯</button></span>
                         <span style="font-size:9px;color:#888;display:flex;gap:4px;align-items:center;">
                             <span style="${tokenStyle}">${entryTokens}tk</span>
                             <span>D${config.depth}O${displayOrder}${autoIncrement ? '↗' : ''}</span>

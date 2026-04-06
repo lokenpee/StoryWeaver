@@ -16,8 +16,6 @@
         showConsolidateCategorySelector,
         showCleanTagsModal,
         showAliasMergeUI,
-        showStoryOutlinePanel,
-        showCurrentChapterPanel,
     } = deps;
 
     document.getElementById('ttw-start-btn').addEventListener('click', handleStartConversion);
@@ -41,16 +39,6 @@
     document.getElementById('ttw-consolidate-entries').addEventListener('click', showConsolidateCategorySelector);
     document.getElementById('ttw-clean-tags').addEventListener('click', showCleanTagsModal);
     document.getElementById('ttw-alias-merge').addEventListener('click', showAliasMergeUI);
-
-    const storyOutlineBtn = document.getElementById('ttw-open-story-outline');
-    if (storyOutlineBtn && typeof showStoryOutlinePanel === 'function') {
-        storyOutlineBtn.addEventListener('click', showStoryOutlinePanel);
-    }
-
-    const currentChapterBtn = document.getElementById('ttw-open-current-chapter');
-    if (currentChapterBtn && typeof showCurrentChapterPanel === 'function') {
-        currentChapterBtn.addEventListener('click', showCurrentChapterPanel);
-    }
 }
 
 export function bindExportEvents(deps = {}) {
