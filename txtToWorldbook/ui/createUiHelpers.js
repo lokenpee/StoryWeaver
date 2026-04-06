@@ -48,7 +48,7 @@ export function createUiHelpers(deps = {}) {
     const settingsStateView = createSettingsStateView({
         AppState,
         handleUseTavernApiChange: () => apiModeView?.handleUseTavernApiChange(),
-        handleProviderChange: () => apiModeView?.handleProviderChange(),
+        handleProviderChange: (target = 'main') => apiModeView?.handleProviderChange(target),
         renderMessageChainUI,
     });
     const {
@@ -127,7 +127,7 @@ export function createUiHelpers(deps = {}) {
 
     apiModeView = createApiModeView({
         AppState,
-        updateModelStatus: (text, type) => modelActionsView.updateModelStatus(text, type),
+        updateModelStatus: (text, type, target) => modelActionsView.updateModelStatus(text, type, target),
     });
 
     const settingsActionsFacade = createSettingsActionsFacade({
@@ -138,6 +138,7 @@ export function createUiHelpers(deps = {}) {
     const {
         handleUseTavernApiChange,
         handleProviderChange,
+        switchApiTab,
         updateModelStatus,
         handleFetchModels,
         handleQuickTest,
@@ -168,6 +169,7 @@ export function createUiHelpers(deps = {}) {
         testChapterRegex,
         handleUseTavernApiChange,
         handleProviderChange,
+        switchApiTab,
         updateModelStatus,
         handleFetchModels,
         handleQuickTest,

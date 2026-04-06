@@ -150,10 +150,16 @@ export function createChapterExperienceView(deps = {}) {
             memory.chapterOutlineError = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { goal: '', flow: '', keyNodes: [] };
+            memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
         }
         if (!Array.isArray(memory.chapterScript.keyNodes)) {
             memory.chapterScript.keyNodes = [];
+        }
+        if (!Array.isArray(memory.chapterScript.beats)) {
+            memory.chapterScript.beats = [];
+        }
+        if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
+            memory.chapterCurrentBeatIndex = 0;
         }
         if (typeof memory.chapterOpeningPreview !== 'string') {
             memory.chapterOpeningPreview = '';
@@ -194,7 +200,51 @@ export function createChapterExperienceView(deps = {}) {
             goal: '围绕本章关键冲突推进叙事并保持角色动机一致。',
             flow: text || '本章推进关键事件并承接上章内容。',
             keyNodes: nodes,
+            beats: nodes.map((node, idx) => ({
+                id: `b${idx + 1}`,
+                summary: node,
+                exitCondition: '等待用户行动或关键互动完成',
+                tags: [],
+            })),
         };
+    }
+
+    function normalizeBeats(script, fallbackOutline) {
+        const beats = Array.isArray(script?.beats) ? script.beats : [];
+        if (beats.length > 0) {
+            return beats
+                .map((beat, idx) => {
+                    const source = beat && typeof beat === 'object' ? beat : {};
+                    const tags = Array.isArray(source.tags)
+                        ? source.tags.map((t) => toShortText(t, 16)).filter(Boolean).slice(0, 4)
+                        : [];
+                    return {
+                        id: String(source.id || `b${idx + 1}`),
+                        summary: toShortText(source.summary || source.event || source.description || `事件点${idx + 1}`, 90),
+                        exitCondition: toShortText(source.exitCondition || source.exit_condition || '等待关键互动完成', 90),
+                        tags,
+                    };
+                })
+                .slice(0, 8);
+        }
+
+        const fromNodes = Array.isArray(script?.keyNodes)
+            ? script.keyNodes.map((node) => toShortText(node, 80)).filter(Boolean)
+            : [];
+        const fallbackNodes = fromNodes.length > 0
+            ? fromNodes
+            : String(fallbackOutline || '')
+                .split(/[，,。]/)
+                .map((node) => toShortText(node, 80))
+                .filter(Boolean)
+                .slice(0, 4);
+
+        return fallbackNodes.map((summary, idx) => ({
+            id: `b${idx + 1}`,
+            summary,
+            exitCondition: '等待关键互动完成',
+            tags: [],
+        }));
     }
 
     function statusTag(status) {
@@ -264,19 +314,31 @@ export function createChapterExperienceView(deps = {}) {
 
         const goal = toShortText(script.goal, 140) || '围绕本章核心冲突推进剧情。';
         const flow = toShortText(script.flow, 220) || (memory.chapterOutline || '本章沿主线推进。');
-        const keyNodes = Array.isArray(script.keyNodes)
-            ? script.keyNodes.map((node) => toShortText(node, 60)).filter(Boolean)
-            : [];
-
-        const nodesHtml = keyNodes.length > 0
-            ? `<ul>${keyNodes.map((node) => `<li>${escapeHtml(node)}</li>`).join('')}</ul>`
-            : '<div class="ttw-script-empty">暂无关键节点，将按摘要推进。</div>';
+        const beats = normalizeBeats(script, memory.chapterOutline || '');
+        const currentBeatIndex = Number.isInteger(memory.chapterCurrentBeatIndex) ? memory.chapterCurrentBeatIndex : 0;
+        const beatCards = beats.length > 0
+            ? beats.map((beat, idx) => {
+                const isActive = idx === currentBeatIndex;
+                const tagsHtml = beat.tags.length > 0
+                    ? `<div class="ttw-beat-tags">${beat.tags.map((tag) => `<span class="ttw-beat-tag">${escapeHtml(tag)}</span>`).join('')}</div>`
+                    : '';
+                return `<div class="ttw-beat-item ${isActive ? 'is-active' : ''}">
+    <div class="ttw-beat-item-head">
+        <span class="ttw-beat-id">${escapeHtml(beat.id || `b${idx + 1}`)}</span>
+        ${isActive ? '<span class="ttw-beat-active">当前阶段</span>' : ''}
+    </div>
+    <div class="ttw-beat-summary">${escapeHtml(beat.summary || '')}</div>
+    <div class="ttw-beat-exit">退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
+    ${tagsHtml}
+</div>`;
+            }).join('')
+            : '<div class="ttw-script-empty">暂无轻节拍，默认按摘要推进。</div>';
 
         return `
 <div class="ttw-script-block">
     <div class="ttw-script-field"><strong>目标：</strong>${escapeHtml(goal)}</div>
     <div class="ttw-script-field"><strong>流程：</strong>${escapeHtml(flow)}</div>
-    <div class="ttw-script-field"><strong>关键节点：</strong>${nodesHtml}</div>
+    <div class="ttw-script-field"><strong>轻节拍器（事件点）：</strong><div class="ttw-beat-list">${beatCards}</div></div>
 </div>`;
     }
 
@@ -458,7 +520,22 @@ export function createChapterExperienceView(deps = {}) {
         const dialogueContext = collectRecentDialogueContext() || '最新一轮对话：无可用历史。';
         const chapterLead = buildChapterLeadSnippet(memory, 50, 100) || '本章开头素材：无可用原文。';
 
-        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。\n\n硬性要求：\n1) 仅输出 50-100 字中文。\n2) 只能用于衔接上文并引入本章，不要推进剧情。\n3) 不得泄露本章的目标、流程、关键节点、核心冲突、转折或结局。\n4) 文风自然沉浸，不要解释规则，不要输出JSON，不要分点。\n\n背景信息（仅用于衔接）：\n当前章节：${chapterTitle}\n${previousChapterContext}\n${dialogueContext}\n本章开头素材（仅前50-100字）：${chapterLead}\n\n请直接输出开场白正文：`;
+        const isFirstChapter = index === 0;
+        const examples = isFirstChapter ? `
+示例1（首章）：
+雨丝斜斜地掠过窗棂，将远处的街灯晕染成一片模糊的光晕。你放下手中的咖啡杯，指尖还残留着那份文件的触感——一切就从这里开始。
+
+示例2（首章）：
+马车在青石板上颠簸作响，你撩开车帘，暮色中的古镇笼罩在一层薄雾之中。路人的喧哗渐渐远去，只剩下车轮碾过积水的声音，和某种即将发生的预感。
+` : `
+示例1（承接上文）：
+昨夜的风暴已经平息，但空气中仍残留着一丝不安的气息。你站在船舷边，看着海平线逐渐亮起的第一缕曙光——新的港口就在眼前。
+
+示例2（承接上文）：
+那场对话的余音似乎还在走廊尽头回荡，而你已推开了下一扇门。灯光从头顶倾泻下来，照亮了桌面上那份等待已久的信笺。
+`;
+
+        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。\n\n硬性要求：\n1) 仅输出 50-100 字中文。\n2) 只能用于衔接上文并引入本章，不要推进剧情。\n3) 不得泄露本章的目标、流程、关键节点、核心冲突、转折或结局。\n4) 文风自然沉浸，不要解释规则，不要输出JSON，不要分点。\n\n参考示例（学习其风格，不要照搬内容）：${examples}\n\n背景信息（仅用于衔接）：\n当前章节：${chapterTitle}\n${previousChapterContext}\n${dialogueContext}\n本章开头素材（仅前50-100字）：${chapterLead}\n\n请直接输出开场白正文：`;
 
         const response = await callAPI(prompt, index + 1);
         return sanitizeOpeningText(response, memory, index);

@@ -27,22 +27,6 @@ export function createMergeService(deps = {}) {
         return pairs;
     }
 
-    function toKeywordArray(value) {
-        if (Array.isArray(value)) {
-            return value.map((item) => String(item || '').trim()).filter(Boolean);
-        }
-        const one = String(value || '').trim();
-        return one ? [one] : [];
-    }
-
-    function toKeywordSet(entry) {
-        return new Set(toKeywordArray(entry?.['关键词']));
-    }
-
-    function fallbackCanonicalKey(name) {
-        return String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    }
-
     function mergeKeywordList(entries, names) {
         const keywords = [];
         for (const name of names) {
@@ -80,18 +64,17 @@ export function createMergeService(deps = {}) {
         return bestName;
     }
 
-    function getCanonicalDuplicateGroups(categoryName, sourceWorldbook = AppState.worldbook.generated) {
-        const entries = sourceWorldbook?.[categoryName];
+    function getCanonicalDuplicateGroups(categoryName) {
+        const entries = AppState.worldbook.generated?.[categoryName];
         if (!entries) return [];
 
         const groups = new Map();
         const names = Object.keys(entries);
         for (const name of names) {
             const canonical = normalizeNameForComparison(name);
-            const groupKey = canonical || fallbackCanonicalKey(name);
-            if (!groupKey) continue;
-            if (!groups.has(groupKey)) groups.set(groupKey, []);
-            groups.get(groupKey).push(name);
+            if (!canonical) continue;
+            if (!groups.has(canonical)) groups.set(canonical, []);
+            groups.get(canonical).push(name);
         }
 
         const conflictGroups = [];
@@ -99,17 +82,17 @@ export function createMergeService(deps = {}) {
             if (namesInGroup.length < 2) continue;
             const uniqueNames = [...new Set(namesInGroup)];
             if (uniqueNames.length < 2) continue;
-            const canonicalLabel = normalizeEntryName(uniqueNames[0]) || uniqueNames[0];
+            const canonicalLabel = normalizeEntryName(uniqueNames[0]);
             conflictGroups.push({ canonicalLabel, names: uniqueNames });
         }
         return conflictGroups;
     }
 
-    async function autoMergeCanonicalConflicts(categoryName, sourceWorldbook = AppState.worldbook.generated) {
-        const entries = sourceWorldbook?.[categoryName];
+    async function autoMergeCanonicalConflicts(categoryName) {
+        const entries = AppState.worldbook.generated?.[categoryName];
         if (!entries) return { mergedCount: 0, mergedGroups: [] };
 
-        const canonicalGroups = getCanonicalDuplicateGroups(categoryName, sourceWorldbook);
+        const canonicalGroups = getCanonicalDuplicateGroups(categoryName);
         if (canonicalGroups.length === 0) return { mergedCount: 0, mergedGroups: [] };
 
         const mergedGroups = canonicalGroups.map((group) => ({
@@ -117,18 +100,7 @@ export function createMergeService(deps = {}) {
             mainName: pickMainNameByQuality(entries, group.names),
         }));
 
-        let mergedCount = 0;
-        if (sourceWorldbook === AppState.worldbook.generated) {
-            mergedCount = await mergeConfirmedDuplicates({ mergedGroups }, categoryName, sourceWorldbook);
-        } else {
-            for (const group of mergedGroups) {
-                const selectedEntries = group.names.map((name) => ({ category: categoryName, name }));
-                const mergeResult = executeManualMerge(selectedEntries, group.mainName, categoryName, true, false);
-                if (mergeResult.success) {
-                    mergedCount++;
-                }
-            }
-        }
+        const mergedCount = await mergeConfirmedDuplicates({ mergedGroups }, categoryName);
         return { mergedCount, mergedGroups };
     }
 
@@ -239,47 +211,6 @@ export function createMergeService(deps = {}) {
         };
     }
 
-    function deleteWorldbookEntry(category, displayedName) {
-        if (!category || !displayedName) {
-            return { success: false, error: '分类或条目名不能为空' };
-        }
-
-        const resolved = resolveDisplayedEntrySource(category, displayedName);
-        if (!resolved) {
-            return { success: false, error: `未找到条目: [${category}] ${displayedName}` };
-        }
-
-        let sourceCategoryEntries = null;
-        if (resolved.sourceType === 'generated') {
-            sourceCategoryEntries = AppState.worldbook.generated?.[category];
-        } else if (resolved.sourceType === 'volume' && Number.isInteger(resolved.volumeIndex)) {
-            const volume = (AppState.worldbook.volumes || []).find((v) => v.volumeIndex === resolved.volumeIndex);
-            sourceCategoryEntries = volume?.worldbook?.[category];
-        }
-
-        if (!sourceCategoryEntries || !sourceCategoryEntries[resolved.actualName]) {
-            return { success: false, error: `条目不存在或已被删除: [${category}] ${displayedName}` };
-        }
-
-        delete sourceCategoryEntries[resolved.actualName];
-
-        if (resolved.sourceType === 'generated') {
-            const categoryPosition = AppState.config?.entryPosition?.[category];
-            if (categoryPosition && Object.prototype.hasOwnProperty.call(categoryPosition, resolved.actualName)) {
-                delete categoryPosition[resolved.actualName];
-            }
-        }
-
-        return {
-            success: true,
-            category,
-            displayedName,
-            actualName: resolved.actualName,
-            sourceType: resolved.sourceType,
-            volumeIndex: resolved.volumeIndex,
-        };
-    }
-
     function executeManualMerge(selectedEntries, mainName, targetCategory, dedupKeywords, addSeparator) {
         const worldbook = AppState.worldbook.generated;
         const resolvedEntries = selectedEntries.map(resolveManualMergeEntryRef).filter(Boolean);
@@ -367,8 +298,8 @@ export function createMergeService(deps = {}) {
         return coreA === coreB || cleanA.includes(coreB) || cleanB.includes(coreA);
     }
 
-    function findPotentialDuplicates(categoryName, sourceWorldbook = AppState.worldbook.generated) {
-        const entries = sourceWorldbook?.[categoryName];
+    function findPotentialDuplicates(categoryName) {
+        const entries = AppState.worldbook.generated[categoryName];
         if (!entries) return [];
 
         const names = Object.keys(entries);
@@ -379,20 +310,17 @@ export function createMergeService(deps = {}) {
             if (processed.has(names[i])) continue;
 
             const group = [names[i]];
-            const keywordsA = toKeywordSet(entries[names[i]]);
+            const keywordsA = new Set(entries[names[i]]['关键词'] || []);
 
             for (let j = i + 1; j < names.length; j++) {
                 if (processed.has(names[j])) continue;
 
-                const keywordsB = toKeywordSet(entries[names[j]]);
+                const keywordsB = new Set(entries[names[j]]['关键词'] || []);
                 const intersection = [...keywordsA].filter((k) => keywordsB.has(k));
                 const nameContains = areNamesObviouslySame(names[i], names[j]);
                 const shortNameMatch = checkShortNameMatch(names[i], names[j]);
-                const canonicalA = normalizeNameForComparison(names[i]);
-                const canonicalB = normalizeNameForComparison(names[j]);
-                const sameCanonical = !!canonicalA && !!canonicalB && canonicalA === canonicalB;
 
-                if (intersection.length > 0 || nameContains || shortNameMatch || sameCanonical) {
+                if (intersection.length > 0 || nameContains || shortNameMatch) {
                     group.push(names[j]);
                     processed.add(names[j]);
                 }
@@ -407,10 +335,10 @@ export function createMergeService(deps = {}) {
         return suspectedGroups;
     }
 
-    async function verifyDuplicatesWithAI(suspectedGroups, useParallel = true, threshold = 5, categoryName = '角色', sourceWorldbook = AppState.worldbook.generated) {
+    async function verifyDuplicatesWithAI(suspectedGroups, useParallel = true, threshold = 5, categoryName = '角色') {
         if (suspectedGroups.length === 0) return { pairResults: [], mergedGroups: [] };
 
-        const entries = sourceWorldbook?.[categoryName] || {};
+        const entries = AppState.worldbook.generated[categoryName];
         const allPairs = [];
         const allNames = new Set();
 
@@ -430,8 +358,8 @@ export function createMergeService(deps = {}) {
                 const [nameA, nameB] = pair;
                 const entryA = entries[nameA];
                 const entryB = entries[nameB];
-                const keywordsA = toKeywordArray(entryA?.['关键词']).join(', ') || '无';
-                const keywordsB = toKeywordArray(entryB?.['关键词']).join(', ') || '无';
+                const keywordsA = entryA?.['关键词']?.join(', ') || '无';
+                const keywordsB = entryB?.['关键词']?.join(', ') || '无';
                 const contentA = (entryA?.['内容'] || '').substring(0, 300);
                 const contentB = (entryB?.['内容'] || '').substring(0, 300);
 
@@ -590,23 +518,12 @@ ${pairsContent}
         };
     }
 
-    async function mergeConfirmedDuplicates(aiResult, categoryName = '角色', sourceWorldbook = AppState.worldbook.generated) {
-        const entries = sourceWorldbook?.[categoryName];
+    async function mergeConfirmedDuplicates(aiResult, categoryName = '角色') {
+        const entries = AppState.worldbook.generated[categoryName];
         if (!entries) return 0;
 
         let mergedCount = 0;
         const mergedGroups = aiResult.mergedGroups || [];
-
-        if (sourceWorldbook !== AppState.worldbook.generated) {
-            for (const groupInfo of mergedGroups) {
-                const { names, mainName } = groupInfo;
-                if (!names || names.length < 2) continue;
-                const selectedEntries = names.map((name) => ({ category: categoryName, name }));
-                const mergeResult = executeManualMerge(selectedEntries, mainName || names[0], categoryName, true, false);
-                if (mergeResult.success) mergedCount++;
-            }
-            return mergedCount;
-        }
 
         for (const groupInfo of mergedGroups) {
             const { names, mainName } = groupInfo;
@@ -666,14 +583,14 @@ ${pairsContent}
         return mergeByCategory;
     }
 
-    async function executeAliasMergeByCategory(mergeByCategory, aiResultByCategory, sourceWorldbook = AppState.worldbook.generated) {
+    async function executeAliasMergeByCategory(mergeByCategory, aiResultByCategory) {
         let totalMerged = 0;
         for (const cat in mergeByCategory) {
             const filteredResult = {
                 pairResults: aiResultByCategory[cat].pairResults,
                 mergedGroups: mergeByCategory[cat]
             };
-            const mergedCount = await mergeConfirmedDuplicates(filteredResult, cat, sourceWorldbook);
+            const mergedCount = await mergeConfirmedDuplicates(filteredResult, cat);
             totalMerged += mergedCount;
         }
         return totalMerged;
@@ -689,7 +606,6 @@ ${pairsContent}
         getCanonicalDuplicateGroups,
         getManualMergeViewWorldbook,
         mergeConfirmedDuplicates,
-        deleteWorldbookEntry,
         resolveDisplayedEntrySource,
         resolveManualMergeEntryRef,
         executeManualMerge,

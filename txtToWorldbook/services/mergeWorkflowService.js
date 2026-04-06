@@ -99,48 +99,8 @@ export function createMergeWorkflowService(deps = {}) {
         return output.join('\n').trim();
     }
 
-    function resolveEntryRefByDisplayName(category, displayName) {
-        const direct = AppState.worldbook.generated?.[category]?.[displayName];
-        if (direct) {
-            return {
-                category,
-                name: displayName,
-                actualName: displayName,
-                sourceType: 'generated',
-                volumeIndex: AppState.worldbook.currentVolumeIndex,
-                entry: direct,
-            };
-        }
-
-        if (mergedService && typeof mergedService.resolveDisplayedEntrySource === 'function') {
-            const resolved = mergedService.resolveDisplayedEntrySource(category, displayName);
-            if (resolved?.entry) {
-                return {
-                    category,
-                    name: displayName,
-                    actualName: resolved.actualName,
-                    sourceType: resolved.sourceType,
-                    volumeIndex: resolved.volumeIndex,
-                    entry: resolved.entry,
-                };
-            }
-        }
-
-        return null;
-    }
-
-    async function consolidateEntry(entryRef, promptTemplate) {
-        const category = entryRef?.category;
-        const entryName = entryRef?.name;
-        if (!category || !entryName) return;
-
-        let resolvedEntry = null;
-        if (mergedService && typeof mergedService.resolveManualMergeEntryRef === 'function') {
-            resolvedEntry = mergedService.resolveManualMergeEntryRef(entryRef);
-        }
-
-        const resolved = resolvedEntry || resolveEntryRefByDisplayName(category, entryName);
-        const entry = resolved?.entry;
+    async function consolidateEntry(category, entryName, promptTemplate) {
+        const entry = AppState.worldbook.generated[category]?.[entryName];
         if (!entry || !entry['内容']) return;
 
         const template = (promptTemplate && promptTemplate.trim()) ? promptTemplate.trim() : defaultConsolidatePrompt;
@@ -161,9 +121,8 @@ export function createMergeWorkflowService(deps = {}) {
     }
 
     function showConsolidateCategorySelector() {
-        const worldbookView = getAllVolumesWorldbook();
-        const categories = Object.keys(worldbookView).filter((cat) => {
-            const entries = worldbookView[cat];
+        const categories = Object.keys(AppState.worldbook.generated).filter((cat) => {
+            const entries = AppState.worldbook.generated[cat];
             return entries && typeof entries === 'object' && Object.keys(entries).length > 0;
         });
 
@@ -177,17 +136,17 @@ export function createMergeWorkflowService(deps = {}) {
 
         let categoriesHtml = '';
         categories.forEach((cat) => {
-            const entryNames = Object.keys(worldbookView[cat]);
+            const entryNames = Object.keys(AppState.worldbook.generated[cat]);
             const entryCount = entryNames.length;
 
             let entriesListHtml = '';
             entryNames.forEach((name) => {
                 const isFailed = lastConsolidateFailedEntries.some((e) => e.category === cat && e.name === name);
                 const failedBadge = isFailed ? '<span style="color:#e74c3c;font-size:9px;margin-left:4px;">❗失败</span>' : '';
-                const entryTokens = getEntryTotalTokens(worldbookView[cat][name]);
+                const entryTokens = getEntryTotalTokens(AppState.worldbook.generated[cat][name]);
                 entriesListHtml += `
 			<label style="display:flex;align-items:center;gap:6px;padding:3px 6px;font-size:11px;cursor:pointer;">
-				<input type="checkbox" class="ttw-consolidate-entry-cb" data-category="${cat}" data-entry="${name}" checked>
+				<input type="checkbox" class="ttw-consolidate-entry-cb" data-category="${cat}" data-entry="${name}" ${isFailed ? 'checked' : ''}>
 				<span style="flex:1;">${name}${failedBadge}</span>
 				<span style="color:#888;font-size:10px;white-space:nowrap;">${entryTokens}t</span>
 			</label>
@@ -197,7 +156,7 @@ export function createMergeWorkflowService(deps = {}) {
             const hasFailedInCat = lastConsolidateFailedEntries.some((e) => e.category === cat);
 
             let catTotalTokens = 0;
-            entryNames.forEach((name) => { catTotalTokens += getEntryTotalTokens(worldbookView[cat][name]); });
+            entryNames.forEach((name) => { catTotalTokens += getEntryTotalTokens(AppState.worldbook.generated[cat][name]); });
 
             const presets = AppState.settings.consolidatePromptPresets || [];
             const currentPreset = (AppState.settings.consolidateCategoryPresetMap || {})[cat] || '默认';
@@ -209,7 +168,7 @@ export function createMergeWorkflowService(deps = {}) {
             categoriesHtml += `
 		<div class="ttw-consolidate-cat-group" style="margin-bottom:10px;">
 			<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(52,152,219,0.15);border-radius:6px;cursor:pointer;" data-cat-toggle="${cat}">
-                <input type="checkbox" class="ttw-consolidate-cat-cb" data-category="${cat}" checked>
+				<input type="checkbox" class="ttw-consolidate-cat-cb" data-category="${cat}" ${hasFailedInCat ? 'checked' : ''}>
 				<span style="font-weight:bold;font-size:12px;flex:1;">${cat}</span>
 				<select class="ttw-consolidate-cat-preset" data-category="${cat}" style="font-size:10px;padding:2px 4px;border:1px solid #666;border-radius:4px;background:rgba(0,0,0,0.4);color:#ccc;max-width:100px;cursor:pointer;" title="选择此分类使用的整理提示词预设">${presetOptionsHtml}</select>
 				<span style="color:#888;font-size:11px;">(${entryCount}条 ~${catTotalTokens}t)</span>
@@ -518,13 +477,9 @@ export function createMergeWorkflowService(deps = {}) {
                 const cat = cb.dataset.category;
                 const presetSelect = modal.querySelector(`.ttw-consolidate-cat-preset[data-category="${cat}"]`);
                 const presetName = presetSelect ? presetSelect.value : '默认';
-                const resolved = resolveEntryRefByDisplayName(cat, cb.dataset.entry);
                 return {
                     category: cat,
                     name: cb.dataset.entry,
-                    actualName: resolved?.actualName || cb.dataset.entry,
-                    sourceType: resolved?.sourceType || 'generated',
-                    volumeIndex: Number.isInteger(resolved?.volumeIndex) ? resolved.volumeIndex : AppState.worldbook.currentVolumeIndex,
                     promptTemplate: getPresetPromptByName(presetName),
                 };
             });
@@ -576,18 +531,15 @@ export function createMergeWorkflowService(deps = {}) {
 
             try {
                 updateStreamContent(`📝 [${index + 1}/${entries.length}] ${entry.category} - ${entry.name}\n`);
-                await consolidateEntry(entry, entry.promptTemplate);
+                await consolidateEntry(entry.category, entry.name, entry.promptTemplate);
                 completed++;
                 updateProgress(((completed + failed) / entries.length) * 100, `整理中 (${completed}✅ ${failed}❌ / ${entries.length})`);
                 updateStreamContent('   ✅ 完成\n');
             } catch (error) {
                 failed++;
-                const providerLabel = AppState.settings.useTavernApi ? 'tavern' : (AppState.settings.customApiProvider || 'openai-compatible');
-                const modelLabel = AppState.settings.customApiModel || 'unknown-model';
-                const maxTokensLabel = AppState.settings.customApiMaxTokens || 'N/A';
                 failedEntries.push({ category: entry.category, name: entry.name, error: error.message });
                 updateProgress(((completed + failed) / entries.length) * 100, `整理中 (${completed}✅ ${failed}❌ / ${entries.length})`);
-                updateStreamContent(`   ❌ 失败: ${error.message} (provider=${providerLabel}, model=${modelLabel}, maxTokens=${maxTokensLabel})\n`);
+                updateStreamContent(`   ❌ 失败: ${error.message}\n`);
             } finally {
                 semaphore.release();
             }
@@ -949,59 +901,23 @@ export function createMergeWorkflowService(deps = {}) {
     }
 
     async function handleAliasMergeConfirm(modal, aiResultByCategory) {
-        const checkedGroupBoxes = [...modal.querySelectorAll('.ttw-merge-group-cb:checked')];
-        if (checkedGroupBoxes.length === 0) {
+        const checkedBoxes = modal.querySelectorAll('.ttw-merge-group-cb:checked');
+        if (checkedBoxes.length === 0) {
             ErrorHandler.showUserError('没有勾选任何合并组');
             return;
         }
 
-        const allNameCheckboxes = [...modal.querySelectorAll('.ttw-merge-name-cb')];
-        const allMainNameSelects = [...modal.querySelectorAll('.ttw-merge-main-name-select')];
-        const mergeByCategory = {};
-        let skippedInvalidGroups = 0;
+        const checkedSelections = [...checkedBoxes].map((box) => ({
+            category: box.getAttribute('data-category'),
+            groupIndex: parseInt(box.getAttribute('data-group-index'), 10),
+        }));
+        const mergeByCategory = mergedService.collectAliasMergeGroups(checkedSelections, aiResultByCategory);
 
-        for (const groupBox of checkedGroupBoxes) {
-            const category = groupBox.getAttribute('data-category');
-            const groupIndex = parseInt(groupBox.getAttribute('data-group-index'), 10);
-            if (!category || Number.isNaN(groupIndex)) continue;
-
-            const groupInfo = aiResultByCategory?.[category]?.mergedGroups?.[groupIndex];
-            if (!groupInfo || !Array.isArray(groupInfo.names)) continue;
-
-            const selectedNames = allNameCheckboxes
-                .filter((cb) => cb.dataset.category === category && parseInt(cb.dataset.groupIndex, 10) === groupIndex && cb.checked)
-                .map((cb) => cb.dataset.name)
-                .filter(Boolean);
-
-            if (selectedNames.length < 2) {
-                skippedInvalidGroups++;
-                continue;
-            }
-
-            const mainNameSelect = allMainNameSelects.find((sel) => sel.dataset.category === category && parseInt(sel.dataset.groupIndex, 10) === groupIndex);
-            let chosenMainName = (mainNameSelect?.value || '').trim();
-            if (!selectedNames.includes(chosenMainName)) {
-                chosenMainName = selectedNames[0];
-            }
-
-            if (!mergeByCategory[category]) mergeByCategory[category] = [];
-            mergeByCategory[category].push({
-                names: selectedNames,
-                mainName: chosenMainName,
-            });
-        }
-
-        const totalSelected = Object.values(mergeByCategory).reduce((sum, groups) => sum + groups.length, 0);
-        if (totalSelected === 0) {
-            ErrorHandler.showUserError('没有可合并的有效分组（每组至少保留2条条目）');
-            return;
-        }
-
+        const totalSelected = checkedBoxes.length;
         const categoryList = Object.keys(mergeByCategory).map((c) => `${c}(${mergeByCategory[c].length}组)`).join('、');
-        const skipHint = skippedInvalidGroups > 0 ? `\n\n注意：有 ${skippedInvalidGroups} 组因保留条目少于2条已自动跳过。` : '';
-        if (!await confirmAction(`确定合并选中的 ${totalSelected} 组条目？\n涉及分类: ${categoryList}${skipHint}`, { title: '批量合并重复条目', danger: true })) return;
+        if (!await confirmAction(`确定合并选中的 ${totalSelected} 组条目？\n涉及分类: ${categoryList}`, { title: '批量合并重复条目', danger: true })) return;
 
-        const totalMerged = await mergedService.executeAliasMergeByCategory(mergeByCategory, aiResultByCategory, getAllVolumesWorldbook());
+        const totalMerged = await mergedService.executeAliasMergeByCategory(mergeByCategory, aiResultByCategory);
 
         updateWorldbookPreview();
         modal.remove();
@@ -1009,9 +925,8 @@ export function createMergeWorkflowService(deps = {}) {
     }
 
     async function showAliasMergeUI() {
-        let worldbookView = getAllVolumesWorldbook();
-        const availableCategories = Object.keys(worldbookView).filter((cat) => {
-            const entries = worldbookView[cat];
+        const availableCategories = Object.keys(AppState.worldbook.generated).filter((cat) => {
+            const entries = AppState.worldbook.generated[cat];
             return entries && typeof entries === 'object' && Object.keys(entries).length >= 2;
         });
 
@@ -1024,10 +939,10 @@ export function createMergeWorkflowService(deps = {}) {
             const existingModal = document.getElementById('ttw-alias-cat-modal');
             if (existingModal) existingModal.remove();
 
-            const catListHtml = buildAliasCategorySelectModal(availableCategories, worldbookView, escapeHtml);
+            const catListHtml = buildAliasCategorySelectModal(availableCategories, AppState.worldbook.generated, escapeHtml);
             const bodyHtml = `
 			<div style="margin-bottom:12px;padding:10px;background:rgba(52,152,219,0.15);border-radius:6px;font-size:12px;color:#3498db;">
-                💡 请勾选需要扫描疑似别名的分类。系统会先本地识别，再由你手动确认后合并。
+				💡 请勾选需要让AI识别别名并合并的分类。将对每个选中的分类独立扫描重复条目。
 			</div>
 			<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
 				<label style="font-size:12px;cursor:pointer;"><input type="checkbox" id="ttw-alias-cat-select-all"> 全选</label>
@@ -1077,7 +992,7 @@ export function createMergeWorkflowService(deps = {}) {
         updateStreamContent('\n🧪 预处理：自动合并明显同名冲突...\n');
         let autoMergedTotal = 0;
         for (const cat of selectedCategories) {
-            const { mergedCount } = await mergedService.autoMergeCanonicalConflicts(cat, worldbookView);
+            const { mergedCount } = await mergedService.autoMergeCanonicalConflicts(cat);
             if (mergedCount > 0) {
                 autoMergedTotal += mergedCount;
                 updateStreamContent(`  [${cat}] 自动合并 ${mergedCount} 组（明显同名/卷号后缀）\n`);
@@ -1088,8 +1003,6 @@ export function createMergeWorkflowService(deps = {}) {
             updateStreamContent(`✅ 预处理完成：自动合并 ${autoMergedTotal} 组\n`);
         }
 
-        worldbookView = getAllVolumesWorldbook();
-
         updateStreamContent('\n🔍 第一阶段：扫描疑似重复条目...\n');
 
         const allSuspectedByCategory = {};
@@ -1097,7 +1010,7 @@ export function createMergeWorkflowService(deps = {}) {
         let totalPairs = 0;
 
         for (const cat of selectedCategories) {
-            const suspected = mergedService.findPotentialDuplicates(cat, worldbookView);
+            const suspected = mergedService.findPotentialDuplicates(cat);
             if (suspected.length > 0) {
                 allSuspectedByCategory[cat] = suspected;
                 totalGroups += suspected.length;
@@ -1112,74 +1025,171 @@ export function createMergeWorkflowService(deps = {}) {
 
         if (totalGroups === 0) {
             if (autoMergedTotal > 0) {
-                ErrorHandler.showUserSuccess(`已自动合并 ${autoMergedTotal} 组明显重复条目，未发现剩余疑似重复组`);
+                ErrorHandler.showUserSuccess(`已自动合并 ${autoMergedTotal} 组明显重复条目，未发现需要AI判断的剩余重复组`);
             } else {
                 ErrorHandler.showUserError('在所有选中的分类中未发现疑似重复条目');
             }
             return;
         }
 
-        updateStreamContent(`共发现 ${totalGroups} 组疑似重复，${totalPairs} 对候选关系\n`);
-
-        const aiResultByCategory = {};
-        for (const cat of Object.keys(allSuspectedByCategory)) {
-            aiResultByCategory[cat] = {
-                pairResults: [],
-                mergedGroups: allSuspectedByCategory[cat].map((group) => ({
-                    names: [...group],
-                    mainName: group[0] || '',
-                })),
-            };
-        }
-
-        const { html: mergePlanHtml, hasAnyMerge } = buildAliasMergePlanHtml(aiResultByCategory, escapeHtml);
-        if (!hasAnyMerge) {
-            ErrorHandler.showUserError('未发现可合并组');
-            return;
-        }
+        updateStreamContent(`共发现 ${totalGroups} 组疑似重复，${totalPairs} 对需要判断\n`);
 
         const existingModal = document.getElementById('ttw-alias-modal');
         if (existingModal) existingModal.remove();
 
+        const groupCategoryMap = [];
+        const groupsHtml = buildAliasGroupsListHtml(allSuspectedByCategory, AppState.worldbook.generated, groupCategoryMap, escapeHtml);
+
         const bodyHtml = `
 		<div style="margin-bottom:16px;padding:12px;background:rgba(52,152,219,0.15);border-radius:8px;">
-			<div style="font-weight:bold;color:#3498db;margin-bottom:8px;">📊 简单识别结果</div>
+			<div style="font-weight:bold;color:#3498db;margin-bottom:8px;">📊 第一阶段：本地检测结果</div>
 			<div style="font-size:13px;color:#ccc;">
-				已扫描 <span style="color:#e67e22;font-weight:bold;">${selectedCategories.length}</span> 个分类，
-				发现 <span style="color:#9b59b6;font-weight:bold;">${totalGroups}</span> 组疑似重复。
+				扫描了 <span style="color:#e67e22;font-weight:bold;">${selectedCategories.length}</span> 个分类，
+				发现 <span style="color:#9b59b6;font-weight:bold;">${totalGroups}</span> 组疑似重复，
+				共 <span style="color:#e67e22;font-weight:bold;">${totalPairs}</span> 对需要AI判断
 			</div>
 		</div>
 
-		<div style="margin-bottom:12px;padding:10px;background:rgba(230,126,34,0.1);border-radius:6px;font-size:11px;color:#f39c12;">
-			💡 已移除 AI 二次判断。请在下方手动剔除误判组或误判条目，并为每组选择主条目名称后再点击“开始合并”。
+		<div style="margin-bottom:16px;">
+			<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+				<span style="font-weight:bold;">选择要发送给AI判断的组</span>
+				<label style="font-size:12px;"><input type="checkbox" id="ttw-select-all-alias" checked> 全选</label>
+			</div>
+			<div style="max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:6px;padding:8px;">
+				${groupsHtml}
+			</div>
 		</div>
 
-		<div style="padding:12px;background:rgba(39,174,96,0.15);border-radius:8px;">
-			<div style="font-weight:bold;color:#27ae60;margin-bottom:8px;">📦 待合并方案（人工确认）</div>
-			<div id="ttw-merge-plan">${mergePlanHtml}</div>
+		<div style="margin-bottom:16px;padding:10px;background:rgba(230,126,34,0.1);border-radius:6px;font-size:11px;color:#f39c12;">
+			💡 <strong>两两判断模式</strong>：AI会对每一对条目分别判断是否相同，然后自动合并确认的结果。<br>
+			例如：[A,B,C] 会拆成 (A,B) (A,C) (B,C) 三对分别判断，如果A=B且B=C，则A、B、C会被合并。
+		</div>
+
+		<div style="margin-bottom:16px;padding:12px;background:rgba(52,152,219,0.15);border-radius:8px;">
+			<div style="font-weight:bold;color:#3498db;margin-bottom:10px;">⚙️ 并发设置</div>
+			<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+				<label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+					<input type="checkbox" id="ttw-alias-parallel">
+					<span>启用并发</span>
+				</label>
+				<label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+					<span>配对数阈值:</span>
+					<input type="number" id="ttw-alias-threshold" value="5" min="1" max="50" style="width:60px;padding:4px;border:1px solid #555;border-radius:4px;background:rgba(0,0,0,0.3);color:#fff;">
+				</label>
+			</div>
+			<div style="font-size:11px;color:#888;margin-top:8px;">
+				≥阈值的配对数单独发送，＜阈值的合并发送（合并到接近阈值数量）
+			</div>
+		</div>
+
+		<div id="ttw-alias-result" style="display:none;margin-bottom:16px;">
+			<div style="padding:12px;background:rgba(155,89,182,0.15);border-radius:8px;margin-bottom:12px;">
+				<div style="font-weight:bold;color:#9b59b6;margin-bottom:8px;">🔍 配对判断结果</div>
+				<div id="ttw-pair-results" style="max-height:150px;overflow-y:auto;"></div>
+			</div>
+			<div style="padding:12px;background:rgba(39,174,96,0.15);border-radius:8px;">
+				<div style="font-weight:bold;color:#27ae60;margin-bottom:8px;">📦 合并方案</div>
+				<div id="ttw-merge-plan"></div>
+			</div>
 		</div>
 	`;
         const footerHtml = `
+		<button class="ttw-btn ttw-btn-secondary" id="ttw-stop-alias" style="display:none;">⏸️ 停止</button>
 		<button class="ttw-btn" id="ttw-cancel-alias">取消</button>
-		<button class="ttw-btn ttw-btn-primary" id="ttw-confirm-alias">✅ 开始合并</button>
+		<button class="ttw-btn ttw-btn-primary" id="ttw-ai-verify-alias">🤖 AI两两判断</button>
+		<button class="ttw-btn ttw-btn-primary" id="ttw-confirm-alias" style="display:none;">✅ 确认合并</button>
 	`;
 
         const modal = ModalFactory.create({
             id: 'ttw-alias-modal',
-            title: '🔗 别名识别与合并（人工确认模式）',
+            title: '🔗 别名识别与合并 (两两判断模式)',
             body: bodyHtml,
             footer: footerHtml,
-            maxWidth: '760px',
+            maxWidth: '750px',
         });
 
-        const selectAllMergeCb = modal.querySelector('#ttw-select-all-merge-groups');
-        if (selectAllMergeCb) {
-            selectAllMergeCb.addEventListener('change', (e) => {
-                modal.querySelectorAll('.ttw-merge-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
-            });
-        }
+        let aiResultByCategory = {};
+
+        modal.querySelector('#ttw-select-all-alias').addEventListener('change', (e) => {
+            modal.querySelectorAll('.ttw-alias-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
+        });
 
         modal.querySelector('#ttw-cancel-alias').addEventListener('click', () => ModalFactory.close(modal));
+
+        modal.querySelector('#ttw-ai-verify-alias').addEventListener('click', async () => {
+            const checkedCbs = [...modal.querySelectorAll('.ttw-alias-group-cb:checked')];
+            if (checkedCbs.length === 0) {
+                ErrorHandler.showUserError('请选择要判断的组');
+                return;
+            }
+
+            const selectedByCategory = {};
+            for (const cb of checkedCbs) {
+                const cat = cb.dataset.category;
+                const globalIdx = parseInt(cb.dataset.index, 10);
+                const { localIndex } = groupCategoryMap[globalIdx];
+                if (!selectedByCategory[cat]) selectedByCategory[cat] = [];
+                selectedByCategory[cat].push(allSuspectedByCategory[cat][localIndex]);
+            }
+
+            const btn = modal.querySelector('#ttw-ai-verify-alias');
+            const stopBtn = modal.querySelector('#ttw-stop-alias');
+            btn.disabled = true;
+            btn.textContent = '🔄 AI判断中...';
+            stopBtn.style.display = 'inline-block';
+
+            try {
+                const useParallel = modal.querySelector('#ttw-alias-parallel')?.checked ?? AppState.config.parallel.enabled;
+                const threshold = parseInt(modal.querySelector('#ttw-alias-threshold')?.value, 10) || 5;
+
+                updateStreamContent(`\n🤖 第二阶段：两两配对判断...\n并发: ${useParallel ? '开启' : '关闭'}, 阈值: ${threshold}\n`);
+
+                aiResultByCategory = {};
+                for (const cat of Object.keys(selectedByCategory)) {
+                    updateStreamContent(`\n📂 处理分类「${cat}」...\n`);
+                    aiResultByCategory[cat] = await mergedService.verifyDuplicatesWithAI(selectedByCategory[cat], useParallel, threshold, cat);
+                }
+
+                const resultDiv = modal.querySelector('#ttw-alias-result');
+                const pairResultsDiv = modal.querySelector('#ttw-pair-results');
+                const mergePlanDiv = modal.querySelector('#ttw-merge-plan');
+                resultDiv.style.display = 'block';
+
+                pairResultsDiv.innerHTML = buildAliasPairResultsHtml(aiResultByCategory, escapeHtml);
+
+                const { html: mergePlanHtml, hasAnyMerge } = buildAliasMergePlanHtml(aiResultByCategory, escapeHtml);
+                mergePlanDiv.innerHTML = mergePlanHtml;
+
+                const selectAllMergeCb = mergePlanDiv.querySelector('#ttw-select-all-merge-groups');
+                if (selectAllMergeCb) {
+                    selectAllMergeCb.addEventListener('change', (e) => {
+                        mergePlanDiv.querySelectorAll('.ttw-merge-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
+                    });
+                }
+
+                if (hasAnyMerge) {
+                    modal.querySelector('#ttw-confirm-alias').style.display = 'inline-block';
+                }
+                btn.style.display = 'none';
+                stopBtn.style.display = 'none';
+
+                updateStreamContent('✅ AI判断完成\n');
+            } catch (error) {
+                ErrorHandler.handle(error, 'aliasMerge');
+                updateStreamContent(`❌ AI判断失败: ${error.message}\n`);
+                btn.disabled = false;
+                btn.textContent = '🤖 AI两两判断';
+                stopBtn.style.display = 'none';
+            }
+        });
+
+        modal.querySelector('#ttw-stop-alias').addEventListener('click', () => {
+            handleStopProcessing();
+            modal.querySelector('#ttw-ai-verify-alias').disabled = false;
+            modal.querySelector('#ttw-ai-verify-alias').textContent = '🤖 AI两两判断';
+            modal.querySelector('#ttw-stop-alias').style.display = 'none';
+        });
+
         modal.querySelector('#ttw-confirm-alias').addEventListener('click', async () => {
             await handleAliasMergeConfirm(modal, aiResultByCategory);
         });
@@ -1193,16 +1203,11 @@ export function createMergeWorkflowService(deps = {}) {
         return mergedService.mergeConfirmedDuplicates(aiResult, categoryName);
     }
 
-    function deleteWorldbookEntry(category, entryName) {
-        return mergedService.deleteWorldbookEntry(category, entryName);
-    }
-
     return {
         showConsolidateCategorySelector,
         showManualMergeUI,
         showAliasMergeUI,
         verifyDuplicatesWithAI,
         mergeConfirmedDuplicates,
-        deleteWorldbookEntry,
     };
 }

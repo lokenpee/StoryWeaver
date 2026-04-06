@@ -7,6 +7,45 @@ export function createSettingsPersistenceService(deps) {
         handleProviderChange,
     } = deps;
 
+    function readApiConfigFromDom(target) {
+        const suffix = target === 'director' ? 'director' : 'main';
+        const provider = document.getElementById(`ttw-api-provider-${suffix}`)?.value
+            || document.getElementById('ttw-api-provider')?.value
+            || 'openai-compatible';
+        const apiKey = document.getElementById(`ttw-api-key-${suffix}`)?.value
+            || (suffix === 'main' ? document.getElementById('ttw-api-key')?.value : '')
+            || '';
+        const endpoint = document.getElementById(`ttw-api-endpoint-${suffix}`)?.value
+            || (suffix === 'main' ? document.getElementById('ttw-api-endpoint')?.value : '')
+            || '';
+        const model = document.getElementById(`ttw-api-model-${suffix}`)?.value
+            || (suffix === 'main' ? document.getElementById('ttw-api-model')?.value : '')
+            || 'gemini-2.5-flash';
+        const maxTokensRaw = parseInt(
+            document.getElementById(`ttw-api-max-tokens-${suffix}`)?.value
+                || (suffix === 'main' ? document.getElementById('ttw-api-max-tokens')?.value : ''),
+            10
+        );
+        const maxTokens = Number.isFinite(maxTokensRaw) ? Math.max(1, Math.min(8192, maxTokensRaw)) : 2048;
+
+        return { provider, apiKey, endpoint, model, maxTokens };
+    }
+
+    function normalizeApiConfig(raw, fallback = {}) {
+        const base = {
+            provider: 'openai-compatible',
+            apiKey: '',
+            endpoint: '',
+            model: 'gemini-2.5-flash',
+            maxTokens: 2048,
+            ...fallback,
+            ...(raw || {}),
+        };
+        const parsedMax = parseInt(base.maxTokens, 10);
+        base.maxTokens = Number.isFinite(parsedMax) ? Math.max(1, Math.min(8192, parsedMax)) : 2048;
+        return base;
+    }
+
     function saveCurrentSettings() {
         AppState.settings.chunkSize = parseInt(document.getElementById('ttw-chunk-size')?.value) || 8000;
         AppState.settings.apiTimeout = (parseInt(document.getElementById('ttw-api-timeout')?.value) || 120) * 1000;
@@ -29,21 +68,37 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.categoryDefaultConfig = AppState.config.categoryDefault;
         AppState.settings.entryPositionConfig = AppState.config.entryPosition;
         AppState.settings.customSuffixPrompt = document.getElementById('ttw-suffix-prompt')?.value || '';
-        AppState.settings.customApiProvider = document.getElementById('ttw-api-provider')?.value || 'openai-compatible';
-        AppState.settings.customApiKey = document.getElementById('ttw-api-key')?.value || '';
-        AppState.settings.customApiEndpoint = document.getElementById('ttw-api-endpoint')?.value || '';
-        const apiMaxTokens = parseInt(document.getElementById('ttw-api-max-tokens')?.value, 10);
-        AppState.settings.customApiMaxTokens = Number.isFinite(apiMaxTokens) ? Math.max(1, Math.min(8192, apiMaxTokens)) : 2048;
+        const mainApi = readApiConfigFromDom('main');
+        const directorApi = readApiConfigFromDom('director');
 
-        const modelSelectContainer = document.getElementById('ttw-model-select-container');
-        const modelSelect = document.getElementById('ttw-model-select');
-        const modelInput = document.getElementById('ttw-api-model');
-        if (modelSelectContainer && modelSelectContainer.style.display !== 'none' && modelSelect?.value) {
-            AppState.settings.customApiModel = modelSelect.value;
-            if (modelInput) modelInput.value = modelSelect.value;
-        } else {
-            AppState.settings.customApiModel = modelInput?.value || 'gemini-2.5-flash';
+        const mainModelSelectContainer = document.getElementById('ttw-model-select-container-main');
+        const mainModelSelect = document.getElementById('ttw-model-select-main');
+        const mainModelInput = document.getElementById('ttw-api-model-main') || document.getElementById('ttw-api-model');
+        if (mainModelSelectContainer && mainModelSelectContainer.style.display !== 'none' && mainModelSelect?.value) {
+            mainApi.model = mainModelSelect.value;
+            if (mainModelInput) mainModelInput.value = mainModelSelect.value;
         }
+
+        const directorModelSelectContainer = document.getElementById('ttw-model-select-container-director');
+        const directorModelSelect = document.getElementById('ttw-model-select-director');
+        const directorModelInput = document.getElementById('ttw-api-model-director');
+        if (directorModelSelectContainer && directorModelSelectContainer.style.display !== 'none' && directorModelSelect?.value) {
+            directorApi.model = directorModelSelect.value;
+            if (directorModelInput) directorModelInput.value = directorModelSelect.value;
+        }
+
+        AppState.settings.mainApi = normalizeApiConfig(mainApi, AppState.settings.mainApi);
+        AppState.settings.directorApi = normalizeApiConfig(directorApi, AppState.settings.directorApi);
+        AppState.settings.directorEnabled = document.getElementById('ttw-director-enabled')?.checked ?? AppState.settings.directorEnabled ?? true;
+        AppState.settings.directorAutoFallbackToMain = document.getElementById('ttw-director-fallback-main')?.checked ?? AppState.settings.directorAutoFallbackToMain ?? true;
+        AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
+
+        // Backward compatibility mirror fields
+        AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
+        AppState.settings.customApiKey = AppState.settings.mainApi.apiKey;
+        AppState.settings.customApiEndpoint = AppState.settings.mainApi.endpoint;
+        AppState.settings.customApiModel = AppState.settings.mainApi.model;
+        AppState.settings.customApiMaxTokens = AppState.settings.mainApi.maxTokens;
 
         try {
             localStorage.setItem('storyweaverTxtToWorldbookSettings', JSON.stringify(AppState.settings));
@@ -61,6 +116,39 @@ export function createSettingsPersistenceService(deps) {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 AppState.settings = { ...defaultSettings, ...parsed };
+
+                const migratedMainApi = normalizeApiConfig(
+                    parsed.mainApi,
+                    {
+                        provider: parsed.customApiProvider || defaultSettings.mainApi?.provider || 'openai-compatible',
+                        apiKey: parsed.customApiKey || defaultSettings.mainApi?.apiKey || '',
+                        endpoint: parsed.customApiEndpoint || defaultSettings.mainApi?.endpoint || '',
+                        model: parsed.customApiModel || defaultSettings.mainApi?.model || 'gemini-2.5-flash',
+                        maxTokens: parsed.customApiMaxTokens || defaultSettings.mainApi?.maxTokens || 2048,
+                    }
+                );
+                const migratedDirectorApi = normalizeApiConfig(
+                    parsed.directorApi,
+                    {
+                        provider: migratedMainApi.provider,
+                        apiKey: '',
+                        endpoint: migratedMainApi.endpoint,
+                        model: migratedMainApi.model,
+                        maxTokens: migratedMainApi.maxTokens,
+                    }
+                );
+                AppState.settings.mainApi = migratedMainApi;
+                AppState.settings.directorApi = migratedDirectorApi;
+                AppState.settings.directorEnabled = parsed.directorEnabled ?? true;
+                AppState.settings.directorAutoFallbackToMain = parsed.directorAutoFallbackToMain ?? true;
+                AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
+
+                // Backward compatibility mirror fields
+                AppState.settings.customApiProvider = migratedMainApi.provider;
+                AppState.settings.customApiKey = migratedMainApi.apiKey;
+                AppState.settings.customApiEndpoint = migratedMainApi.endpoint;
+                AppState.settings.customApiModel = migratedMainApi.model;
+                AppState.settings.customApiMaxTokens = migratedMainApi.maxTokens;
 
                 // 迁移旧默认配置到更稳妥的新默认（仅迁移历史默认值，不覆盖用户自定义值）
                 if (parsed.chunkSize === 15000) {
@@ -99,7 +187,8 @@ export function createSettingsPersistenceService(deps) {
 
         updateSettingsUI();
         updateChapterRegexUI();
-        handleProviderChange();
+        handleProviderChange('main');
+        handleProviderChange('director');
     }
 
     return {

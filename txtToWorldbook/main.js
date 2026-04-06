@@ -91,6 +91,7 @@ import { createMemoryQueueActionsService } from './services/memoryQueueActionsSe
 import { createProcessingStateService } from './services/processingStateService.js';
 import { createRepairService } from './services/repairService.js';
 import { createWorldbookRuntimeService } from './services/worldbookRuntimeService.js';
+import { createDirectorService } from './services/directorService.js';
 import { createAppContext } from './app/createApp.js';
 import { createCoreServices } from './app/createCoreServices.js';
 import { createFeatureServicesConfig } from './app/createFeatureServicesConfig.js';
@@ -716,6 +717,7 @@ const {
     callCustomAPI,
     handleFetchModelList,
     handleQuickTestModel,
+    callDirectorAPI,
     callAPI,
 } = apiService;
 const {
@@ -773,6 +775,14 @@ const {
     handleRepairSingleMemory,
     handleRepairMemoryWithSplit,
 } = repairService;
+const directorService = createDirectorService({
+    AppState,
+    Logger,
+    callDirectorAPI,
+    getLanguagePrefix,
+    debugLog,
+    updateStreamContent,
+});
 const memoryQueueActionsService = createMemoryQueueActionsService({
     AppState,
     ErrorHandler,
@@ -891,6 +901,7 @@ const {
     testChapterRegex,
     handleUseTavernApiChange,
     handleProviderChange,
+    switchApiTab,
     updateModelStatus,
     handleFetchModels,
     handleQuickTest,
@@ -1122,6 +1133,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     updateSettingsUI,
     updateChapterRegexUI,
     handleProviderChange,
+    switchApiTab,
     ensureModalStyles,
     bindModalEvents: () => _bindModalEvents(),
     loadSavedSettings: () => loadSavedSettings(),
@@ -1272,6 +1284,8 @@ open = shellRuntimeBindings.open;
         setCategoryDefaultConfig,
         MemoryHistoryDB,
     }));
+    publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
+    publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
     window[STORYWEAVER_TTW_API_KEY] = publicApi;
 
 	Logger.info('Module', '📚 StoryWeaver TxtToWorldbook 已加载');

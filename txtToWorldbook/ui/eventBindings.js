@@ -220,6 +220,7 @@ export function bindSettingEvents(deps = {}) {
         saveCurrentSettings,
         handleUseTavernApiChange,
         handleProviderChange,
+        switchApiTab,
         handleFetchModels,
         handleQuickTest,
         rechunkMemories,
@@ -238,10 +239,20 @@ export function bindSettingEvents(deps = {}) {
 
     EventDelegate.batchOn(modalContainer, {
         '#ttw-use-tavern-api': { change: () => { handleUseTavernApiChange(); saveCurrentSettings(); } },
-        '#ttw-api-provider': { change: () => { handleProviderChange(); saveCurrentSettings(); } },
-        '#ttw-model-select': { change: (e) => { if (e.target.value) { document.getElementById('ttw-api-model').value = e.target.value; saveCurrentSettings(); } } },
-        '#ttw-fetch-models': { click: handleFetchModels },
-        '#ttw-quick-test': { click: handleQuickTest },
+        '#ttw-api-provider': { change: () => { handleProviderChange('main'); saveCurrentSettings(); } },
+        '#ttw-api-provider-main': { change: () => { handleProviderChange('main'); saveCurrentSettings(); } },
+        '#ttw-api-provider-director': { change: () => { handleProviderChange('director'); saveCurrentSettings(); } },
+        '#ttw-model-select': { change: (e) => { if (e.target.value) { const input = document.getElementById('ttw-api-model-main') || document.getElementById('ttw-api-model'); if (input) input.value = e.target.value; saveCurrentSettings(); } } },
+        '#ttw-model-select-main': { change: (e) => { if (e.target.value) { const input = document.getElementById('ttw-api-model-main') || document.getElementById('ttw-api-model'); if (input) input.value = e.target.value; saveCurrentSettings(); } } },
+        '#ttw-model-select-director': { change: (e) => { if (e.target.value) { const input = document.getElementById('ttw-api-model-director'); if (input) input.value = e.target.value; saveCurrentSettings(); } } },
+        '#ttw-fetch-models': { click: () => handleFetchModels('main') },
+        '#ttw-quick-test': { click: () => handleQuickTest('main') },
+        '#ttw-fetch-models-main': { click: () => handleFetchModels('main') },
+        '#ttw-quick-test-main': { click: () => handleQuickTest('main') },
+        '#ttw-fetch-models-director': { click: () => handleFetchModels('director') },
+        '#ttw-quick-test-director': { click: () => handleQuickTest('director') },
+        '#ttw-api-tab-main': { click: () => switchApiTab?.('main') },
+        '#ttw-api-tab-director': { click: () => switchApiTab?.('director') },
         '#ttw-parallel-enabled': { change: (e) => { AppState.config.parallel.enabled = e.target.checked; saveCurrentSettings(); } },
         '#ttw-parallel-concurrency': { change: (e) => { AppState.config.parallel.concurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3)); e.target.value = AppState.config.parallel.concurrency; saveCurrentSettings(); } },
         '#ttw-parallel-mode': { change: (e) => { AppState.config.parallel.mode = e.target.value; saveCurrentSettings(); } },
@@ -257,12 +268,12 @@ export function bindSettingEvents(deps = {}) {
         '.ttw-reset-prompt': { click: (e, btn) => { const type = btn.getAttribute('data-type'); const textarea = document.getElementById(`ttw-${type}-prompt`); if (textarea) { textarea.value = ''; saveCurrentSettings(); } } }
     });
 
-    ['ttw-api-key', 'ttw-api-endpoint', 'ttw-api-model', 'ttw-api-max-tokens', 'ttw-chunk-size', 'ttw-api-timeout'].forEach((id) => {
+    ['ttw-api-key', 'ttw-api-endpoint', 'ttw-api-model', 'ttw-api-max-tokens', 'ttw-chunk-size', 'ttw-api-timeout', 'ttw-api-key-main', 'ttw-api-endpoint-main', 'ttw-api-model-main', 'ttw-api-max-tokens-main', 'ttw-api-key-director', 'ttw-api-endpoint-director', 'ttw-api-model-director', 'ttw-api-max-tokens-director'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
 
-    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion'].forEach((id) => {
+    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion', 'ttw-director-enabled', 'ttw-director-fallback-main', 'ttw-director-run-every-turn'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });

@@ -312,6 +312,19 @@ export function ensureModalStyles() {
             background: rgba(10, 132, 255, 0.08);
             border-color: rgba(10, 132, 255, 0.25);
         }
+
+        .ttw-api-tab.active {
+            background: linear-gradient(135deg, var(--ttw-accent-blue), #0077ed);
+            border-color: var(--ttw-accent-blue);
+            color: #fff;
+        }
+
+        .ttw-api-card {
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.16);
+        }
         
         /* --- 复选框样式 --- */
         .ttw-checkbox-label {
@@ -743,6 +756,76 @@ export function ensureModalStyles() {
         .ttw-script-empty {
             color: var(--ttw-text-muted);
             font-size: 12px;
+        }
+
+        .ttw-beat-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .ttw-beat-item {
+            border: 1px solid var(--ttw-border-color);
+            border-radius: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .ttw-beat-item.is-active {
+            border-color: rgba(10, 132, 255, 0.6);
+            background: rgba(10, 132, 255, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.2);
+        }
+
+        .ttw-beat-item-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .ttw-beat-id {
+            font-size: 11px;
+            color: var(--ttw-text-secondary);
+            font-weight: 600;
+        }
+
+        .ttw-beat-active {
+            font-size: 11px;
+            color: var(--ttw-accent-blue);
+            background: rgba(10, 132, 255, 0.16);
+            border-radius: 10px;
+            padding: 1px 8px;
+        }
+
+        .ttw-beat-summary {
+            font-size: 13px;
+            color: var(--ttw-text-primary);
+            line-height: 1.55;
+            margin-bottom: 4px;
+        }
+
+        .ttw-beat-exit {
+            font-size: 11px;
+            color: var(--ttw-text-muted);
+            line-height: 1.5;
+        }
+
+        .ttw-beat-tags {
+            margin-top: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .ttw-beat-tag {
+            font-size: 10px;
+            color: var(--ttw-text-secondary);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 10px;
+            padding: 0 6px;
+            line-height: 1.7;
         }
         
         /* --- 按钮样式 --- */

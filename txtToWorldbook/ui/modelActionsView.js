@@ -6,8 +6,10 @@ export function createModelActionsView(deps = {}) {
         Logger,
     } = deps;
 
-    function updateModelStatus(text, type) {
-        const statusEl = document.getElementById('ttw-model-status');
+    function updateModelStatus(text, type, target = 'main') {
+        const suffix = target === 'director' ? 'director' : 'main';
+        const statusEl = document.getElementById(`ttw-model-status-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-model-status') : null);
         if (!statusEl) return;
         statusEl.textContent = text;
         statusEl.className = 'ttw-model-status';
@@ -16,11 +18,16 @@ export function createModelActionsView(deps = {}) {
         }
     }
 
-    async function handleFetchModels() {
-        const fetchBtn = document.getElementById('ttw-fetch-models');
-        const modelSelect = document.getElementById('ttw-model-select');
-        const modelSelectContainer = document.getElementById('ttw-model-select-container');
-        const modelInputContainer = document.getElementById('ttw-model-input-container');
+    async function handleFetchModels(target = 'main') {
+        const suffix = target === 'director' ? 'director' : 'main';
+        const fetchBtn = document.getElementById(`ttw-fetch-models-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-fetch-models') : null);
+        const modelSelect = document.getElementById(`ttw-model-select-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-model-select') : null);
+        const modelSelectContainer = document.getElementById(`ttw-model-select-container-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-model-select-container') : null);
+        const modelInputContainer = document.getElementById(`ttw-model-input-container-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-model-input-container') : null);
 
         saveCurrentSettings();
 
@@ -28,13 +35,13 @@ export function createModelActionsView(deps = {}) {
             fetchBtn.disabled = true;
             fetchBtn.textContent = '⏳ 拉取中...';
         }
-        updateModelStatus('正在拉取模型列表...', 'loading');
+        updateModelStatus('正在拉取模型列表...', 'loading', suffix);
 
         try {
-            const models = await handleFetchModelList();
+            const models = await handleFetchModelList(suffix);
 
             if (models.length === 0) {
-                updateModelStatus('❌ 未拉取到模型', 'error');
+                updateModelStatus('❌ 未拉取到模型', 'error', suffix);
                 if (modelInputContainer) modelInputContainer.style.display = 'block';
                 if (modelSelectContainer) modelSelectContainer.style.display = 'none';
                 return;
@@ -53,20 +60,22 @@ export function createModelActionsView(deps = {}) {
             if (modelInputContainer) modelInputContainer.style.display = 'none';
             if (modelSelectContainer) modelSelectContainer.style.display = 'block';
 
-            const currentModel = document.getElementById('ttw-api-model')?.value;
+            const currentModel = document.getElementById(`ttw-api-model-${suffix}`)?.value
+                || (suffix === 'main' ? document.getElementById('ttw-api-model')?.value : '');
             if (models.includes(currentModel)) {
                 if (modelSelect) modelSelect.value = currentModel;
             } else if (models.length > 0) {
                 if (modelSelect) modelSelect.value = models[0];
-                const modelInput = document.getElementById('ttw-api-model');
+                const modelInput = document.getElementById(`ttw-api-model-${suffix}`)
+                    || (suffix === 'main' ? document.getElementById('ttw-api-model') : null);
                 if (modelInput) modelInput.value = models[0];
                 saveCurrentSettings();
             }
 
-            updateModelStatus(`✅ 找到 ${models.length} 个模型`, 'success');
+            updateModelStatus(`✅ 找到 ${models.length} 个模型`, 'success', suffix);
         } catch (error) {
             Logger.error('API', '拉取模型列表失败:', error);
-            updateModelStatus(`❌ ${error.message}`, 'error');
+            updateModelStatus(`❌ ${error.message}`, 'error', suffix);
             if (modelInputContainer) modelInputContainer.style.display = 'block';
             if (modelSelectContainer) modelSelectContainer.style.display = 'none';
         } finally {
@@ -77,8 +86,10 @@ export function createModelActionsView(deps = {}) {
         }
     }
 
-    async function handleQuickTest() {
-        const testBtn = document.getElementById('ttw-quick-test');
+    async function handleQuickTest(target = 'main') {
+        const suffix = target === 'director' ? 'director' : 'main';
+        const testBtn = document.getElementById(`ttw-quick-test-${suffix}`)
+            || (suffix === 'main' ? document.getElementById('ttw-quick-test') : null);
 
         saveCurrentSettings();
 
@@ -86,17 +97,17 @@ export function createModelActionsView(deps = {}) {
             testBtn.disabled = true;
             testBtn.textContent = '⏳ 测试中...';
         }
-        updateModelStatus('正在测试连接...', 'loading');
+        updateModelStatus('正在测试连接...', 'loading', suffix);
 
         try {
-            const result = await handleQuickTestModel();
-            updateModelStatus(`✅ 测试成功 (${result.elapsed}ms)`, 'success');
+            const result = await handleQuickTestModel(suffix);
+            updateModelStatus(`✅ 测试成功 (${result.elapsed}ms)`, 'success', suffix);
             if (result.response) {
                 Logger.info('API', `快速测试响应: ${result.response?.substring(0, 100)}`);
             }
         } catch (error) {
             Logger.error('API', '快速测试失败:', error);
-            updateModelStatus(`❌ ${error.message}`, 'error');
+            updateModelStatus(`❌ ${error.message}`, 'error', suffix);
         } finally {
             if (testBtn) {
                 testBtn.disabled = false;

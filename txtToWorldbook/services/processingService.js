@@ -142,10 +142,19 @@
             memory.chapterOutlineError = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { goal: '', flow: '', keyNodes: [] };
+            memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
         }
         if (!Array.isArray(memory.chapterScript.keyNodes)) {
             memory.chapterScript.keyNodes = [];
+        }
+        if (!Array.isArray(memory.chapterScript.beats)) {
+            memory.chapterScript.beats = [];
+        }
+        if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
+            memory.chapterCurrentBeatIndex = 0;
+        }
+        if (!memory.directorDecision || typeof memory.directorDecision !== 'object') {
+            memory.directorDecision = null;
         }
         if (typeof memory.chapterOpeningPreview !== 'string') {
             memory.chapterOpeningPreview = '';
@@ -156,6 +165,22 @@
         if (typeof memory.chapterOpeningError !== 'string') {
             memory.chapterOpeningError = '';
         }
+    }
+
+    function normalizeBeatItem(rawBeat, idx, fallbackSummary = '') {
+        const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
+        const summary = String(source.summary || source.event || source.description || fallbackSummary || '').trim();
+        const exitCondition = String(source.exitCondition || source.exit_condition || '').trim();
+        const tags = Array.isArray(source.tags)
+            ? source.tags.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 4)
+            : [];
+
+        return {
+            id: String(source.id || `b${idx + 1}`).trim() || `b${idx + 1}`,
+            summary: summary || `事件点${idx + 1}`,
+            exitCondition: exitCondition || '等待用户行动或关键互动完成',
+            tags,
+        };
     }
 
     function extractJsonObject(text) {
@@ -207,16 +232,27 @@
         const keyNodes = Array.isArray(script.keyNodes)
             ? script.keyNodes.map((n) => String(n || '').trim()).filter(Boolean).slice(0, 3)
             : [];
+        const rawBeats = Array.isArray(script.beats)
+            ? script.beats
+            : (Array.isArray(script.lightBeats) ? script.lightBeats : []);
 
         const flow = String(script.flow || '').trim() || outline;
         const goal = String(script.goal || '').trim() || '围绕本章核心冲突推进剧情并保持叙事连续。';
+
+        const fallbackNodes = keyNodes.length > 0
+            ? keyNodes
+            : (outline ? outline.split(/[，,。]/).map((n) => n.trim()).filter(Boolean).slice(0, 4) : []);
+        const beats = rawBeats.length > 0
+            ? rawBeats.map((beat, idx) => normalizeBeatItem(beat, idx)).slice(0, 8)
+            : fallbackNodes.map((node, idx) => normalizeBeatItem({ summary: node }, idx, node));
 
         return {
             goal,
             flow,
             keyNodes: keyNodes.length > 0
                 ? keyNodes
-                : (outline ? outline.split(/[，,。]/).map((n) => n.trim()).filter(Boolean).slice(0, 3) : []),
+                : fallbackNodes.slice(0, 3),
+            beats,
         };
     }
 
@@ -243,7 +279,7 @@
         const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
         const previousOutline = previousMemory?.chapterOutline ? `\n上一章摘要：${previousMemory.chapterOutline}` : '';
 
-        return `${getLanguagePrefix()}你是小说章节分析助手。请基于以下内容输出本章摘要和简版小章剧本。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 为简版剧本，包含 goal、flow、keyNodes(最多3条)。\n5) 禁止剧透后续章节。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
+        return `${getLanguagePrefix()}你是小说章节分析助手。请基于以下内容输出本章摘要和“轻节拍”小章剧本。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 必须包含 goal、flow、keyNodes(最多3条) 与 beats(5-8个轻节拍)。\n5) beats 每项包含 id、summary、exitCondition、tags。\n6) 禁止剧透后续章节。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."],\n    "beats": [\n      { "id": "b1", "summary": "...", "exitCondition": "...", "tags": ["...", "..."] }\n    ]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
     }
 
     async function generateChapterAssets(index, options = {}) {
@@ -277,6 +313,15 @@
                 const assets = parseChapterAssetsResponse(response, memory, index);
                 memory.chapterOutline = assets.outline;
                 memory.chapterScript = assets.script;
+                const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
+                if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
+                    memory.chapterCurrentBeatIndex = 0;
+                }
+                if (beatCount > 0) {
+                    memory.chapterCurrentBeatIndex = Math.max(0, Math.min(memory.chapterCurrentBeatIndex, beatCount - 1));
+                } else {
+                    memory.chapterCurrentBeatIndex = 0;
+                }
                 memory.chapterOutlineStatus = 'done';
                 memory.chapterOutlineError = '';
                 updateStreamContent(`🧭 [第${index + 1}章] 大纲生成完成\n`);

@@ -10,6 +10,31 @@ export function createApiService(deps = {}) {
         applyMessageChain,
     } = deps;
 
+    function getApiConfig(target = 'main') {
+        if (target === 'director') {
+            const fromSettings = AppState.settings.directorApi || {};
+            return {
+                provider: fromSettings.provider || 'openai-compatible',
+                apiKey: fromSettings.apiKey || '',
+                endpoint: fromSettings.endpoint || '',
+                model: fromSettings.model || 'gemini-2.5-flash',
+                maxTokens: normalizeMaxTokens(fromSettings.maxTokens, 2048),
+            };
+        }
+
+        const fromSettings = AppState.settings.mainApi || {};
+        return {
+            provider: fromSettings.provider || AppState.settings.customApiProvider || 'openai-compatible',
+            apiKey: fromSettings.apiKey || AppState.settings.customApiKey || '',
+            endpoint: fromSettings.endpoint || AppState.settings.customApiEndpoint || '',
+            model: fromSettings.model || AppState.settings.customApiModel || 'gemini-2.5-flash',
+            maxTokens: normalizeMaxTokens(
+                fromSettings.maxTokens ?? AppState.settings.customApiMaxTokens,
+                2048
+            ),
+        };
+    }
+
     function normalizeMaxTokens(value, fallback = 2048) {
         const parsed = parseInt(value, 10);
         if (!Number.isFinite(parsed)) return fallback;
@@ -77,12 +102,13 @@ export function createApiService(deps = {}) {
         }
     }
 
-    function buildCustomApiRequest(messages) {
-        const provider = AppState.settings.customApiProvider;
-        const apiKey = AppState.settings.customApiKey;
-        const endpoint = AppState.settings.customApiEndpoint;
-        const model = AppState.settings.customApiModel;
-        const customApiMaxTokens = normalizeMaxTokens(AppState.settings.customApiMaxTokens, 2048);
+    function buildCustomApiRequest(messages, target = 'main') {
+        const config = getApiConfig(target);
+        const provider = config.provider;
+        const apiKey = config.apiKey;
+        const endpoint = config.endpoint;
+        const model = config.model;
+        const customApiMaxTokens = normalizeMaxTokens(config.maxTokens, 2048);
         const openaiMessages = messages.map((m) => ({ role: m.role, content: m.content }));
         let requestUrl = '';
         let requestOptions = {};
@@ -196,18 +222,19 @@ export function createApiService(deps = {}) {
         return data.choices?.[0]?.message?.content || '';
     }
 
-    async function callCustomAPI(messages) {
+    async function callCustomAPI(messages, target = 'main') {
         const maxRetries = 3;
         const timeout = AppState.settings.apiTimeout || 120000;
-        const requestConfig = buildCustomApiRequest(messages);
+        const requestConfig = buildCustomApiRequest(messages, target);
         const combinedPrompt = messagesToString(messages);
 
-        updateStreamContent(`\n📤 发送请求到自定义API (${requestConfig.provider}, ${messages.length}条消息)...\n`);
-        debugLog(`自定义API开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${combinedPrompt.length}`);
+        const tag = target === 'director' ? '导演API' : '主API';
+        updateStreamContent(`\n📤 发送请求到${tag} (${requestConfig.provider}, ${messages.length}条消息)...\n`);
+        debugLog(`${tag}开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${combinedPrompt.length}`);
 
         try {
             return await APICaller.withRetry(async () => {
-                debugLog(`自定义API请求目标: ${requestConfig.requestUrl.substring(0, 80)}...`);
+                debugLog(`${tag}请求目标: ${requestConfig.requestUrl.substring(0, 80)}...`);
 
                 if (requestConfig.isStreamRequest) {
                     const result = await APICaller.requestStream(requestConfig.requestUrl, {
@@ -215,7 +242,7 @@ export function createApiService(deps = {}) {
                         timeout,
                         inactivityTimeout: Math.min(timeout, 120000),
                     });
-                    debugLog(`自定义API流式读取完成, 结果长度=${result.length}字符`);
+                    debugLog(`${tag}流式读取完成, 结果长度=${result.length}字符`);
                     updateStreamContent(`📥 收到流式响应 (${result.length}字符)\n`);
                     return result;
                 }
@@ -224,9 +251,9 @@ export function createApiService(deps = {}) {
                     ...requestConfig.requestOptions,
                     timeout,
                 });
-                debugLog('自定义API JSON解析完成, 开始提取内容');
+                debugLog(`${tag} JSON解析完成, 开始提取内容`);
                 const result = extractCustomApiText(requestConfig.provider, data);
-                debugLog(`自定义API提取完成, 结果长度=${result.length}字符`);
+                debugLog(`${tag}提取完成, 结果长度=${result.length}字符`);
                 updateStreamContent(`📥 收到响应 (${result.length}字符)\n`);
                 return result;
             }, {
@@ -239,7 +266,7 @@ export function createApiService(deps = {}) {
             });
         } catch (error) {
             const normalized = APICaller.handleError(error, '自定义API');
-            debugLog(`自定义API出错: ${error.name || 'Error'} - ${error.message}`);
+            debugLog(`${tag}出错: ${error.name || 'Error'} - ${error.message}`);
             if (normalized.type === 'timeout') {
                 throw new Error(`API请求超时 (${timeout / 1000}秒)`);
             }
@@ -247,8 +274,9 @@ export function createApiService(deps = {}) {
         }
     }
 
-    async function handleFetchModelList() {
-        const endpoint = AppState.settings.customApiEndpoint || '';
+    async function handleFetchModelList(target = 'main') {
+        const config = getApiConfig(target);
+        const endpoint = config.endpoint || '';
         if (!endpoint) {
             throw new Error('请先设置 API Endpoint');
         }
@@ -267,8 +295,8 @@ export function createApiService(deps = {}) {
         }
 
         const headers = { 'Content-Type': 'application/json' };
-        if (AppState.settings.customApiKey) {
-            headers.Authorization = `Bearer ${AppState.settings.customApiKey}`;
+        if (config.apiKey) {
+            headers.Authorization = `Bearer ${config.apiKey}`;
         }
 
         Logger.info('API', '拉取模型列表: ' + modelsUrl);
@@ -288,9 +316,10 @@ export function createApiService(deps = {}) {
         return models;
     }
 
-    async function handleQuickTestModel() {
-        const endpoint = AppState.settings.customApiEndpoint || '';
-        const model = AppState.settings.customApiModel || '';
+    async function handleQuickTestModel(target = 'main') {
+        const config = getApiConfig(target);
+        const endpoint = config.endpoint || '';
+        const model = config.model || '';
 
         if (!endpoint) {
             throw new Error('请先设置 API Endpoint');
@@ -313,12 +342,12 @@ export function createApiService(deps = {}) {
         }
 
         const headers = { 'Content-Type': 'application/json' };
-        if (AppState.settings.customApiKey) {
-            headers.Authorization = `Bearer ${AppState.settings.customApiKey}`;
+        if (config.apiKey) {
+            headers.Authorization = `Bearer ${config.apiKey}`;
         }
 
         Logger.info('API', `快速测试: ${requestUrl} 模型: ${model}`);
-        const testMaxTokens = Math.min(normalizeMaxTokens(AppState.settings.customApiMaxTokens, 1024), 1024);
+        const testMaxTokens = Math.min(normalizeMaxTokens(config.maxTokens, 1024), 1024);
 
         const startTime = Date.now();
         const data = await APICaller.getJSON(requestUrl, {
@@ -386,13 +415,41 @@ export function createApiService(deps = {}) {
         };
     }
 
-    async function callAPI(prompt, taskId = null) {
-        const messages = applyMessageChain(prompt);
+    async function callTargetPrompt(prompt, taskId = null, target = 'main') {
+        const messages = target === 'main'
+            ? applyMessageChain(prompt)
+            : [{ role: 'user', content: String(prompt || '') }];
         debugLog(`callAPI: 消息链转换完成, ${messages.length}条消息, roles=[${messages.map((m) => m.role).join(',')}]`);
-        if (AppState.settings.useTavernApi) {
+        if (target === 'main' && AppState.settings.useTavernApi) {
             return callSillyTavernAPI(messages, taskId);
         }
-        return callCustomAPI(messages);
+        return callCustomAPI(messages, target);
+    }
+
+    async function callAPI(prompt, taskId = null) {
+        return callTargetPrompt(prompt, taskId, 'main');
+    }
+
+    async function callMainAPI(prompt, taskId = null) {
+        return callTargetPrompt(prompt, taskId, 'main');
+    }
+
+    async function callDirectorAPI(prompt, taskId = null) {
+        try {
+            return await callTargetPrompt(prompt, taskId, 'director');
+        } catch (error) {
+            const fallbackEnabled = AppState.settings.directorAutoFallbackToMain !== false;
+            if (!fallbackEnabled) {
+                throw error;
+            }
+            Logger.warn('API', `导演API失败，已回退主AI: ${error.message}`);
+            updateStreamContent(`⚠️ 导演API失败，已自动回退主AI\n`);
+            const fallbackMessages = [{ role: 'user', content: String(prompt || '') }];
+            if (AppState.settings.useTavernApi) {
+                return callSillyTavernAPI(fallbackMessages, taskId);
+            }
+            return callCustomAPI(fallbackMessages, 'main');
+        }
     }
 
     return {
@@ -400,6 +457,8 @@ export function createApiService(deps = {}) {
         callCustomAPI,
         handleFetchModelList,
         handleQuickTestModel,
+        callMainAPI,
+        callDirectorAPI,
         callAPI,
     };
 }

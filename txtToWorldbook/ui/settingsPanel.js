@@ -1,42 +1,67 @@
 ﻿function buildCustomApiSectionHtml() {
+    const buildApiConfigCard = (target, title) => `
+<div class="ttw-api-card" data-api-card="${target}" style="display:${target === 'main' ? 'block' : 'none'};">
+    <div style="font-weight:bold;color:#8bc5ff;margin-bottom:10px;">${title}</div>
+    <div class="ttw-setting-item">
+        <label>API提供商</label>
+        <select id="ttw-api-provider-${target}">
+            <option value="openai-compatible">OpenAI兼容</option>
+            <option value="gemini">Gemini</option>
+            <option value="anthropic">Anthropic</option>
+        </select>
+    </div>
+    <div class="ttw-setting-item">
+        <label>API Key <span style="opacity:0.6;font-size:11px;">(本地模型可留空)</span></label>
+        <input type="password" id="ttw-api-key-${target}" placeholder="输入API Key">
+    </div>
+    <div class="ttw-setting-item" id="ttw-endpoint-container-${target}" style="display:none;">
+        <label>API Endpoint <span style="opacity:0.6;font-size:11px;">(留空使用默认URL)</span></label>
+        <input type="text" id="ttw-api-endpoint-${target}" placeholder="可选，自定义API地址">
+    </div>
+    <div class="ttw-setting-item" id="ttw-model-input-container-${target}">
+        <label>模型</label>
+        <input type="text" id="ttw-api-model-${target}" value="gemini-2.5-flash" placeholder="模型名称">
+    </div>
+    <div class="ttw-setting-item" id="ttw-max-tokens-container-${target}">
+        <label>Max Tokens <span style="opacity:0.6;font-size:11px;">(OpenAI兼容建议 1024-4096)</span></label>
+        <input type="number" id="ttw-api-max-tokens-${target}" value="2048" min="1" max="8192" class="ttw-input" placeholder="输出token上限">
+    </div>
+    <div class="ttw-setting-item" id="ttw-model-select-container-${target}" style="display:none;">
+        <label>模型</label>
+        <select id="ttw-model-select-${target}">
+            <option value="">-- 请先拉取模型列表 --</option>
+        </select>
+    </div>
+    <div class="ttw-model-actions" id="ttw-model-actions-${target}" style="display:none;">
+        <button id="ttw-fetch-models-${target}" class="ttw-btn ttw-btn-small" data-api-target="${target}">🔄 拉取模型</button>
+        <button id="ttw-quick-test-${target}" class="ttw-btn ttw-btn-small" data-api-target="${target}">⚡ 快速测试</button>
+        <span id="ttw-model-status-${target}" class="ttw-model-status"></span>
+    </div>
+</div>`;
+
     return `
 <div id="ttw-custom-api-section" style="display:none;margin-bottom:16px;padding:12px;border:1px solid rgba(52,152,219,0.3);border-radius:8px;background:rgba(52,152,219,0.1);">
-<div style="font-weight:bold;color:#3498db;margin-bottom:12px;">🔧 自定义API配置</div>
-<div class="ttw-setting-item">
-<label>API提供商</label>
-<select id="ttw-api-provider">
-<option value="openai-compatible">OpenAI兼容</option>
-<option value="gemini">Gemini</option>
-<option value="anthropic">Anthropic</option>
-</select>
+<div style="font-weight:bold;color:#3498db;margin-bottom:12px;">🔧 AI路由配置</div>
+<div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button type="button" id="ttw-api-tab-main" class="ttw-btn ttw-btn-small ttw-api-tab active" data-api-tab="main">主AI</button>
+    <button type="button" id="ttw-api-tab-director" class="ttw-btn ttw-btn-small ttw-api-tab" data-api-tab="director">导演AI</button>
 </div>
-        <div class="ttw-setting-item">
-            <label>API Key <span style="opacity:0.6;font-size:11px;">(本地模型可留空)</span></label>
-            <input type="password" id="ttw-api-key" placeholder="输入API Key">
-        </div>
-<div class="ttw-setting-item" id="ttw-endpoint-container" style="display:none;">
-<label>API Endpoint <span style="opacity:0.6;font-size:11px;">(留空使用默认URL)</span></label>
-<input type="text" id="ttw-api-endpoint" placeholder="可选，自定义API地址">
+<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+    <label class="ttw-checkbox-label" style="margin:0;">
+        <input type="checkbox" id="ttw-director-enabled" checked>
+        <span>启用导演裁判（每回合运行）</span>
+    </label>
+    <label class="ttw-checkbox-label" style="margin:0;">
+        <input type="checkbox" id="ttw-director-fallback-main" checked>
+        <span>导演API失败时自动回退主AI</span>
+    </label>
+    <label class="ttw-checkbox-label" style="margin:0;">
+        <input type="checkbox" id="ttw-director-run-every-turn" checked>
+        <span>每回合运行导演判定</span>
+    </label>
 </div>
-        <div class="ttw-setting-item" id="ttw-model-input-container">
-            <label>模型</label>
-            <input type="text" id="ttw-api-model" value="gemini-2.5-flash" placeholder="模型名称">
-        </div>
-        <div class="ttw-setting-item" id="ttw-max-tokens-container">
-            <label>Max Tokens <span style="opacity:0.6;font-size:11px;">(OpenAI兼容建议 1024-4096)</span></label>
-            <input type="number" id="ttw-api-max-tokens" value="2048" min="1" max="8192" class="ttw-input" placeholder="输出token上限">
-        </div>
-        <div class="ttw-setting-item" id="ttw-model-select-container" style="display:none;">
-            <label>模型</label>
-            <select id="ttw-model-select">
-                <option value="">-- 请先拉取模型列表 --</option>
-            </select>
-        </div>
-        <div class="ttw-model-actions" id="ttw-model-actions" style="display:none;">
-            <button id="ttw-fetch-models" class="ttw-btn ttw-btn-small">🔄 拉取模型</button>
-            <button id="ttw-quick-test" class="ttw-btn ttw-btn-small">⚡ 快速测试</button>
-            <span id="ttw-model-status" class="ttw-model-status"></span>
-        </div>
+${buildApiConfigCard('main', '🧠 主AI配置')}
+${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
@@ -587,20 +612,59 @@ export function hydrateSettingsFromState(deps = {}) {
         }
     }
 
-    const apiProviderEl = document.getElementById('ttw-api-provider');
-    if (apiProviderEl) apiProviderEl.value = AppState.settings.customApiProvider;
+    const mainApi = AppState.settings.mainApi || {
+        provider: AppState.settings.customApiProvider,
+        apiKey: AppState.settings.customApiKey,
+        endpoint: AppState.settings.customApiEndpoint,
+        model: AppState.settings.customApiModel,
+        maxTokens: AppState.settings.customApiMaxTokens,
+    };
+    const directorApi = AppState.settings.directorApi || {
+        provider: mainApi.provider || 'openai-compatible',
+        apiKey: '',
+        endpoint: mainApi.endpoint || '',
+        model: mainApi.model || 'gemini-2.5-flash',
+        maxTokens: mainApi.maxTokens || 2048,
+    };
 
-    const apiKeyEl = document.getElementById('ttw-api-key');
-    if (apiKeyEl) apiKeyEl.value = AppState.settings.customApiKey;
+    const apiProviderMainEl = document.getElementById('ttw-api-provider-main');
+    if (apiProviderMainEl) apiProviderMainEl.value = mainApi.provider || 'openai-compatible';
 
-    const apiEndpointEl = document.getElementById('ttw-api-endpoint');
-    if (apiEndpointEl) apiEndpointEl.value = AppState.settings.customApiEndpoint;
+    const apiKeyMainEl = document.getElementById('ttw-api-key-main');
+    if (apiKeyMainEl) apiKeyMainEl.value = mainApi.apiKey || '';
 
-    const apiModelEl = document.getElementById('ttw-api-model');
-    if (apiModelEl) apiModelEl.value = AppState.settings.customApiModel;
+    const apiEndpointMainEl = document.getElementById('ttw-api-endpoint-main');
+    if (apiEndpointMainEl) apiEndpointMainEl.value = mainApi.endpoint || '';
 
-    const apiMaxTokensEl = document.getElementById('ttw-api-max-tokens');
-    if (apiMaxTokensEl) apiMaxTokensEl.value = AppState.settings.customApiMaxTokens || 2048;
+    const apiModelMainEl = document.getElementById('ttw-api-model-main');
+    if (apiModelMainEl) apiModelMainEl.value = mainApi.model || 'gemini-2.5-flash';
+
+    const apiMaxTokensMainEl = document.getElementById('ttw-api-max-tokens-main');
+    if (apiMaxTokensMainEl) apiMaxTokensMainEl.value = mainApi.maxTokens || 2048;
+
+    const apiProviderDirectorEl = document.getElementById('ttw-api-provider-director');
+    if (apiProviderDirectorEl) apiProviderDirectorEl.value = directorApi.provider || 'openai-compatible';
+
+    const apiKeyDirectorEl = document.getElementById('ttw-api-key-director');
+    if (apiKeyDirectorEl) apiKeyDirectorEl.value = directorApi.apiKey || '';
+
+    const apiEndpointDirectorEl = document.getElementById('ttw-api-endpoint-director');
+    if (apiEndpointDirectorEl) apiEndpointDirectorEl.value = directorApi.endpoint || '';
+
+    const apiModelDirectorEl = document.getElementById('ttw-api-model-director');
+    if (apiModelDirectorEl) apiModelDirectorEl.value = directorApi.model || 'gemini-2.5-flash';
+
+    const apiMaxTokensDirectorEl = document.getElementById('ttw-api-max-tokens-director');
+    if (apiMaxTokensDirectorEl) apiMaxTokensDirectorEl.value = directorApi.maxTokens || 2048;
+
+    const directorEnabledEl = document.getElementById('ttw-director-enabled');
+    if (directorEnabledEl) directorEnabledEl.checked = AppState.settings.directorEnabled !== false;
+
+    const directorFallbackEl = document.getElementById('ttw-director-fallback-main');
+    if (directorFallbackEl) directorFallbackEl.checked = AppState.settings.directorAutoFallbackToMain !== false;
+
+    const directorRunEveryTurnEl = document.getElementById('ttw-director-run-every-turn');
+    if (directorRunEveryTurnEl) directorRunEveryTurnEl.checked = AppState.settings.directorRunEveryTurn !== false;
 
     const forceChapterMarkerEl = document.getElementById('ttw-force-chapter-marker');
     if (forceChapterMarkerEl) forceChapterMarkerEl.checked = AppState.settings.forceChapterMarker;
@@ -613,7 +677,8 @@ export function hydrateSettingsFromState(deps = {}) {
     }
 
     if (typeof handleProviderChange === 'function') {
-        handleProviderChange();
+        handleProviderChange('main');
+        handleProviderChange('director');
     }
 
     const allowRecursionEl = document.getElementById('ttw-allow-recursion');

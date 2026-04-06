@@ -10,24 +10,29 @@ export function createSettingsActionsFacade(deps = {}) {
         apiModeView.handleUseTavernApiChange();
     }
 
-    function handleProviderChange() {
+    function handleProviderChange(target = 'main') {
         if (!apiModeView) return;
-        apiModeView.handleProviderChange();
+        apiModeView.handleProviderChange(target);
     }
 
-    function updateModelStatus(text, type) {
-        if (!modelActionsView) return;
-        modelActionsView.updateModelStatus(text, type);
+    function switchApiTab(target = 'main') {
+        if (!apiModeView || typeof apiModeView.switchApiTab !== 'function') return;
+        apiModeView.switchApiTab(target);
     }
 
-    async function handleFetchModels() {
+    function updateModelStatus(text, type, target = 'main') {
         if (!modelActionsView) return;
-        return modelActionsView.handleFetchModels();
+        modelActionsView.updateModelStatus(text, type, target);
     }
 
-    async function handleQuickTest() {
+    async function handleFetchModels(target = 'main') {
         if (!modelActionsView) return;
-        return modelActionsView.handleQuickTest();
+        return modelActionsView.handleFetchModels(target);
+    }
+
+    async function handleQuickTest(target = 'main') {
+        if (!modelActionsView) return;
+        return modelActionsView.handleQuickTest(target);
     }
 
     function showPromptPreview() {
@@ -38,6 +43,7 @@ export function createSettingsActionsFacade(deps = {}) {
     return {
         handleUseTavernApiChange,
         handleProviderChange,
+        switchApiTab,
         updateModelStatus,
         handleFetchModels,
         handleQuickTest,

@@ -10,19 +10,14 @@ function compactSpaces(text) {
 export function normalizeEntryName(name) {
     let value = compactSpaces(name);
 
-    // Remove common volume/version markers, including middle-position patterns like "胡大宝_卷2 普通配角".
+    // Remove common version/volume suffixes: _卷1, (卷二), -第3章, _v2, _新版, _重做.
     value = value
-        .replace(/[_\-\s]*[（(]?\s*(?:第?[零一二三四五六七八九十百千万\d]+\s*[卷章回部篇节]|[卷章回部篇节]\s*[零一二三四五六七八九十百千万\d]+)\s*[）)]?[_\-\s]*/giu, ' ')
-        .replace(/[_\-\s]*[（(]?\s*[Vv][Ee][Rr]?\s*[._-]*\d+\s*[）)]?[_\-\s]*/g, ' ')
         .replace(/[_\-\s]*第?[零一二三四五六七八九十百千万\d]+[卷章回部篇节]$/giu, '')
-        .replace(/[_\-\s]*[卷章回部篇节][零一二三四五六七八九十百千万\d]+$/giu, '')
         .replace(/[_\-\s]*卷[零一二三四五六七八九十百千万\d]+$/giu, '')
         .replace(/[(_\-\s]*[Vv][Ee][Rr]?[\s._-]*\d+$/g, '')
         .replace(/[(_\-\s]*(新版|旧版|重做版|重制版|修订版|临时版|备份|草稿|重复|改)$/giu, '')
         .replace(/[（(]\s*第?[零一二三四五六七八九十百千万\d]+[卷章回部篇节]\s*[）)]$/giu, '')
         .replace(/[（(]\s*(新版|旧版|重做版|重制版|修订版|临时版|备份|草稿|重复|改)\s*[）)]$/giu, '')
-        .replace(/[_\-]{2,}/g, '_')
-        .replace(/\s+/g, ' ')
         .trim();
 
     return value || compactSpaces(name);
@@ -31,7 +26,6 @@ export function normalizeEntryName(name) {
 export function normalizeNameForComparison(name) {
     return normalizeEntryName(name)
         .toLowerCase()
-        .replace(/[0-9零一二三四五六七八九十百千万]/g, '')
         .replace(/[\s`~!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?！￥…（）【】、；：‘’“”，。？《》·]/g, '');
 }
 

@@ -39,6 +39,9 @@
         },
         experience: {
             currentChapterIndex: 0,
+            currentBeatIndex: 0,
+            directorLastDecision: null,
+            directorLastDecisionAt: 0,
         },
         ui: {
             isMultiSelectMode: false,
