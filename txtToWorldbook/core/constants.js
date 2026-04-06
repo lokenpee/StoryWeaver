@@ -1,5 +1,5 @@
 ﻿export const DEFAULT_CHAPTER_REGEX = {
-    pattern: '第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇]',
+    pattern: '^[\\s\\u3000\\uFEFF]*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇][^\\n\\r]{0,80}',
     useCustomRegex: false
 };
 
@@ -233,7 +233,7 @@ export const defaultSettings = {
     directorRunEveryTurn: true,
     directorInjectionMode: 'loose',
     forceChapterMarker: true,
-    chapterRegexPattern: '第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇]',
+    chapterRegexPattern: '^[\\s\\u3000\\uFEFF]*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇][^\\n\\r]{0,80}',
     useCustomChapterRegex: false,
     enableChapterOutline: true,
     chapterOutlineMaxRetries: 1,

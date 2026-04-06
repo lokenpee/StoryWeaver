@@ -9,7 +9,25 @@ export function createChapterRegexView(deps = {}) {
     function detectChaptersWithRegex(content, regexPattern) {
         try {
             const regex = new RegExp(regexPattern, 'gm');
-            return [...content.matchAll(regex)];
+            const rawMatches = [...content.matchAll(regex)];
+            if (rawMatches.length === 0) return [];
+
+            const lineStartMatches = rawMatches.filter((m) => {
+                const index = m.index;
+                if (!Number.isInteger(index) || index < 0) return false;
+                if (index === 0) return true;
+
+                let cursor = index - 1;
+                while (cursor >= 0) {
+                    const ch = content[cursor];
+                    if (ch === '\n' || ch === '\r') return true;
+                    if (!(/[\s\u3000\uFEFF]/.test(ch))) return false;
+                    cursor -= 1;
+                }
+                return true;
+            });
+
+            return lineStartMatches.length > 0 ? lineStartMatches : rawMatches;
         } catch (e) {
             Logger.error('Regex', '正则表达式错误:', e);
             return [];

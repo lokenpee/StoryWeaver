@@ -7,6 +7,20 @@ export function createSettingsPersistenceService(deps) {
         handleProviderChange,
     } = deps;
 
+    const LEGACY_CHAPTER_PATTERNS = new Set([
+        '第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]',
+        '第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇]',
+    ]);
+    const RECOMMENDED_CHAPTER_PATTERN = '^[\\s\\u3000\\uFEFF]*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇][^\\n\\r]{0,80}';
+
+    function migrateLegacyChapterPattern(pattern) {
+        if (!pattern || typeof pattern !== 'string') return pattern;
+        if (LEGACY_CHAPTER_PATTERNS.has(pattern.trim())) {
+            return RECOMMENDED_CHAPTER_PATTERN;
+        }
+        return pattern;
+    }
+
     function readApiConfigFromDom(target) {
         const suffix = target === 'director' ? 'director' : 'main';
         const provider = document.getElementById(`ttw-api-provider-${suffix}`)?.value
@@ -168,6 +182,7 @@ export function createSettingsPersistenceService(deps) {
                     : 2048;
 
                 if (AppState.settings.chapterRegexPattern) {
+                    AppState.settings.chapterRegexPattern = migrateLegacyChapterPattern(AppState.settings.chapterRegexPattern);
                     AppState.config.chapterRegex.pattern = AppState.settings.chapterRegexPattern;
                 }
                 if (AppState.settings.defaultWorldbookEntriesUI) {
