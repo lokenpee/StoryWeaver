@@ -79,6 +79,7 @@ export function createFeatureBindings(featureServices = {}) {
         showConsolidateCategorySelector: mergeWorkflowService.showConsolidateCategorySelector,
         showManualMergeUI: mergeWorkflowService.showManualMergeUI,
         showAliasMergeUI: mergeWorkflowService.showAliasMergeUI,
+        deleteWorldbookEntry: mergeWorkflowService.deleteWorldbookEntry,
     };
 }
 

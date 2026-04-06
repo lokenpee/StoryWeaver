@@ -60,6 +60,22 @@ export function createChapterExperienceView(deps = {}) {
         delete el.dataset.swPrevDisplayForced;
     }
 
+    function forceHideResultWithRestore(el) {
+        if (!el) return;
+        if (el.dataset.swResultHiddenByMode === '1') return;
+        el.dataset.swResultHiddenByMode = '1';
+        el.dataset.swPrevResultDisplay = el.style.display || '';
+        el.style.display = 'none';
+    }
+
+    function restoreResultFromForcedHide(el) {
+        if (!el) return;
+        if (el.dataset.swResultHiddenByMode !== '1') return;
+        el.style.display = el.dataset.swPrevResultDisplay || '';
+        delete el.dataset.swResultHiddenByMode;
+        delete el.dataset.swPrevResultDisplay;
+    }
+
     function setModeTabActive(mode) {
         const tabMap = {
             txt: selectors.txtModeButton,
@@ -94,14 +110,19 @@ export function createChapterExperienceView(deps = {}) {
         if (!resultSection) return;
 
         if (mode === 'txt') {
+            restoreResultFromForcedHide(resultSection);
             restoreFromForcedShow(resultSection);
+            if (typeof showResultSection === 'function') {
+                showResultSection(true);
+            }
             return;
         }
 
+        restoreFromForcedShow(resultSection);
         if (typeof showResultSection === 'function') {
-            showResultSection(true);
+            showResultSection(false);
         }
-        forceShowWithRestore(resultSection);
+        forceHideResultWithRestore(resultSection);
     }
 
     function ensureState() {
@@ -215,7 +236,9 @@ export function createChapterExperienceView(deps = {}) {
             const title = memory.chapterTitle || `第${index + 1}章`;
             const outline = memory.chapterOutline || '';
             const outlineText = outline || (memory.chapterOutlineStatus === 'failed' ? '该章大纲生成失败，请点击重试。' : '该章尚未生成大纲。');
-            const canRetry = memory.chapterOutlineStatus === 'failed';
+            const isGenerating = memory.chapterOutlineStatus === 'generating';
+            const rerollLabel = isGenerating ? '⏳ 本章生成中...' : '🔄 重roll本章';
+            const rerollDisabledAttr = isGenerating ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : '';
 
             return `
 <div class="ttw-outline-item" data-index="${index}">
@@ -225,7 +248,7 @@ export function createChapterExperienceView(deps = {}) {
     </button>
     <div class="ttw-outline-body" id="ttw-outline-body-${index}" style="display:none;">
         <div class="ttw-outline-summary">${escapeHtml(outlineText)}</div>
-        ${canRetry ? `<button class="ttw-btn ttw-btn-small" data-action="retry-outline" data-index="${index}">🔁 重试本章大纲</button>` : ''}
+        <button class="ttw-btn ttw-btn-small" data-action="reroll-chapter-assets" data-index="${index}" ${rerollDisabledAttr}>${rerollLabel}</button>
         <button class="ttw-btn ttw-btn-small" data-action="view-chapter" data-index="${index}">📖 查看当前章节概览</button>
     </div>
 </div>`;
@@ -299,7 +322,11 @@ export function createChapterExperienceView(deps = {}) {
         } else if (memory.chapterOpeningError) {
             if (openingEl) openingEl.textContent = `开场白生成失败：${memory.chapterOpeningError}`;
         } else {
-            if (openingEl) openingEl.textContent = '进入本章后将自动生成并发送开场白。';
+            if (openingEl) {
+                openingEl.textContent = idx === 0
+                    ? '点击“开始阅读第一章”后将自动生成并发送开场白。'
+                    : '该章开场白会在你从上一章点击“下一章”进入时生成并发送。';
+            }
         }
 
         const isLast = idx >= AppState.memory.queue.length - 1;
@@ -308,7 +335,13 @@ export function createChapterExperienceView(deps = {}) {
             nextBtn.textContent = isLast ? '⏹ 已是最后一章' : '⏭ 下一章';
         }
         if (hintEl) {
-            hintEl.textContent = isLast ? '当前已到最后一章。' : '点击“下一章”将立即自动发送下一章开场白。';
+            if (isLast) {
+                hintEl.textContent = '当前已到最后一章。';
+            } else if (idx === 0) {
+                hintEl.textContent = '首章由“开始阅读第一章”触发开场白；后续章节由“下一章”触发。';
+            } else {
+                hintEl.textContent = '点击“下一章”将进入下一章并自动发送其开场白。';
+            }
         }
     }
 
@@ -326,21 +359,16 @@ export function createChapterExperienceView(deps = {}) {
                 const item = chat[i];
                 const text = String(item?.mes || '').trim();
                 if (!text) continue;
-                if (!lastUser && item?.is_user) {
-                    lastUser = text;
-                    continue;
-                }
-                if (lastUser && !item?.is_user) {
-                    lastAssistant = text;
-                    break;
-                }
+                if (!lastUser && item?.is_user) lastUser = text;
+                if (!lastAssistant && !item?.is_user) lastAssistant = text;
+                if (lastUser && lastAssistant) break;
             }
 
             if (lastUser && lastAssistant) {
-                return `上一轮完整对话：\nAI：${toShortText(lastAssistant, 350)}\n玩家：${toShortText(lastUser, 350)}`;
+                return `最新一轮对话：\n玩家：${toShortText(lastUser, 260)}\nAI：${toShortText(lastAssistant, 260)}`;
             }
-            if (lastUser) {
-                return `上一轮玩家输入：\n玩家：${toShortText(lastUser, 350)}`;
+            if (lastUser || lastAssistant) {
+                return `最新一轮对话：\n${lastUser ? `玩家：${toShortText(lastUser, 260)}` : ''}\n${lastAssistant ? `AI：${toShortText(lastAssistant, 260)}` : ''}`.trim();
             }
             return '';
         } catch (_) {
@@ -348,18 +376,76 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
+    function buildPreviousChapterContext(index) {
+        if (index <= 0) return '';
+
+        const prevMemory = getMemory(index - 1);
+        if (!prevMemory) return '';
+        ensureMemoryRuntime(prevMemory, index - 1);
+
+        const prevTitle = prevMemory.chapterTitle || `第${index}章`;
+        const prevOutline = prevMemory.chapterOutline || deriveOutlineFromContent(prevMemory);
+        const prevScript = prevMemory.chapterScript && typeof prevMemory.chapterScript === 'object'
+            ? prevMemory.chapterScript
+            : deriveScriptFromOutline(prevOutline);
+        const prevNodes = Array.isArray(prevScript.keyNodes)
+            ? prevScript.keyNodes.map((node) => toShortText(node, 40)).filter(Boolean).slice(0, 4)
+            : [];
+
+        return `上一章：${prevTitle}\n上一章摘要：${toShortText(prevOutline, 160)}\n上一章目标：${toShortText(prevScript.goal, 120)}\n上一章流程：${toShortText(prevScript.flow, 160)}\n上一章关键节点：${prevNodes.join('、') || '无'}`;
+    }
+
+    function buildChapterLeadSnippet(memory, minLen = 50, maxLen = 100) {
+        const plain = String(memory?.content || '').replace(/\s+/g, ' ').trim();
+        if (!plain) return '';
+
+        let snippet = plain.slice(0, maxLen);
+        const punctIndex = snippet.search(/[。！？!?]/);
+        if (punctIndex >= minLen - 1) {
+            snippet = snippet.slice(0, punctIndex + 1);
+        }
+        if (snippet.length < minLen && plain.length > snippet.length) {
+            snippet = plain.slice(0, Math.min(maxLen, Math.max(minLen, plain.length)));
+        }
+        return snippet.trim();
+    }
+
+    function trimOpeningText(text, minLen = 50, maxLen = 100) {
+        let normalized = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return '';
+
+        if (normalized.length > maxLen) {
+            const sliced = normalized.slice(0, maxLen);
+            const boundary = Math.max(
+                sliced.lastIndexOf('。'),
+                sliced.lastIndexOf('！'),
+                sliced.lastIndexOf('？'),
+                sliced.lastIndexOf('!'),
+                sliced.lastIndexOf('?')
+            );
+            normalized = boundary >= minLen - 1 ? sliced.slice(0, boundary + 1) : sliced;
+        }
+
+        return normalized;
+    }
+
     function buildOpeningFallback(memory, index) {
-        const outline = memory.chapterOutline || deriveOutlineFromContent(memory);
         const title = memory.chapterTitle || `第${index + 1}章`;
-        const text = toShortText(outline, 180);
-        return `${title}，故事继续。${text}`;
+        const leadSnippet = buildChapterLeadSnippet(memory, 50, 100);
+        const base = index === 0
+            ? `${title}，故事在此刻拉开帷幕，你已站在命运转折的门前。`
+            : `${title}，上一程的余波尚在，你的脚步已踏入新的局面。`;
+        const fallback = leadSnippet
+            ? `${base}${leadSnippet}`
+            : `${base}你收拢思绪，准备接住眼前即将展开的变化。`;
+        return trimOpeningText(fallback, 50, 100);
     }
 
     function sanitizeOpeningText(raw, memory, index) {
-        const text = String(raw || '')
+        const text = trimOpeningText(String(raw || '')
             .replace(/^```[a-z]*\s*/i, '')
             .replace(/\s*```$/i, '')
-            .trim();
+            .trim(), 50, 100);
         if (!text) {
             return buildOpeningFallback(memory, index);
         }
@@ -368,15 +454,11 @@ export function createChapterExperienceView(deps = {}) {
 
     async function generateOpeningText(memory, index) {
         const chapterTitle = memory.chapterTitle || `第${index + 1}章`;
-        const chapterOutline = memory.chapterOutline || deriveOutlineFromContent(memory);
-        const script = memory.chapterScript && typeof memory.chapterScript === 'object'
-            ? memory.chapterScript
-            : deriveScriptFromOutline(chapterOutline);
+        const previousChapterContext = buildPreviousChapterContext(index) || '上一章信息：无（当前为第一章）';
+        const dialogueContext = collectRecentDialogueContext() || '最新一轮对话：无可用历史。';
+        const chapterLead = buildChapterLeadSnippet(memory, 50, 100) || '本章开头素材：无可用原文。';
 
-        const prevTitle = index > 0 ? (AppState.memory.queue[index - 1]?.chapterTitle || `第${index}章`) : '';
-        const dialogueContext = index > 0 ? collectRecentDialogueContext() : '';
-
-        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成本章开场白。\n\n要求：\n1) 输出 120-220 字中文。\n2) 文风自然沉浸，不要解释规则，不要输出JSON。\n3) 只聚焦当前章节，不剧透后续。\n4) 除第一章外，需要自然承接上一轮对话。\n\n当前章节：${chapterTitle}\n本章摘要：${chapterOutline}\n本章目标：${script.goal || ''}\n本章流程：${script.flow || ''}\n关键节点：${(script.keyNodes || []).join('、')}\n${prevTitle ? `上一章：${prevTitle}` : ''}\n${dialogueContext || ''}`;
+        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。\n\n硬性要求：\n1) 仅输出 50-100 字中文。\n2) 只能用于衔接上文并引入本章，不要推进剧情。\n3) 不得泄露本章的目标、流程、关键节点、核心冲突、转折或结局。\n4) 文风自然沉浸，不要解释规则，不要输出JSON，不要分点。\n\n背景信息（仅用于衔接）：\n当前章节：${chapterTitle}\n${previousChapterContext}\n${dialogueContext}\n本章开头素材（仅前50-100字）：${chapterLead}\n\n请直接输出开场白正文：`;
 
         const response = await callAPI(prompt, index + 1);
         return sanitizeOpeningText(response, memory, index);
@@ -448,7 +530,7 @@ export function createChapterExperienceView(deps = {}) {
             try {
                 await pushOpeningMessage(fallback, index);
                 memory.chapterOpeningSent = true;
-                memory.chapterOpeningError = '开场白生成失败，已使用摘要降级发送。';
+                memory.chapterOpeningError = '开场白生成失败，已使用安全降级文案发送。';
             } catch (sendError) {
                 memory.chapterOpeningSent = false;
                 memory.chapterOpeningError = String(sendError?.message || error?.message || '开场白生成失败');
@@ -460,12 +542,15 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
-    async function enterChapter(index) {
+    async function enterChapter(index, options = {}) {
+        const { triggerOpening = true } = options;
         if (index < 0 || index >= AppState.memory.queue.length) return;
         ensureState();
         AppState.experience.currentChapterIndex = index;
         renderCurrentPanel();
-        await ensureOpeningForChapter(index);
+        if (triggerOpening) {
+            await ensureOpeningForChapter(index);
+        }
     }
 
     async function showCurrentChapterPanelInternal() {
@@ -474,8 +559,6 @@ export function createChapterExperienceView(deps = {}) {
         setResultSectionVisibleForMode('current');
         setSectionVisibility({ showOutline: false, showCurrent: true, showProgress: false });
         renderCurrentPanel();
-        ensureState();
-        await ensureOpeningForChapter(AppState.experience.currentChapterIndex || 0);
     }
 
     function showStoryOutlinePanelInternal() {
@@ -509,19 +592,28 @@ export function createChapterExperienceView(deps = {}) {
             return;
         }
 
-        if (action === 'retry-outline') {
+        if (action === 'retry-outline' || action === 'reroll-chapter-assets') {
             try {
                 await retryChapterOutline(index);
-                ErrorHandler.showUserSuccess(`第${index + 1}章大纲重试成功`);
+                const memory = getMemory(index);
+                if (memory) {
+                    ensureMemoryRuntime(memory, index);
+                    memory.chapterOpeningPreview = '';
+                    memory.chapterOpeningSent = false;
+                    memory.chapterOpeningError = '';
+                    memory.chapterOpeningGenerating = false;
+                }
+                ErrorHandler.showUserSuccess(`第${index + 1}章重roll成功（摘要/小剧本/开场白已重置）`);
             } catch (error) {
-                ErrorHandler.showUserError(`第${index + 1}章大纲重试失败：${error.message}`);
+                ErrorHandler.showUserError(`第${index + 1}章重roll失败：${error.message}`);
             }
             renderOutlineList();
+            renderCurrentPanel();
             return;
         }
 
         if (action === 'view-chapter') {
-            await enterChapter(index);
+            await enterChapter(index, { triggerOpening: false });
             await showCurrentChapterPanelInternal();
             return;
         }

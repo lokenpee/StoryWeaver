@@ -961,6 +961,7 @@ let {
     showConsolidateCategorySelector,
     showManualMergeUI,
     showAliasMergeUI,
+    deleteWorldbookEntry,
 } = createFeaturePlaceholders();
 
 // ============================================================
@@ -994,6 +995,8 @@ worldbookView = createWorldbookViewRuntime({
     getAllVolumesWorldbook,
     showManualMergeUI: (...args) => showManualMergeUI(...args),
     showBatchRerollModal: (...args) => showBatchRerollModal(...args),
+    confirmAction,
+    deleteWorldbookEntry: (...args) => deleteWorldbookEntry(...args),
 });
 
 const {
@@ -1105,6 +1108,7 @@ const featureBindings = createFeatureBindings({
     showConsolidateCategorySelector,
     showManualMergeUI,
     showAliasMergeUI,
+    deleteWorldbookEntry,
 } = featureBindings);
 
 shellRuntime = createShellRuntime(createShellRuntimeConfig({

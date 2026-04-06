@@ -949,21 +949,57 @@ export function createMergeWorkflowService(deps = {}) {
     }
 
     async function handleAliasMergeConfirm(modal, aiResultByCategory) {
-        const checkedBoxes = modal.querySelectorAll('.ttw-merge-group-cb:checked');
-        if (checkedBoxes.length === 0) {
+        const checkedGroupBoxes = [...modal.querySelectorAll('.ttw-merge-group-cb:checked')];
+        if (checkedGroupBoxes.length === 0) {
             ErrorHandler.showUserError('没有勾选任何合并组');
             return;
         }
 
-        const checkedSelections = [...checkedBoxes].map((box) => ({
-            category: box.getAttribute('data-category'),
-            groupIndex: parseInt(box.getAttribute('data-group-index'), 10),
-        }));
-        const mergeByCategory = mergedService.collectAliasMergeGroups(checkedSelections, aiResultByCategory);
+        const allNameCheckboxes = [...modal.querySelectorAll('.ttw-merge-name-cb')];
+        const allMainNameSelects = [...modal.querySelectorAll('.ttw-merge-main-name-select')];
+        const mergeByCategory = {};
+        let skippedInvalidGroups = 0;
 
-        const totalSelected = checkedBoxes.length;
+        for (const groupBox of checkedGroupBoxes) {
+            const category = groupBox.getAttribute('data-category');
+            const groupIndex = parseInt(groupBox.getAttribute('data-group-index'), 10);
+            if (!category || Number.isNaN(groupIndex)) continue;
+
+            const groupInfo = aiResultByCategory?.[category]?.mergedGroups?.[groupIndex];
+            if (!groupInfo || !Array.isArray(groupInfo.names)) continue;
+
+            const selectedNames = allNameCheckboxes
+                .filter((cb) => cb.dataset.category === category && parseInt(cb.dataset.groupIndex, 10) === groupIndex && cb.checked)
+                .map((cb) => cb.dataset.name)
+                .filter(Boolean);
+
+            if (selectedNames.length < 2) {
+                skippedInvalidGroups++;
+                continue;
+            }
+
+            const mainNameSelect = allMainNameSelects.find((sel) => sel.dataset.category === category && parseInt(sel.dataset.groupIndex, 10) === groupIndex);
+            let chosenMainName = (mainNameSelect?.value || '').trim();
+            if (!selectedNames.includes(chosenMainName)) {
+                chosenMainName = selectedNames[0];
+            }
+
+            if (!mergeByCategory[category]) mergeByCategory[category] = [];
+            mergeByCategory[category].push({
+                names: selectedNames,
+                mainName: chosenMainName,
+            });
+        }
+
+        const totalSelected = Object.values(mergeByCategory).reduce((sum, groups) => sum + groups.length, 0);
+        if (totalSelected === 0) {
+            ErrorHandler.showUserError('没有可合并的有效分组（每组至少保留2条条目）');
+            return;
+        }
+
         const categoryList = Object.keys(mergeByCategory).map((c) => `${c}(${mergeByCategory[c].length}组)`).join('、');
-        if (!await confirmAction(`确定合并选中的 ${totalSelected} 组条目？\n涉及分类: ${categoryList}`, { title: '批量合并重复条目', danger: true })) return;
+        const skipHint = skippedInvalidGroups > 0 ? `\n\n注意：有 ${skippedInvalidGroups} 组因保留条目少于2条已自动跳过。` : '';
+        if (!await confirmAction(`确定合并选中的 ${totalSelected} 组条目？\n涉及分类: ${categoryList}${skipHint}`, { title: '批量合并重复条目', danger: true })) return;
 
         const totalMerged = await mergedService.executeAliasMergeByCategory(mergeByCategory, aiResultByCategory, getAllVolumesWorldbook());
 
@@ -991,7 +1027,7 @@ export function createMergeWorkflowService(deps = {}) {
             const catListHtml = buildAliasCategorySelectModal(availableCategories, worldbookView, escapeHtml);
             const bodyHtml = `
 			<div style="margin-bottom:12px;padding:10px;background:rgba(52,152,219,0.15);border-radius:6px;font-size:12px;color:#3498db;">
-				💡 请勾选需要让AI识别别名并合并的分类。将对每个选中的分类独立扫描重复条目。
+                💡 请勾选需要扫描疑似别名的分类。系统会先本地识别，再由你手动确认后合并。
 			</div>
 			<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
 				<label style="font-size:12px;cursor:pointer;"><input type="checkbox" id="ttw-alias-cat-select-all"> 全选</label>
@@ -1076,171 +1112,74 @@ export function createMergeWorkflowService(deps = {}) {
 
         if (totalGroups === 0) {
             if (autoMergedTotal > 0) {
-                ErrorHandler.showUserSuccess(`已自动合并 ${autoMergedTotal} 组明显重复条目，未发现需要AI判断的剩余重复组`);
+                ErrorHandler.showUserSuccess(`已自动合并 ${autoMergedTotal} 组明显重复条目，未发现剩余疑似重复组`);
             } else {
                 ErrorHandler.showUserError('在所有选中的分类中未发现疑似重复条目');
             }
             return;
         }
 
-        updateStreamContent(`共发现 ${totalGroups} 组疑似重复，${totalPairs} 对需要判断\n`);
+        updateStreamContent(`共发现 ${totalGroups} 组疑似重复，${totalPairs} 对候选关系\n`);
+
+        const aiResultByCategory = {};
+        for (const cat of Object.keys(allSuspectedByCategory)) {
+            aiResultByCategory[cat] = {
+                pairResults: [],
+                mergedGroups: allSuspectedByCategory[cat].map((group) => ({
+                    names: [...group],
+                    mainName: group[0] || '',
+                })),
+            };
+        }
+
+        const { html: mergePlanHtml, hasAnyMerge } = buildAliasMergePlanHtml(aiResultByCategory, escapeHtml);
+        if (!hasAnyMerge) {
+            ErrorHandler.showUserError('未发现可合并组');
+            return;
+        }
 
         const existingModal = document.getElementById('ttw-alias-modal');
         if (existingModal) existingModal.remove();
 
-        const groupCategoryMap = [];
-        const groupsHtml = buildAliasGroupsListHtml(allSuspectedByCategory, worldbookView, groupCategoryMap, escapeHtml);
-
         const bodyHtml = `
 		<div style="margin-bottom:16px;padding:12px;background:rgba(52,152,219,0.15);border-radius:8px;">
-			<div style="font-weight:bold;color:#3498db;margin-bottom:8px;">📊 第一阶段：本地检测结果</div>
+			<div style="font-weight:bold;color:#3498db;margin-bottom:8px;">📊 简单识别结果</div>
 			<div style="font-size:13px;color:#ccc;">
-				扫描了 <span style="color:#e67e22;font-weight:bold;">${selectedCategories.length}</span> 个分类，
-				发现 <span style="color:#9b59b6;font-weight:bold;">${totalGroups}</span> 组疑似重复，
-				共 <span style="color:#e67e22;font-weight:bold;">${totalPairs}</span> 对需要AI判断
+				已扫描 <span style="color:#e67e22;font-weight:bold;">${selectedCategories.length}</span> 个分类，
+				发现 <span style="color:#9b59b6;font-weight:bold;">${totalGroups}</span> 组疑似重复。
 			</div>
 		</div>
 
-		<div style="margin-bottom:16px;">
-			<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-				<span style="font-weight:bold;">选择要发送给AI判断的组</span>
-				<label style="font-size:12px;"><input type="checkbox" id="ttw-select-all-alias" checked> 全选</label>
-			</div>
-			<div style="max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:6px;padding:8px;">
-				${groupsHtml}
-			</div>
+		<div style="margin-bottom:12px;padding:10px;background:rgba(230,126,34,0.1);border-radius:6px;font-size:11px;color:#f39c12;">
+			💡 已移除 AI 二次判断。请在下方手动剔除误判组或误判条目，并为每组选择主条目名称后再点击“开始合并”。
 		</div>
 
-		<div style="margin-bottom:16px;padding:10px;background:rgba(230,126,34,0.1);border-radius:6px;font-size:11px;color:#f39c12;">
-			💡 <strong>两两判断模式</strong>：AI会对每一对条目分别判断是否相同，然后自动合并确认的结果。<br>
-			例如：[A,B,C] 会拆成 (A,B) (A,C) (B,C) 三对分别判断，如果A=B且B=C，则A、B、C会被合并。
-		</div>
-
-		<div style="margin-bottom:16px;padding:12px;background:rgba(52,152,219,0.15);border-radius:8px;">
-			<div style="font-weight:bold;color:#3498db;margin-bottom:10px;">⚙️ 并发设置</div>
-			<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-				<label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-					<input type="checkbox" id="ttw-alias-parallel">
-					<span>启用并发</span>
-				</label>
-				<label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-					<span>配对数阈值:</span>
-					<input type="number" id="ttw-alias-threshold" value="5" min="1" max="50" style="width:60px;padding:4px;border:1px solid #555;border-radius:4px;background:rgba(0,0,0,0.3);color:#fff;">
-				</label>
-			</div>
-			<div style="font-size:11px;color:#888;margin-top:8px;">
-				≥阈值的配对数单独发送，＜阈值的合并发送（合并到接近阈值数量）
-			</div>
-		</div>
-
-		<div id="ttw-alias-result" style="display:none;margin-bottom:16px;">
-			<div style="padding:12px;background:rgba(155,89,182,0.15);border-radius:8px;margin-bottom:12px;">
-				<div style="font-weight:bold;color:#9b59b6;margin-bottom:8px;">🔍 配对判断结果</div>
-				<div id="ttw-pair-results" style="max-height:150px;overflow-y:auto;"></div>
-			</div>
-			<div style="padding:12px;background:rgba(39,174,96,0.15);border-radius:8px;">
-				<div style="font-weight:bold;color:#27ae60;margin-bottom:8px;">📦 合并方案</div>
-				<div id="ttw-merge-plan"></div>
-			</div>
+		<div style="padding:12px;background:rgba(39,174,96,0.15);border-radius:8px;">
+			<div style="font-weight:bold;color:#27ae60;margin-bottom:8px;">📦 待合并方案（人工确认）</div>
+			<div id="ttw-merge-plan">${mergePlanHtml}</div>
 		</div>
 	`;
         const footerHtml = `
-		<button class="ttw-btn ttw-btn-secondary" id="ttw-stop-alias" style="display:none;">⏸️ 停止</button>
 		<button class="ttw-btn" id="ttw-cancel-alias">取消</button>
-		<button class="ttw-btn ttw-btn-primary" id="ttw-ai-verify-alias">🤖 AI两两判断</button>
-		<button class="ttw-btn ttw-btn-primary" id="ttw-confirm-alias" style="display:none;">✅ 确认合并</button>
+		<button class="ttw-btn ttw-btn-primary" id="ttw-confirm-alias">✅ 开始合并</button>
 	`;
 
         const modal = ModalFactory.create({
             id: 'ttw-alias-modal',
-            title: '🔗 别名识别与合并 (两两判断模式)',
+            title: '🔗 别名识别与合并（人工确认模式）',
             body: bodyHtml,
             footer: footerHtml,
-            maxWidth: '750px',
+            maxWidth: '760px',
         });
 
-        let aiResultByCategory = {};
-
-        modal.querySelector('#ttw-select-all-alias').addEventListener('change', (e) => {
-            modal.querySelectorAll('.ttw-alias-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
-        });
+        const selectAllMergeCb = modal.querySelector('#ttw-select-all-merge-groups');
+        if (selectAllMergeCb) {
+            selectAllMergeCb.addEventListener('change', (e) => {
+                modal.querySelectorAll('.ttw-merge-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
+            });
+        }
 
         modal.querySelector('#ttw-cancel-alias').addEventListener('click', () => ModalFactory.close(modal));
-
-        modal.querySelector('#ttw-ai-verify-alias').addEventListener('click', async () => {
-            const checkedCbs = [...modal.querySelectorAll('.ttw-alias-group-cb:checked')];
-            if (checkedCbs.length === 0) {
-                ErrorHandler.showUserError('请选择要判断的组');
-                return;
-            }
-
-            const selectedByCategory = {};
-            for (const cb of checkedCbs) {
-                const cat = cb.dataset.category;
-                const globalIdx = parseInt(cb.dataset.index, 10);
-                const { localIndex } = groupCategoryMap[globalIdx];
-                if (!selectedByCategory[cat]) selectedByCategory[cat] = [];
-                selectedByCategory[cat].push(allSuspectedByCategory[cat][localIndex]);
-            }
-
-            const btn = modal.querySelector('#ttw-ai-verify-alias');
-            const stopBtn = modal.querySelector('#ttw-stop-alias');
-            btn.disabled = true;
-            btn.textContent = '🔄 AI判断中...';
-            stopBtn.style.display = 'inline-block';
-
-            try {
-                const useParallel = modal.querySelector('#ttw-alias-parallel')?.checked ?? AppState.config.parallel.enabled;
-                const threshold = parseInt(modal.querySelector('#ttw-alias-threshold')?.value, 10) || 5;
-
-                updateStreamContent(`\n🤖 第二阶段：两两配对判断...\n并发: ${useParallel ? '开启' : '关闭'}, 阈值: ${threshold}\n`);
-
-                aiResultByCategory = {};
-                for (const cat of Object.keys(selectedByCategory)) {
-                    updateStreamContent(`\n📂 处理分类「${cat}」...\n`);
-                    aiResultByCategory[cat] = await mergedService.verifyDuplicatesWithAI(selectedByCategory[cat], useParallel, threshold, cat, worldbookView);
-                }
-
-                const resultDiv = modal.querySelector('#ttw-alias-result');
-                const pairResultsDiv = modal.querySelector('#ttw-pair-results');
-                const mergePlanDiv = modal.querySelector('#ttw-merge-plan');
-                resultDiv.style.display = 'block';
-
-                pairResultsDiv.innerHTML = buildAliasPairResultsHtml(aiResultByCategory, escapeHtml);
-
-                const { html: mergePlanHtml, hasAnyMerge } = buildAliasMergePlanHtml(aiResultByCategory, escapeHtml);
-                mergePlanDiv.innerHTML = mergePlanHtml;
-
-                const selectAllMergeCb = mergePlanDiv.querySelector('#ttw-select-all-merge-groups');
-                if (selectAllMergeCb) {
-                    selectAllMergeCb.addEventListener('change', (e) => {
-                        mergePlanDiv.querySelectorAll('.ttw-merge-group-cb').forEach((cb) => { cb.checked = e.target.checked; });
-                    });
-                }
-
-                if (hasAnyMerge) {
-                    modal.querySelector('#ttw-confirm-alias').style.display = 'inline-block';
-                }
-                btn.style.display = 'none';
-                stopBtn.style.display = 'none';
-
-                updateStreamContent('✅ AI判断完成\n');
-            } catch (error) {
-                ErrorHandler.handle(error, 'aliasMerge');
-                updateStreamContent(`❌ AI判断失败: ${error.message}\n`);
-                btn.disabled = false;
-                btn.textContent = '🤖 AI两两判断';
-                stopBtn.style.display = 'none';
-            }
-        });
-
-        modal.querySelector('#ttw-stop-alias').addEventListener('click', () => {
-            handleStopProcessing();
-            modal.querySelector('#ttw-ai-verify-alias').disabled = false;
-            modal.querySelector('#ttw-ai-verify-alias').textContent = '🤖 AI两两判断';
-            modal.querySelector('#ttw-stop-alias').style.display = 'none';
-        });
-
         modal.querySelector('#ttw-confirm-alias').addEventListener('click', async () => {
             await handleAliasMergeConfirm(modal, aiResultByCategory);
         });
@@ -1254,11 +1193,16 @@ export function createMergeWorkflowService(deps = {}) {
         return mergedService.mergeConfirmedDuplicates(aiResult, categoryName);
     }
 
+    function deleteWorldbookEntry(category, entryName) {
+        return mergedService.deleteWorldbookEntry(category, entryName);
+    }
+
     return {
         showConsolidateCategorySelector,
         showManualMergeUI,
         showAliasMergeUI,
         verifyDuplicatesWithAI,
         mergeConfirmedDuplicates,
+        deleteWorldbookEntry,
     };
 }

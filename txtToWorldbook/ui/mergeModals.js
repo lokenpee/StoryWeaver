@@ -72,6 +72,13 @@ ${result.isSamePerson ? `<span style="color:#888;">→${escapeHtml(result.mainNa
 }
 
 export function buildAliasMergePlanHtml(aiResultByCategory, escapeHtml) {
+    const escapeAttr = (text) => String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
     let mergePlanHtml = '';
     let hasAnyMerge = false;
 
@@ -83,7 +90,7 @@ export function buildAliasMergePlanHtml(aiResultByCategory, escapeHtml) {
     }
 
     if (hasAnyMerge) {
-        mergePlanHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;">取消勾选可排除不想合并的组</span><label style="font-size:11px;cursor:pointer;"><input type="checkbox" id="ttw-select-all-merge-groups" checked> 全选</label></div>';
+        mergePlanHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:11px;color:#888;">可按组取消，也可在组内剔除误判条目（至少保留2条才能合并）</span><label style="font-size:11px;cursor:pointer;"><input type="checkbox" id="ttw-select-all-merge-groups" checked> 全选</label></div>';
 
         for (const cat of Object.keys(aiResultByCategory)) {
             const catResult = aiResultByCategory[cat];
@@ -93,7 +100,38 @@ export function buildAliasMergePlanHtml(aiResultByCategory, escapeHtml) {
 
             for (let gi = 0; gi < catResult.mergedGroups.length; gi++) {
                 const group = catResult.mergedGroups[gi];
-                mergePlanHtml += `<label style="display:flex;align-items:flex-start;gap:8px;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:6px;border-left:3px solid #27ae60;cursor:pointer;"><input type="checkbox" class="ttw-merge-group-cb" data-group-index="${gi}" data-category="${cat}" checked style="margin-top:2px;width:16px;height:16px;accent-color:#27ae60;flex-shrink:0;"><div><div style="color:#27ae60;font-weight:bold;font-size:12px;">→ 合并为「${escapeHtml(group.mainName)}」</div><div style="font-size:11px;color:#ccc;margin-top:4px;">包含: ${escapeHtml(group.names.join(', '))}</div></div></label>`;
+                const names = Array.isArray(group.names) ? group.names : [];
+                const resolvedMainName = names.includes(group.mainName) ? group.mainName : (names[0] || '');
+                const safeCategoryAttr = escapeAttr(cat);
+
+                const memberListHtml = names.map((name) => `
+                    <label style="display:inline-flex;align-items:center;gap:4px;padding:2px 6px;background:rgba(155,89,182,0.18);border:1px solid rgba(155,89,182,0.35);border-radius:999px;cursor:pointer;">
+                        <input type="checkbox" class="ttw-merge-name-cb" data-group-index="${gi}" data-category="${safeCategoryAttr}" data-name="${escapeAttr(name)}" checked style="margin:0;accent-color:#9b59b6;">
+                        <span>${escapeHtml(name)}</span>
+                    </label>
+                `).join('');
+
+                const mainNameOptionsHtml = names.map((name) => {
+                    const selected = name === resolvedMainName ? 'selected' : '';
+                    return `<option value="${escapeAttr(name)}" ${selected}>${escapeHtml(name)}</option>`;
+                }).join('');
+
+                mergePlanHtml += `
+<div style="padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:6px;border-left:3px solid #27ae60;">
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+        <input type="checkbox" class="ttw-merge-group-cb" data-group-index="${gi}" data-category="${safeCategoryAttr}" checked style="margin-top:2px;width:16px;height:16px;accent-color:#27ae60;flex-shrink:0;">
+        <div style="flex:1;">
+            <div style="color:#27ae60;font-weight:bold;font-size:12px;">→ 合并第 ${gi + 1} 组</div>
+            <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${memberListHtml}</div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:6px;font-size:11px;color:#ccc;">
+                <span>主条目名称</span>
+                <select class="ttw-merge-main-name-select" data-group-index="${gi}" data-category="${safeCategoryAttr}" style="min-width:180px;padding:4px 6px;border:1px solid #555;border-radius:4px;background:rgba(0,0,0,0.35);color:#fff;font-size:11px;">
+                    ${mainNameOptionsHtml}
+                </select>
+            </div>
+        </div>
+    </label>
+</div>`;
             }
         }
     } else {

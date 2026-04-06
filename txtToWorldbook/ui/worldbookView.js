@@ -25,6 +25,8 @@
         isVolumeMode,
         showManualMergeUI,
         showBatchRerollModal,
+        confirmAction,
+        deleteWorldbookEntry,
     } = deps;
 
     function formatWorldbookAsCards(worldbook) {
@@ -187,6 +189,46 @@
         });
     }
 
+    function bindEntryDeleteEvents(container) {
+        if (container.dataset.ttwEntryDeleteBound === 'true') return;
+        container.dataset.ttwEntryDeleteBound = 'true';
+
+        EventDelegate.on(container, '.ttw-entry-delete-btn', 'click', async (e, btn) => {
+            e.stopPropagation();
+            const category = btn.dataset.category;
+            const entryName = btn.dataset.entry;
+            if (!category || !entryName) return;
+
+            const confirmMessage = `确定删除条目「${entryName}」？\n分类: ${category}\n\n⚠️ 删除后将立即从当前世界书视图移除。`;
+            let shouldDelete = false;
+            if (typeof confirmAction === 'function') {
+                shouldDelete = await confirmAction(confirmMessage, { title: '删除世界书条目', danger: true });
+            } else {
+                shouldDelete = window.confirm(confirmMessage);
+            }
+            if (!shouldDelete) return;
+
+            const deleteResult = typeof deleteWorldbookEntry === 'function'
+                ? deleteWorldbookEntry(category, entryName)
+                : { success: false, error: '删除功能未初始化' };
+
+            if (!deleteResult || !deleteResult.success) {
+                const errorText = deleteResult?.error || '删除失败';
+                window.alert(errorText);
+                return;
+            }
+
+            updateWorldbookPreview();
+            const viewModal = document.getElementById('ttw-worldbook-view-modal');
+            if (viewModal) {
+                const bodyContainer = viewModal.querySelector('#ttw-worldbook-view-body');
+                if (bodyContainer) {
+                    renderWorldbookToContainer(bodyContainer, getWorldbookToShow());
+                }
+            }
+        });
+    }
+
     function renderWorldbookToContainer(container, worldbook, options = {}) {
         if (!container) return;
         const { headerInfo = '' } = options;
@@ -195,6 +237,7 @@
         bindLightToggleEvents(container);
         bindConfigButtonEvents(container);
         bindEntryRerollEvents(container);
+        bindEntryDeleteEvents(container);
         bindWorldbookCollapseEvents(container);
     }
 
@@ -216,7 +259,7 @@
         `;
 
         const footerHtml = `
-            <div style="font-size:11px;color:#888;margin-right:auto;">💡 点击⚙️配置，点击🎯单独重Roll条目，点击灯图标切换蓝/绿灯</div>
+            <div style="font-size:11px;color:#888;margin-right:auto;">💡 点击⚙️配置，🎯单独重Roll，🗑️删除条目，点击灯图标切换蓝/绿灯</div>
             <button class="ttw-btn ttw-btn-secondary" id="ttw-manual-merge-btn" title="手动选择条目进行合并（AI识别不到时使用）" style="white-space:nowrap;flex-shrink:0;">✋ 手动合并</button>
             <button class="ttw-btn ttw-btn-secondary" id="ttw-batch-reroll-btn" title="批量选择多个条目重Roll" style="white-space:nowrap;flex-shrink:0;">🎲 批量重Roll</button>
         `;
@@ -303,6 +346,7 @@
         bindLightToggleEvents,
         bindConfigButtonEvents,
         bindEntryRerollEvents,
+        bindEntryDeleteEvents,
         showWorldbookView,
         getWorldbookPreviewHeaderInfo,
         refreshWorldbookViewModal,

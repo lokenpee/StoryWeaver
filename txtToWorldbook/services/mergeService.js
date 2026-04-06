@@ -239,6 +239,47 @@ export function createMergeService(deps = {}) {
         };
     }
 
+    function deleteWorldbookEntry(category, displayedName) {
+        if (!category || !displayedName) {
+            return { success: false, error: '分类或条目名不能为空' };
+        }
+
+        const resolved = resolveDisplayedEntrySource(category, displayedName);
+        if (!resolved) {
+            return { success: false, error: `未找到条目: [${category}] ${displayedName}` };
+        }
+
+        let sourceCategoryEntries = null;
+        if (resolved.sourceType === 'generated') {
+            sourceCategoryEntries = AppState.worldbook.generated?.[category];
+        } else if (resolved.sourceType === 'volume' && Number.isInteger(resolved.volumeIndex)) {
+            const volume = (AppState.worldbook.volumes || []).find((v) => v.volumeIndex === resolved.volumeIndex);
+            sourceCategoryEntries = volume?.worldbook?.[category];
+        }
+
+        if (!sourceCategoryEntries || !sourceCategoryEntries[resolved.actualName]) {
+            return { success: false, error: `条目不存在或已被删除: [${category}] ${displayedName}` };
+        }
+
+        delete sourceCategoryEntries[resolved.actualName];
+
+        if (resolved.sourceType === 'generated') {
+            const categoryPosition = AppState.config?.entryPosition?.[category];
+            if (categoryPosition && Object.prototype.hasOwnProperty.call(categoryPosition, resolved.actualName)) {
+                delete categoryPosition[resolved.actualName];
+            }
+        }
+
+        return {
+            success: true,
+            category,
+            displayedName,
+            actualName: resolved.actualName,
+            sourceType: resolved.sourceType,
+            volumeIndex: resolved.volumeIndex,
+        };
+    }
+
     function executeManualMerge(selectedEntries, mainName, targetCategory, dedupKeywords, addSeparator) {
         const worldbook = AppState.worldbook.generated;
         const resolvedEntries = selectedEntries.map(resolveManualMergeEntryRef).filter(Boolean);
@@ -648,6 +689,7 @@ ${pairsContent}
         getCanonicalDuplicateGroups,
         getManualMergeViewWorldbook,
         mergeConfirmedDuplicates,
+        deleteWorldbookEntry,
         resolveDisplayedEntrySource,
         resolveManualMergeEntryRef,
         executeManualMerge,

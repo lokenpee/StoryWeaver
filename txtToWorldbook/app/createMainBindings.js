@@ -26,6 +26,7 @@ export function createFeaturePlaceholders() {
         showConsolidateCategorySelector: noop,
         showManualMergeUI: noop,
         showAliasMergeUI: noop,
+        deleteWorldbookEntry: noop,
     };
 }
 
