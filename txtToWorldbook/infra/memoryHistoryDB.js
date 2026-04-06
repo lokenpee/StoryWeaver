@@ -305,6 +305,15 @@
                     currentVolumeIndex: AppState.worldbook.currentVolumeIndex,
                     fileHash: AppState.file.hash,
                     novelName: AppState.file.novelName || '',
+                    experience: JSON.parse(JSON.stringify(AppState.experience || {})),
+                    processingState: {
+                        incrementalMode: !!AppState.processing?.incrementalMode,
+                        volumeMode: !!AppState.processing?.volumeMode,
+                    },
+                    queueState: {
+                        startIndex: Number.isInteger(AppState.memory?.startIndex) ? AppState.memory.startIndex : 0,
+                        userSelectedIndex: Number.isInteger(AppState.memory?.userSelectedIndex) ? AppState.memory.userSelectedIndex : null,
+                    },
                     timestamp: Date.now()
                 };
                 const request = store.put(state);

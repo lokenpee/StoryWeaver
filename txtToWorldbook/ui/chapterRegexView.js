@@ -8,7 +8,7 @@ export function createChapterRegexView(deps = {}) {
 
     function detectChaptersWithRegex(content, regexPattern) {
         try {
-            const regex = new RegExp(regexPattern, 'g');
+            const regex = new RegExp(regexPattern, 'gm');
             return [...content.matchAll(regex)];
         } catch (e) {
             Logger.error('Regex', '正则表达式错误:', e);

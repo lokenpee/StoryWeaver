@@ -93,9 +93,9 @@ function buildChapterRegexHtml() {
     <div class="ttw-setting-card" style="background:rgba(230,126,34,0.1);border:1px solid rgba(230,126,34,0.3);">
         <div style="font-weight:bold;color:#e67e22;margin-bottom:10px;">📖 章回正则设置</div>
         <div class="ttw-setting-hint" style="margin-bottom:8px;">自定义章节检测正则表达式</div>
-        <input type="text" id="ttw-chapter-regex" class="ttw-input" value="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]" style="margin-bottom:8px;">
+        <input type="text" id="ttw-chapter-regex" class="ttw-input" value="第\s*[零一二三四五六七八九十百千万0-9]+\s*[章回卷节部篇]" style="margin-bottom:8px;">
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第[零一二三四五六七八九十百千万0-9]+[章回卷节部篇]">中文通用</button>
+            <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第\s*[零一二三四五六七八九十百千万0-9]+\s*[章回卷节部篇]">中文通用</button>
             <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="Chapter\\s*\\d+">英文Chapter</button>
             <button class="ttw-btn ttw-btn-small ttw-chapter-preset" data-regex="第\\d+章">数字章节</button>
             <button id="ttw-test-chapter-regex" class="ttw-btn ttw-btn-small" style="background:#e67e22;">🔍 检测</button>
@@ -376,11 +376,12 @@ function buildFileUploadSectionHtml() {
             <span>📄 文件上传</span>
             <div style="display:flex;gap:8px;">
                 <button id="ttw-import-json" class="ttw-btn-small" title="导入已有世界书JSON进行合并">📥 合并世界书</button>
-                <button id="ttw-import-task" class="ttw-btn-small">📥 导入任务</button>
-                <button id="ttw-export-task" class="ttw-btn-small">📤 导出任务</button>
+                <button id="ttw-import-task" class="ttw-btn-small" title="导入工程包并恢复章节队列、故事大纲、当前章节概览与世界书">📥 导入工程包</button>
+                <button id="ttw-export-task" class="ttw-btn-small" title="导出完整工程包，后续可一键恢复">📤 导出工程包</button>
             </div>
         </div>
         <div class="ttw-section-content">
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">💾 工程包会保存：章节队列、故事大纲、当前章节开场白状态、世界书与处理进度。</div>
             <div class="ttw-upload-area" id="ttw-upload-area">
                 <div style="font-size:48px;margin-bottom:12px;">📁</div>
                 <div style="font-size:14px;opacity:0.8;">点击或拖拽TXT文件到此处</div>

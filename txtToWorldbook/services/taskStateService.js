@@ -20,11 +20,79 @@ export function createTaskStateService(deps = {}) {
         updateWorldbookPreview,
     } = deps;
 
+    const TASK_STATE_TYPE = 'StoryWeaver.taskState';
+    const TASK_STATE_VERSION = '3.0.0';
+
+    function clampInt(value, min, max, fallback = min) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.max(min, Math.min(max, parsed));
+    }
+
+    function normalizeChapterScript(script = {}) {
+        const normalized = script && typeof script === 'object' ? { ...script } : {};
+        normalized.goal = typeof normalized.goal === 'string' ? normalized.goal : '';
+        normalized.flow = typeof normalized.flow === 'string' ? normalized.flow : '';
+        normalized.keyNodes = Array.isArray(normalized.keyNodes) ? normalized.keyNodes : [];
+        normalized.beats = Array.isArray(normalized.beats) ? normalized.beats : [];
+        return normalized;
+    }
+
+    function normalizeMemoryItem(memory = {}, index = 0) {
+        const normalized = memory && typeof memory === 'object' ? { ...memory } : {};
+        normalized.title = typeof normalized.title === 'string' && normalized.title.trim()
+            ? normalized.title
+            : `记忆${index + 1}`;
+        normalized.chapterTitle = typeof normalized.chapterTitle === 'string' && normalized.chapterTitle.trim()
+            ? normalized.chapterTitle
+            : `第${index + 1}章`;
+        normalized.content = typeof normalized.content === 'string' ? normalized.content : '';
+        normalized.processed = normalized.processed === true;
+        normalized.failed = normalized.failed === true;
+        normalized.processing = false;
+        normalized.chapterOutline = typeof normalized.chapterOutline === 'string' ? normalized.chapterOutline : '';
+        normalized.chapterOutlineStatus = normalized.chapterOutlineStatus || 'pending';
+        normalized.chapterOutlineError = typeof normalized.chapterOutlineError === 'string' ? normalized.chapterOutlineError : '';
+        normalized.chapterScript = normalizeChapterScript(normalized.chapterScript);
+        normalized.chapterOpeningPreview = typeof normalized.chapterOpeningPreview === 'string' ? normalized.chapterOpeningPreview : '';
+        normalized.chapterOpeningSent = normalized.chapterOpeningSent === true;
+        normalized.chapterOpeningError = typeof normalized.chapterOpeningError === 'string' ? normalized.chapterOpeningError : '';
+        normalized.chapterOpeningGenerating = false;
+        normalized.chapterCurrentBeatIndex = Number.isInteger(normalized.chapterCurrentBeatIndex)
+            ? Math.max(0, normalized.chapterCurrentBeatIndex)
+            : 0;
+        return normalized;
+    }
+
+    function normalizeMemoryQueue(queue = []) {
+        if (!Array.isArray(queue)) return [];
+        return queue.map((memory, index) => normalizeMemoryItem(memory, index));
+    }
+
+    function normalizeExperience(experience, queueLength) {
+        const maxIndex = Math.max(0, queueLength - 1);
+        const source = experience && typeof experience === 'object' ? experience : {};
+        return {
+            currentChapterIndex: clampInt(source.currentChapterIndex, 0, maxIndex, 0),
+            currentBeatIndex: Number.isInteger(source.currentBeatIndex) ? Math.max(0, source.currentBeatIndex) : 0,
+            directorLastDecision: source.directorLastDecision || null,
+            directorLastDecisionAt: Number.isFinite(source.directorLastDecisionAt) ? source.directorLastDecisionAt : 0,
+        };
+    }
+
+    function clampStartIndex(value, queueLength) {
+        if (queueLength <= 0) return 0;
+        return clampInt(value, 0, Math.max(0, queueLength - 1), 0);
+    }
+
     async function saveTaskState() {
+        const normalizedQueue = normalizeMemoryQueue(AppState.memory.queue);
+        const queueLength = normalizedQueue.length;
         const state = {
-            version: '2.9.0',
+            version: TASK_STATE_VERSION,
+            type: TASK_STATE_TYPE,
             timestamp: Date.now(),
-            memoryQueue: AppState.memory.queue,
+            memoryQueue: normalizedQueue,
             generatedWorldbook: AppState.worldbook.generated,
             worldbookVolumes: AppState.worldbook.volumes,
             currentVolumeIndex: AppState.worldbook.currentVolumeIndex,
@@ -39,6 +107,17 @@ export function createTaskStateService(deps = {}) {
             entryPositionConfig: AppState.config.entryPosition,
             originalFileName: AppState.file.current ? AppState.file.current.name : null,
             novelName: AppState.file.novelName || '',
+            experience: normalizeExperience(AppState.experience, queueLength),
+            processingState: {
+                incrementalMode: !!AppState.processing.incrementalMode,
+                volumeMode: !!AppState.processing.volumeMode,
+            },
+            queueState: {
+                startIndex: clampStartIndex(AppState.memory.startIndex, queueLength),
+                userSelectedIndex: Number.isInteger(AppState.memory.userSelectedIndex)
+                    ? clampStartIndex(AppState.memory.userSelectedIndex, queueLength)
+                    : null,
+            },
         };
         const timeString = new Date()
             .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -56,7 +135,7 @@ export function createTaskStateService(deps = {}) {
         a.click();
         URL.revokeObjectURL(url);
         const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
-        ErrorHandler.showUserSuccess(`任务状态已导出！已处理: ${processedCount}/${AppState.memory.queue.length}`);
+        ErrorHandler.showUserSuccess(`工程包已导出！已处理: ${processedCount}/${AppState.memory.queue.length}（含故事大纲与当前章节进度）`);
     }
 
     async function loadTaskState() {
@@ -70,10 +149,14 @@ export function createTaskStateService(deps = {}) {
                 const content = await file.text();
                 const state = JSON.parse(content);
                 if (!state.memoryQueue || !Array.isArray(state.memoryQueue)) throw new Error('无效的任务状态文件');
-                AppState.memory.queue = state.memoryQueue;
-                AppState.worldbook.generated = state.generatedWorldbook || {};
-                AppState.worldbook.volumes = state.worldbookVolumes || [];
-                AppState.worldbook.currentVolumeIndex = state.currentVolumeIndex || 0;
+
+                const normalizedQueue = normalizeMemoryQueue(state.memoryQueue);
+                AppState.memory.queue = normalizedQueue;
+                AppState.worldbook.generated = state.generatedWorldbook && typeof state.generatedWorldbook === 'object'
+                    ? state.generatedWorldbook
+                    : {};
+                AppState.worldbook.volumes = Array.isArray(state.worldbookVolumes) ? state.worldbookVolumes : [];
+                AppState.worldbook.currentVolumeIndex = clampStartIndex(state.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
                 AppState.file.hash = state.fileHash || null;
 
                 if (state.settings) AppState.settings = { ...defaultSettings, ...state.settings };
@@ -84,6 +167,13 @@ export function createTaskStateService(deps = {}) {
                 if (state.defaultWorldbookEntriesUI) AppState.persistent.defaultEntries = state.defaultWorldbookEntriesUI;
                 if (state.categoryDefaultConfig) AppState.config.categoryDefault = state.categoryDefaultConfig;
                 if (state.entryPositionConfig) AppState.config.entryPosition = state.entryPositionConfig;
+                if (state.processingState) {
+                    AppState.processing.incrementalMode = state.processingState.incrementalMode !== false;
+                    AppState.processing.volumeMode = state.processingState.volumeMode === true;
+                    AppState.settings.useVolumeMode = AppState.processing.volumeMode;
+                }
+
+                AppState.experience = normalizeExperience(state.experience || AppState.experience, AppState.memory.queue.length);
 
                 if (state.novelName) {
                     AppState.file.novelName = state.novelName;
@@ -107,8 +197,15 @@ export function createTaskStateService(deps = {}) {
                 }
 
                 const firstUnprocessed = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
-                AppState.memory.startIndex = firstUnprocessed !== -1 ? firstUnprocessed : 0;
-                AppState.memory.userSelectedIndex = null;
+                if (state.queueState && typeof state.queueState === 'object') {
+                    AppState.memory.startIndex = clampStartIndex(state.queueState.startIndex, AppState.memory.queue.length);
+                    AppState.memory.userSelectedIndex = Number.isInteger(state.queueState.userSelectedIndex)
+                        ? clampStartIndex(state.queueState.userSelectedIndex, AppState.memory.queue.length)
+                        : null;
+                } else {
+                    AppState.memory.startIndex = firstUnprocessed !== -1 ? firstUnprocessed : 0;
+                    AppState.memory.userSelectedIndex = null;
+                }
 
                 showQueueSection(true);
                 updateMemoryQueueUI();
@@ -125,7 +222,7 @@ export function createTaskStateService(deps = {}) {
                 }
 
                 const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
-                ErrorHandler.showUserSuccess(`导入成功！已处理: ${processedCount}/${AppState.memory.queue.length}`);
+                ErrorHandler.showUserSuccess(`工程包导入成功！已处理: ${processedCount}/${AppState.memory.queue.length}（已恢复故事大纲与当前章节进度）`);
                 document.getElementById('ttw-start-btn').disabled = false;
             } catch (error) {
                 ErrorHandler.showUserError('导入失败: ' + error.message);
@@ -136,6 +233,8 @@ export function createTaskStateService(deps = {}) {
 
     async function restoreExistingState() {
         if (AppState.memory.queue.length > 0) {
+            AppState.memory.queue = normalizeMemoryQueue(AppState.memory.queue);
+            AppState.experience = normalizeExperience(AppState.experience, AppState.memory.queue.length);
             document.getElementById('ttw-upload-area').style.display = 'none';
             document.getElementById('ttw-file-info').style.display = 'flex';
             document.getElementById('ttw-file-name').textContent = AppState.file.current ? AppState.file.current.name : '已加载的文件';
@@ -192,11 +291,19 @@ export function createTaskStateService(deps = {}) {
             if (savedState && savedState.memoryQueue && savedState.memoryQueue.length > 0) {
                 const processedCount = savedState.memoryQueue.filter((m) => m.processed).length;
                 if (await confirmAction(`检测到未完成任务\n已处理: ${processedCount}/${savedState.memoryQueue.length}\n\n是否恢复？`, { title: '恢复未完成任务' })) {
-                    AppState.memory.queue = savedState.memoryQueue;
-                    AppState.worldbook.generated = savedState.generatedWorldbook || {};
-                    AppState.worldbook.volumes = savedState.worldbookVolumes || [];
-                    AppState.worldbook.currentVolumeIndex = savedState.currentVolumeIndex || 0;
+                    AppState.memory.queue = normalizeMemoryQueue(savedState.memoryQueue);
+                    AppState.worldbook.generated = savedState.generatedWorldbook && typeof savedState.generatedWorldbook === 'object'
+                        ? savedState.generatedWorldbook
+                        : {};
+                    AppState.worldbook.volumes = Array.isArray(savedState.worldbookVolumes) ? savedState.worldbookVolumes : [];
+                    AppState.worldbook.currentVolumeIndex = clampStartIndex(savedState.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
                     AppState.file.hash = savedState.fileHash;
+                    AppState.experience = normalizeExperience(savedState.experience || AppState.experience, AppState.memory.queue.length);
+
+                    if (savedState.processingState) {
+                        AppState.processing.incrementalMode = savedState.processingState.incrementalMode !== false;
+                        AppState.processing.volumeMode = savedState.processingState.volumeMode === true;
+                    }
 
                     if (savedState.novelName) AppState.file.novelName = savedState.novelName;
 
@@ -204,9 +311,16 @@ export function createTaskStateService(deps = {}) {
                         rebuildWorldbookFromMemories();
                     }
 
-                    AppState.memory.startIndex = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
-                    if (AppState.memory.startIndex === -1) AppState.memory.startIndex = AppState.memory.queue.length;
-                    AppState.memory.userSelectedIndex = null;
+                    if (savedState.queueState && typeof savedState.queueState === 'object') {
+                        AppState.memory.startIndex = clampStartIndex(savedState.queueState.startIndex, AppState.memory.queue.length);
+                        AppState.memory.userSelectedIndex = Number.isInteger(savedState.queueState.userSelectedIndex)
+                            ? clampStartIndex(savedState.queueState.userSelectedIndex, AppState.memory.queue.length)
+                            : null;
+                    } else {
+                        AppState.memory.startIndex = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
+                        if (AppState.memory.startIndex === -1) AppState.memory.startIndex = AppState.memory.queue.length;
+                        AppState.memory.userSelectedIndex = null;
+                    }
 
                     showQueueSection(true);
                     updateMemoryQueueUI();
