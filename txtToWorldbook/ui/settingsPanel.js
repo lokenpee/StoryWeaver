@@ -65,19 +65,10 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
+const PLUGIN_VERSION = 'v1.9.8';
+
 function buildPluginUpdateHtml() {
-    return `
-    <div class="ttw-setting-card" style="background:rgba(241,196,15,0.12);border:1px solid rgba(241,196,15,0.32);">
-        <div style="font-weight:bold;color:#f1c40f;margin-bottom:8px;">⬆️ 插件更新</div>
-        <div class="ttw-setting-hint" style="margin-bottom:10px;line-height:1.6;">
-            直接在此页面更新 StoryWeaver，无需再去插件管理页。<br>
-            远程仓库：<span style="color:#f4d03f;word-break:break-all;">https://github.com/lokenpee/StoryWeaver</span>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <button id="ttw-update-plugin-btn" class="ttw-btn ttw-btn-small" style="background:rgba(241,196,15,0.35);">⬆️ 更新插件</button>
-            <span class="ttw-setting-hint">更新后需要刷新页面生效</span>
-        </div>
-    </div>`;
+    return '';
 }
 
 function buildParallelConfigHtml() {
@@ -539,7 +530,6 @@ function buildModalBodyHtml() {
     return `
     <div class="ttw-modal-body">
         ${buildViewNavHtml()}
-        ${buildPluginUpdateHtml()}
         ${buildFileUploadSectionHtml()}
         ${buildSettingsHtml()}
         ${buildDefaultEntriesSectionHtml()}
@@ -571,8 +561,9 @@ export function buildModalHtml() {
     return `
     <div class="ttw-modal">
         <div class="ttw-modal-header">
-            <span class="ttw-modal-title">📚 TXT转世界书</span>
+            <span class="ttw-modal-title">📚 TXT转世界书 <span style="font-size:12px;opacity:0.7;font-weight:normal;">${PLUGIN_VERSION}</span></span>
             <div class="ttw-header-actions">
+                <button id="ttw-update-plugin-btn" class="ttw-btn ttw-btn-small" style="background:rgba(241,196,15,0.35);margin-right:8px;" title="更新插件">⬆️ 更新</button>
                 <span class="ttw-help-btn" title="帮助">❓</span>
                 <button class="ttw-modal-close" type="button">✕</button>
             </div>
