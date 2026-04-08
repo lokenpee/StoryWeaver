@@ -502,14 +502,40 @@
         };
     }
 
-    function createChapterAssetsValidationError(index, message) {
+    function createChapterAssetsValidationError(index, message, detail = null) {
         const error = new Error(`[第${index + 1}章] 章节概览校验失败: ${message}`);
         error.code = 'CHAPTER_ASSETS_VALIDATION';
+        if (detail && typeof detail === 'object') {
+            error.detail = detail;
+        }
         return error;
+    }
+
+    function summarizeBeatOriginalText(beats) {
+        const list = Array.isArray(beats) ? beats : [];
+        const lengths = [];
+        const emptyBeatIndices = [];
+
+        for (let i = 0; i < list.length; i++) {
+            const beat = list[i] || {};
+            const text = typeof beat.original_text === 'string' ? beat.original_text : '';
+            const len = text.length;
+            lengths.push(len);
+            if (!text.trim()) {
+                emptyBeatIndices.push(i + 1);
+            }
+        }
+
+        return {
+            count: list.length,
+            lengths,
+            emptyBeatIndices,
+        };
     }
 
     function validateChapterAssetsOrThrow(assets, memory, index) {
         const beats = Array.isArray(assets?.script?.beats) ? assets.script.beats : [];
+        const beatSummary = summarizeBeatOriginalText(beats);
         if (beats.length < 3 || beats.length > 8) {
             throw createChapterAssetsValidationError(index, `节拍数量需在3-8之间，当前为${beats.length}`);
         }
@@ -520,7 +546,13 @@
             const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
             const len = originalText.length;
             if (len < 200 || len > 1500) {
-                throw createChapterAssetsValidationError(index, `第${i + 1}个节拍原文长度需在200-1500字，当前为${len}`);
+                const hint = len === 0 ? '（未提取到 original_text）' : '';
+                throw createChapterAssetsValidationError(index, `第${i + 1}个节拍原文长度需在200-1500字，当前为${len}${hint}`, {
+                    beatIndex: i + 1,
+                    beatCount: beatSummary.count,
+                    emptyBeatIndices: beatSummary.emptyBeatIndices,
+                    lengths: beatSummary.lengths,
+                });
             }
 
             const splitRule = beat.split_rule && typeof beat.split_rule === 'object' ? beat.split_rule : {};
@@ -541,25 +573,47 @@
 
         const chapterContent = String(memory?.content || '');
         if (mergedOriginal !== chapterContent) {
-            throw createChapterAssetsValidationError(index, '节拍原文拼接后与章节正文不一致（必须字级无损、无重叠无遗漏）');
+            throw createChapterAssetsValidationError(
+                index,
+                `节拍原文拼接后与章节正文不一致（必须字级无损、无重叠无遗漏），拼接长度=${mergedOriginal.length}，正文长度=${chapterContent.length}`,
+                {
+                    beatCount: beatSummary.count,
+                    emptyBeatIndices: beatSummary.emptyBeatIndices,
+                    lengths: beatSummary.lengths,
+                    mergedLength: mergedOriginal.length,
+                    chapterLength: chapterContent.length,
+                }
+            );
         }
     }
 
     function parseChapterAssetsResponse(response, memory, index) {
         const fallbackOutline = toShortOutline(memory.content, 140) || `${memory.chapterTitle || `第${index + 1}章`}剧情推进。`;
         const parsed = extractJsonObject(response);
+        const rawLength = String(response || '').length;
 
         if (!parsed) {
             const plain = toShortOutline(response, 140) || fallbackOutline;
             return {
                 outline: plain,
                 script: normalizeScript({}, plain),
+                meta: {
+                    parsed: false,
+                    rawLength,
+                },
             };
         }
 
         const outline = toShortOutline(parsed.outline || parsed.summary || parsed.chapter_outline || '', 140) || fallbackOutline;
         const script = normalizeScript(parsed.script || parsed.chapterScript || {}, outline);
-        return { outline, script };
+        return {
+            outline,
+            script,
+            meta: {
+                parsed: true,
+                rawLength,
+            },
+        };
     }
 
     function buildChapterAssetsPrompt(memory, index) {
@@ -568,7 +622,7 @@
         const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
         const previousOutline = previousMemory?.chapterOutline ? `\n上一章摘要：${previousMemory.chapterOutline}` : '';
 
-        return `${getLanguagePrefix()}你是小说章节分析助手。请基于章节正文输出“摘要 + 节拍剧本”，并严格遵守分割规则。\n\n核心拆分规则（必须遵守）：\n1) 六条分割铁则（用于识别可切点）：动作闭环、场景切换、对话闭环、剧情转折、视角切换、互动切口。\n2) 碎片挂靠：回忆/心理/碎嘴对话不可独立成节拍，需挂靠核心节拍。\n3) 合并规则：同一叙事目的的连续小事件必须合并。\n4) 节拍数量：每章 3-8 个。\n5) 节拍原文字数：每个 200-1500 字。\n6) 无损约束：beats.original_text 按顺序拼接后，必须与章节正文逐字完全一致，且无重叠无遗漏。\n7) 剧透防护：当前节拍原文不得包含后续节拍核心信息。\n\n防碎片三保险：\n- 同目的只切一次。\n- 信号优先级：剧情转折 > 视角切换 > 场景切换 > 互动切口 > 动作/对话闭环。\n- 连续300字内多个信号按同一次叙事波动处理，仅取最强切分。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 必须包含 goal、flow、keyNodes(最多3条)、beats(3-8个)。\n5) beats 每项必须包含：id、summary、exitCondition、tags、original_text、split_rule。\n6) split_rule 必须包含：primary（主导规则）、matched（命中规则数组，需包含 primary）。\n7) 不允许额外文本。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."],\n    "beats": [\n      {\n        "id": "b1",\n        "summary": "...",\n        "exitCondition": "...",\n        "tags": ["...", "..."],\n        "original_text": "该节拍对应原文（必须是正文原句片段）",\n        "split_rule": {\n          "primary": "剧情转折",\n          "matched": ["剧情转折", "互动切口"]\n        }\n      }\n    ]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
+        return `${getLanguagePrefix()}你是“章节拆分助手”。你的任务只有一个：把下面这章正文，拆成 3-8 个连续剧情段，并输出摘要 + 结构化JSON。\n\n先理解术语（人话定义）：\n1) 节拍（beat）：一段连续剧情单元，可以理解成“一个小剧情段/一个镜头段”。\n2) original_text：这个节拍在正文里对应的原文片段，必须原样复制，不能改写。\n3) split_rule.primary：这个节拍最主要的切分理由。\n4) split_rule.matched：本节拍命中的所有切分理由数组，必须包含 primary。\n\n六种切分理由（都用人话）：\n- 动作闭环：一个动作链条有了阶段性完成（例如“发现线索 -> 追踪 -> 暂时停下”）。\n- 场景切换：地点或环境发生明确变化。\n- 对话闭环：一轮关键问答/谈判完成并进入新焦点。\n- 剧情转折：目标、关系、风险、结论发生明显变化。\n- 视角切换：叙事主视角或关注对象明显切换。\n- 互动切口：出现明确“等玩家决策/互动”的停顿点。\n\n工作步骤（按顺序执行）：\n1) 通读全文，先找可切点，再决定 3-8 个节拍。\n2) 把同一叙事目的的短碎片合并，避免切得太碎。\n3) 给每个节拍写 summary、exitCondition、tags。\n4) 给每个节拍填写 original_text（直接从正文拷贝，不改字）。\n5) 为每个节拍填写 split_rule.primary 和 split_rule.matched。\n6) 最后做“无损自检”：把所有 beats.original_text 按顺序拼接，必须与正文逐字完全一致。\n\n硬性约束（必须满足）：\n1) 只输出 JSON，不要代码块，不要解释。\n2) 必须包含 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 包含 goal、flow、keyNodes(最多3条)、beats(3-8个)。\n5) 每个 beat 必须包含：id、summary、exitCondition、tags、original_text、split_rule。\n6) 每个 original_text 长度必须在 200-1500 字。\n7) beats.original_text 拼接后必须与正文完全一致（无重叠、无遗漏、无改写）。\n8) 当前节拍原文不要提前包含后续节拍的核心剧透信息。\n\n简易概念图：\n章节正文 -> 划分节拍 -> 每拍填写字段 -> 原文无损拼接自检 -> 输出JSON\n\n输出格式（严格照此结构）：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."],\n    "beats": [\n      {\n        "id": "b1",\n        "summary": "...",\n        "exitCondition": "...",\n        "tags": ["...", "..."],\n        "original_text": "该节拍对应原文（必须是正文原句片段）",\n        "split_rule": {\n          "primary": "剧情转折",\n          "matched": ["剧情转折", "互动切口"]\n        }\n      }\n    ]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
     }
 
     async function generateChapterAssets(index, options = {}) {
@@ -608,9 +662,18 @@
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 throwIfRunInactive(runId);
+                updateStreamContent(`🧭 [第${index + 1}章][导演API] 发起章节资产请求（尝试 ${attempt + 1}/${maxRetries + 1}）\n`);
                 const response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
                 throwIfRunInactive(runId);
                 const assets = parseChapterAssetsResponse(response, memory, index);
+                if (!assets?.meta?.parsed) {
+                    throw createChapterAssetsValidationError(
+                        index,
+                        `导演响应不是有效JSON，无法提取节拍原文（响应长度=${assets?.meta?.rawLength || 0}）`
+                    );
+                }
+                const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
+                updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
                 validateChapterAssetsOrThrow(assets, memory, index);
                 throwIfRunInactive(runId);
                 memory.chapterOutline = assets.outline;
@@ -626,13 +689,16 @@
                 }
                 memory.chapterOutlineStatus = 'done';
                 memory.chapterOutlineError = '';
-                updateStreamContent(`🧭 [第${index + 1}章] 大纲生成完成\n`);
+                updateStreamContent(`✅ [第${index + 1}章][导演API] 章节资产校验通过，beats=${beatCount}\n`);
                 updateMemoryQueueUI();
                 return assets;
             } catch (error) {
                 lastError = error;
                 if (error?.message === 'ABORTED') {
                     throw error;
+                }
+                if (error?.code === 'CHAPTER_ASSETS_VALIDATION' && error?.detail?.emptyBeatIndices?.length) {
+                    updateStreamContent(`ℹ️ [第${index + 1}章][导演API] 校验诊断: 空原文节拍=${error.detail.emptyBeatIndices.join(',')}，请确认返回 JSON 中每个 beat 包含 original_text 且内容完整\n`);
                 }
                 const canRetry = shouldRetryError(error);
                 const brief = formatProcessingError(error, { chapterIndex: index + 1, task: '导演API' });
@@ -718,6 +784,7 @@
 
         updateStreamContent(`\n🔄 [第${chapterIndex}章] 开始处理: ${memory.title}\n`);
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
+        updateStreamContent(`📡 [第${chapterIndex}章] 已发起并行子任务：主API世界书 + 导演API章节资产\n`);
 
         let chapterAssetsPromise = null;
         const throughputMode = resolveChapterCompletionMode() === 'throughput';
@@ -736,6 +803,7 @@
 
                 debugLog(`[第${chapterIndex}章][主API] 后处理章节索引...`);
                 memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
+                updateStreamContent(`✅ [第${chapterIndex}章][主API] 世界书响应解析完成\n`);
                 return memoryUpdate;
             })();
 
@@ -894,6 +962,7 @@ ${'='.repeat(50)}
 
         debugLog(`[串行][第${chapterIndex}章] 开始, 重试=${retryCount}`);
         updateProgress(progress, `正在处理: ${memory.title} (第${chapterIndex}章)${retryCount > 0 ? ` (重试 ${retryCount})` : ''}`);
+        updateStreamContent(`📡 [第${chapterIndex}章] 已发起并行子任务：主API世界书 + 导演API章节资产\n`);
 
         memory.processing = true;
         updateMemoryQueueUI();
@@ -980,6 +1049,7 @@ ${'='.repeat(50)}
             debugLog(`[串行][第${chapterIndex}章] 解析AI响应...`);
             let memoryUpdate = parseAIResponse(response, { strict: false });
             memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
+            updateStreamContent(`✅ [第${chapterIndex}章][主API] 世界书响应解析完成\n`);
 
             debugLog(`[串行][第${chapterIndex}章] 合并世界书...`);
             await mergeWorldbookDataWithHistory({ target: AppState.worldbook.generated, source: memoryUpdate, memoryIndex: index, memoryTitle: memory.title });

@@ -41,6 +41,18 @@ export function createApiService(deps = {}) {
         return Math.max(1, Math.min(8192, parsed));
     }
 
+    function buildApiLogPrefix(target = 'main', taskId = null) {
+        const apiTag = target === 'director' ? '导演API' : '主API';
+        const parsedTask = Number.parseInt(taskId, 10);
+        if (Number.isFinite(parsedTask) && parsedTask > 0) {
+            return `[第${parsedTask}章][${apiTag}]`;
+        }
+        if (taskId !== null && taskId !== undefined && String(taskId).trim()) {
+            return `[任务${String(taskId).trim()}][${apiTag}]`;
+        }
+        return `[${apiTag}]`;
+    }
+
     async function callSillyTavernAPI(messages, taskId = null) {
         const timeout = AppState.settings.apiTimeout || 120000;
         const logPrefix = taskId !== null ? `[任务${taskId}]` : '';
@@ -222,7 +234,7 @@ export function createApiService(deps = {}) {
         return data.choices?.[0]?.message?.content || '';
     }
 
-    async function callCustomAPI(messages, target = 'main') {
+    async function callCustomAPI(messages, target = 'main', taskId = null) {
         const maxRetries = 3;
         const baseTimeout = AppState.settings.apiTimeout || 120000;
         const timeout = target === 'director'
@@ -231,13 +243,15 @@ export function createApiService(deps = {}) {
         const requestConfig = buildCustomApiRequest(messages, target);
         const combinedPrompt = messagesToString(messages);
 
-        const tag = target === 'director' ? '导演API' : '主API';
-        updateStreamContent(`\n📤 发送请求到${tag} (${requestConfig.provider}, ${messages.length}条消息)...\n`);
-        debugLog(`${tag}开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${combinedPrompt.length}`);
+        const logPrefix = buildApiLogPrefix(target, taskId);
+        updateStreamContent(`\n📤 ${logPrefix} 发送请求 (${requestConfig.provider}, ${messages.length}条消息)...\n`);
+        debugLog(`${logPrefix} 开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${combinedPrompt.length}`);
 
         try {
-            return await APICaller.withRetry(async () => {
-                debugLog(`${tag}请求目标: ${requestConfig.requestUrl.substring(0, 80)}...`);
+            return await APICaller.withRetry(async (attempt) => {
+                const attemptNo = attempt + 1;
+                updateStreamContent(`🕓 ${logPrefix} 请求进行中（尝试 ${attemptNo}/${maxRetries + 1}）...\n`);
+                debugLog(`${logPrefix} 请求目标: ${requestConfig.requestUrl.substring(0, 80)}..., 尝试=${attemptNo}`);
 
                 if (requestConfig.isStreamRequest) {
                     const result = await APICaller.requestStream(requestConfig.requestUrl, {
@@ -245,8 +259,11 @@ export function createApiService(deps = {}) {
                         timeout,
                         inactivityTimeout: Math.min(timeout, 120000),
                     });
-                    debugLog(`${tag}流式读取完成, 结果长度=${result.length}字符`);
-                    updateStreamContent(`📥 收到流式响应 (${result.length}字符)\n`);
+                    debugLog(`${logPrefix} 流式读取完成, 结果长度=${result.length}字符`);
+                    updateStreamContent(`📥 ${logPrefix} 收到流式响应 (${result.length}字符)\n`);
+                    if (!String(result || '').trim()) {
+                        updateStreamContent(`⚠️ ${logPrefix} 响应为空文本，可能是流式格式不兼容\n`);
+                    }
                     return result;
                 }
 
@@ -254,22 +271,25 @@ export function createApiService(deps = {}) {
                     ...requestConfig.requestOptions,
                     timeout,
                 });
-                debugLog(`${tag} JSON解析完成, 开始提取内容`);
+                debugLog(`${logPrefix} JSON解析完成, 开始提取内容`);
                 const result = extractCustomApiText(requestConfig.provider, data);
-                debugLog(`${tag}提取完成, 结果长度=${result.length}字符`);
-                updateStreamContent(`📥 收到响应 (${result.length}字符)\n`);
+                debugLog(`${logPrefix} 提取完成, 结果长度=${result.length}字符`);
+                updateStreamContent(`📥 ${logPrefix} 收到响应 (${result.length}字符)\n`);
+                if (!String(result || '').trim()) {
+                    updateStreamContent(`⚠️ ${logPrefix} JSON响应可解析但正文为空\n`);
+                }
                 return result;
             }, {
                 retries: maxRetries,
                 shouldRetry: (error) => APICaller.isRateLimitError(error),
                 onRetry: async (error, nextAttempt, delay) => {
-                    Logger.warn('API', `限流重试 #${nextAttempt}: ${error.message}`);
-                    updateStreamContent(`⏳ 遇到限流，${delay}ms后重试...\n`);
+                    Logger.warn('API', `${logPrefix} 限流重试 #${nextAttempt}: ${error.message}`);
+                    updateStreamContent(`⏳ ${logPrefix} 遇到限流，${delay}ms后重试...\n`);
                 },
             });
         } catch (error) {
             const normalized = APICaller.handleError(error, '自定义API');
-            debugLog(`${tag}出错: ${error.name || 'Error'} - ${error.message}`);
+            debugLog(`${logPrefix} 出错: ${error.name || 'Error'} - ${error.message}`);
             if (normalized.type === 'timeout') {
                 throw new Error(`API请求超时 (${timeout / 1000}秒)`);
             }
@@ -422,11 +442,12 @@ export function createApiService(deps = {}) {
         const messages = target === 'main'
             ? applyMessageChain(prompt)
             : [{ role: 'user', content: String(prompt || '') }];
-        debugLog(`callAPI: 消息链转换完成, ${messages.length}条消息, roles=[${messages.map((m) => m.role).join(',')}]`);
+        const logPrefix = buildApiLogPrefix(target, taskId);
+        debugLog(`${logPrefix} 消息链转换完成, ${messages.length}条消息, roles=[${messages.map((m) => m.role).join(',')}]`);
         if (target === 'main' && AppState.settings.useTavernApi) {
             return callSillyTavernAPI(messages, taskId);
         }
-        return callCustomAPI(messages, target);
+        return callCustomAPI(messages, target, taskId);
     }
 
     async function callAPI(prompt, taskId = null) {
@@ -453,7 +474,7 @@ export function createApiService(deps = {}) {
             Logger.warn('API', `导演API失败，已回退主AI: ${error.message}`);
             updateStreamContent(`⚠️ 导演API失败，已自动回退主AI\n`);
             const fallbackMessages = [{ role: 'user', content: String(prompt || '') }];
-            return callCustomAPI(fallbackMessages, 'main');
+            return callCustomAPI(fallbackMessages, 'main', taskId);
         }
     }
 
