@@ -24,6 +24,8 @@ export const DEFAULT_PLOT_OUTLINE_CONFIG = {
 export const DEFAULT_PARALLEL_CONFIG = {
     enabled: true,
     concurrency: 1,
+    mainConcurrency: 1,
+    directorConcurrency: 1,
     mode: 'independent'
 };
 
@@ -200,6 +202,8 @@ export const defaultSettings = {
     apiTimeout: 120000,
     parallelEnabled: true,
     parallelConcurrency: 1,
+    parallelMainConcurrency: 1,
+    parallelDirectorConcurrency: 1,
     parallelMode: 'independent',
     useTavernApi: true,
     customMergePrompt: '',

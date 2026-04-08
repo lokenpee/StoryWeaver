@@ -827,6 +827,64 @@ export function ensureModalStyles() {
             padding: 0 6px;
             line-height: 1.7;
         }
+
+        .ttw-beat-details {
+            margin-top: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.18);
+            overflow: hidden;
+        }
+
+        .ttw-beat-details-summary {
+            cursor: pointer;
+            list-style: none;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: var(--ttw-text-secondary);
+            user-select: none;
+        }
+
+        .ttw-beat-details-summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .ttw-beat-details-summary::before {
+            content: '▸';
+            display: inline-block;
+            margin-right: 6px;
+            transition: transform 0.2s ease;
+            color: var(--ttw-text-muted);
+        }
+
+        .ttw-beat-details[open] .ttw-beat-details-summary::before {
+            transform: rotate(90deg);
+        }
+
+        .ttw-beat-details-body {
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .ttw-beat-rule {
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--ttw-accent-blue);
+        }
+
+        .ttw-beat-original {
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--ttw-text-primary);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
         
         /* --- 按钮样式 --- */
         .ttw-btn {

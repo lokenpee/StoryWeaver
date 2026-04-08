@@ -224,7 +224,10 @@ export function createApiService(deps = {}) {
 
     async function callCustomAPI(messages, target = 'main') {
         const maxRetries = 3;
-        const timeout = AppState.settings.apiTimeout || 120000;
+        const baseTimeout = AppState.settings.apiTimeout || 120000;
+        const timeout = target === 'director'
+            ? Math.min(baseTimeout, 8000)
+            : baseTimeout;
         const requestConfig = buildCustomApiRequest(messages, target);
         const combinedPrompt = messagesToString(messages);
 
@@ -442,12 +445,14 @@ export function createApiService(deps = {}) {
             if (!fallbackEnabled) {
                 throw error;
             }
+            if (AppState.settings.useTavernApi) {
+                Logger.warn('API', `导演API失败，已跳过回退主AI（酒馆模式下避免发送链路递归）: ${error.message}`);
+                updateStreamContent('⚠️ 导演API失败，已跳过回退主AI（酒馆模式下避免卡发送）\n');
+                throw error;
+            }
             Logger.warn('API', `导演API失败，已回退主AI: ${error.message}`);
             updateStreamContent(`⚠️ 导演API失败，已自动回退主AI\n`);
             const fallbackMessages = [{ role: 'user', content: String(prompt || '') }];
-            if (AppState.settings.useTavernApi) {
-                return callSillyTavernAPI(fallbackMessages, taskId);
-            }
             return callCustomAPI(fallbackMessages, 'main');
         }
     }

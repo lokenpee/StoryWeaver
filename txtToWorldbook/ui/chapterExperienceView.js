@@ -190,6 +190,17 @@ export function createChapterExperienceView(deps = {}) {
         if (!Array.isArray(memory.chapterScript.beats)) {
             memory.chapterScript.beats = [];
         }
+        memory.chapterScript.beats = memory.chapterScript.beats.map((beat, idx) => {
+            const source = beat && typeof beat === 'object' ? beat : {};
+            return {
+                ...source,
+                id: String(source.id || `b${idx + 1}`),
+                original_text: typeof source.original_text === 'string'
+                    ? source.original_text
+                    : (typeof source.originalText === 'string' ? source.originalText : ''),
+                split_rule: normalizeSplitRule(source.split_rule || source.splitRule || {}),
+            };
+        });
         if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
             memory.chapterCurrentBeatIndex = 0;
         }
@@ -211,6 +222,25 @@ export function createChapterExperienceView(deps = {}) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
+    }
+
+    function normalizeSplitRule(rawRule = {}) {
+        const source = rawRule && typeof rawRule === 'object' ? rawRule : {};
+        const rawMatched = Array.isArray(source.matched)
+            ? source.matched
+            : (source.matched ? [source.matched] : []);
+        const matched = rawMatched
+            .map((rule) => String(rule || '').trim())
+            .filter(Boolean)
+            .slice(0, 8);
+        const primary = String(source.primary || source.rule || matched[0] || '动作闭环').trim() || '动作闭环';
+        if (!matched.includes(primary)) {
+            matched.unshift(primary);
+        }
+        return {
+            primary,
+            matched: matched.slice(0, 8),
+        };
     }
 
     function deriveOutlineFromContent(memory) {
@@ -237,6 +267,11 @@ export function createChapterExperienceView(deps = {}) {
                 summary: node,
                 exitCondition: '等待用户行动或关键互动完成',
                 tags: [],
+                original_text: '',
+                split_rule: {
+                    primary: '动作闭环',
+                    matched: ['动作闭环'],
+                },
             })),
         };
     }
@@ -255,6 +290,10 @@ export function createChapterExperienceView(deps = {}) {
                         summary: toShortText(source.summary || source.event || source.description || `事件点${idx + 1}`, 90),
                         exitCondition: toShortText(source.exitCondition || source.exit_condition || '等待关键互动完成', 90),
                         tags,
+                        original_text: typeof source.original_text === 'string'
+                            ? source.original_text
+                            : (typeof source.originalText === 'string' ? source.originalText : ''),
+                        split_rule: normalizeSplitRule(source.split_rule || source.splitRule || {}),
                     };
                 })
                 .slice(0, 8);
@@ -276,6 +315,11 @@ export function createChapterExperienceView(deps = {}) {
             summary,
             exitCondition: '等待关键互动完成',
             tags: [],
+            original_text: '',
+            split_rule: {
+                primary: '动作闭环',
+                matched: ['动作闭环'],
+            },
         }));
     }
 
@@ -354,6 +398,23 @@ export function createChapterExperienceView(deps = {}) {
                 const tagsHtml = beat.tags.length > 0
                     ? `<div class="ttw-beat-tags">${beat.tags.map((tag) => `<span class="ttw-beat-tag">${escapeHtml(tag)}</span>`).join('')}</div>`
                     : '';
+                const splitRule = beat.split_rule && typeof beat.split_rule === 'object'
+                    ? beat.split_rule
+                    : normalizeSplitRule({});
+                const splitRuleMatched = Array.isArray(splitRule.matched)
+                    ? splitRule.matched.map((rule) => String(rule || '').trim()).filter(Boolean)
+                    : [];
+                const ruleText = splitRuleMatched.length > 0
+                    ? `主导规则：${splitRule.primary} ｜ 命中：${splitRuleMatched.join('、')}`
+                    : `主导规则：${splitRule.primary}`;
+                const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
+                const detailsHtml = `<details class="ttw-beat-details">
+    <summary class="ttw-beat-details-summary">查看原文与切分规则</summary>
+    <div class="ttw-beat-details-body">
+        <div class="ttw-beat-rule">${escapeHtml(ruleText)}</div>
+        <div class="ttw-beat-original">${escapeHtml(originalText || '暂无该节拍原文（旧数据或生成异常）。')}</div>
+    </div>
+</details>`;
                 return `<div class="ttw-beat-item ${isActive ? 'is-active' : ''}">
     <div class="ttw-beat-item-head">
         <span class="ttw-beat-id">${escapeHtml(beat.id || `b${idx + 1}`)}</span>
@@ -362,6 +423,7 @@ export function createChapterExperienceView(deps = {}) {
     <div class="ttw-beat-summary">${escapeHtml(beat.summary || '')}</div>
     <div class="ttw-beat-exit">退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
     ${tagsHtml}
+    ${detailsHtml}
 </div>`;
             }).join('')
             : '<div class="ttw-script-empty">暂无轻节拍，默认按摘要推进。</div>';

@@ -66,6 +66,7 @@ export function createModalEventBinder(deps) {
         exportVolumes,
         exportToSillyTavern,
         showMemoryContentModal,
+        handlePluginSelfUpdate,
     } = deps;
 
     function bindModalEvents(modalContainer) {
@@ -98,6 +99,7 @@ export function createModalEventBinder(deps) {
             updateWorldbookPreview,
             ErrorHandler,
             testChapterRegex,
+            handlePluginSelfUpdate,
         });
 
         bindCollapsePanelEventsUI();

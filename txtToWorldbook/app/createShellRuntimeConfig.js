@@ -85,6 +85,7 @@ export function createShellRuntimeConfig(deps = {}) {
         updateStartButtonState,
         showQueueSection,
         showProgressSection,
+        handlePluginSelfUpdate,
         onEntryConfigChanged,
         onHashFallback,
     } = deps;
@@ -190,6 +191,7 @@ export function createShellRuntimeConfig(deps = {}) {
             exportVolumes,
             exportToSillyTavern,
             showMemoryContentModal,
+            handlePluginSelfUpdate,
         }),
         fileImportDeps: {
             updateMemoryQueueUI,

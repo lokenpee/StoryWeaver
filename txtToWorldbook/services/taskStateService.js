@@ -29,12 +29,50 @@ export function createTaskStateService(deps = {}) {
         return Math.max(min, Math.min(max, parsed));
     }
 
+    function normalizeSplitRule(rawRule = {}) {
+        const source = rawRule && typeof rawRule === 'object' ? rawRule : {};
+        const rawMatched = Array.isArray(source.matched)
+            ? source.matched
+            : (source.matched ? [source.matched] : []);
+        const matched = rawMatched
+            .map((rule) => String(rule || '').trim())
+            .filter(Boolean)
+            .slice(0, 8);
+        const primary = String(source.primary || source.rule || matched[0] || '动作闭环').trim() || '动作闭环';
+        if (!matched.includes(primary)) {
+            matched.unshift(primary);
+        }
+        return {
+            primary,
+            matched: matched.slice(0, 8),
+        };
+    }
+
+    function normalizeBeatItem(beat = {}, index = 0) {
+        const source = beat && typeof beat === 'object' ? beat : {};
+        const tags = Array.isArray(source.tags)
+            ? source.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 4)
+            : [];
+        return {
+            id: String(source.id || `b${index + 1}`).trim() || `b${index + 1}`,
+            summary: String(source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
+            exitCondition: String(source.exitCondition || source.exit_condition || '等待用户行动或关键互动完成').trim() || '等待用户行动或关键互动完成',
+            tags,
+            original_text: typeof source.original_text === 'string'
+                ? source.original_text
+                : (typeof source.originalText === 'string' ? source.originalText : ''),
+            split_rule: normalizeSplitRule(source.split_rule || source.splitRule || {}),
+        };
+    }
+
     function normalizeChapterScript(script = {}) {
         const normalized = script && typeof script === 'object' ? { ...script } : {};
         normalized.goal = typeof normalized.goal === 'string' ? normalized.goal : '';
         normalized.flow = typeof normalized.flow === 'string' ? normalized.flow : '';
         normalized.keyNodes = Array.isArray(normalized.keyNodes) ? normalized.keyNodes : [];
-        normalized.beats = Array.isArray(normalized.beats) ? normalized.beats : [];
+        normalized.beats = Array.isArray(normalized.beats)
+            ? normalized.beats.map((beat, index) => normalizeBeatItem(beat, index))
+            : [];
         return normalized;
     }
 

@@ -33,6 +33,44 @@ export function createDirectorService(deps = {}) {
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
     }
 
+    function normalizeSplitRule(rawRule = {}) {
+        const source = rawRule && typeof rawRule === 'object' ? rawRule : {};
+        const rawMatched = Array.isArray(source.matched)
+            ? source.matched
+            : (source.matched ? [source.matched] : []);
+        const matched = rawMatched
+            .map((rule) => String(rule || '').trim())
+            .filter(Boolean)
+            .slice(0, 8);
+        const primary = String(source.primary || source.rule || matched[0] || '动作闭环').trim() || '动作闭环';
+        if (!matched.includes(primary)) {
+            matched.unshift(primary);
+        }
+        return {
+            primary,
+            matched: matched.slice(0, 8),
+        };
+    }
+
+    function getPreviousBeatTail(beats, stageIdx, tailChars = 200) {
+        if (!Array.isArray(beats) || stageIdx <= 0) return '';
+        const previousBeat = beats[stageIdx - 1];
+        const previousOriginal = String(previousBeat?.original_text || '').trim();
+        if (!previousOriginal) return '';
+        return previousOriginal.slice(Math.max(0, previousOriginal.length - tailChars));
+    }
+
+    function buildSplitRuleHint(beat) {
+        const splitRule = beat?.split_rule && typeof beat.split_rule === 'object'
+            ? beat.split_rule
+            : normalizeSplitRule({});
+        const primary = String(splitRule.primary || '动作闭环').trim() || '动作闭环';
+        const matched = Array.isArray(splitRule.matched)
+            ? splitRule.matched.map((rule) => String(rule || '').trim()).filter(Boolean)
+            : [];
+        return `主导规则: ${primary}${matched.length > 0 ? ` | 命中规则: ${matched.join('、')}` : ''}`;
+    }
+
     function normalizeBeat(rawBeat, idx) {
         const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
         const tags = Array.isArray(source.tags)
@@ -43,6 +81,10 @@ export function createDirectorService(deps = {}) {
             summary: toShortText(source.summary || source.event || source.description || `事件点${idx + 1}`, 100),
             exitCondition: toShortText(source.exitCondition || source.exit_condition || '等待关键互动完成', 100),
             tags,
+            original_text: typeof source.original_text === 'string'
+                ? source.original_text
+                : (typeof source.originalText === 'string' ? source.originalText : ''),
+            split_rule: normalizeSplitRule(source.split_rule || source.splitRule || {}),
         };
     }
 
@@ -529,8 +571,15 @@ export function createDirectorService(deps = {}) {
             exitCondition: beat.exitCondition,
             tags: beat.tags,
         }));
+        const currentBeat = beats[currentBeatIdx] || beats[0] || null;
+        const currentOriginal = String(currentBeat?.original_text || '').trim();
+        const currentOriginalForPrompt = currentOriginal
+            ? `${currentOriginal.slice(0, 1800)}${currentOriginal.length > 1800 ? '\n...(已截断)' : ''}`
+            : '无';
+        const previousTail = getPreviousBeatTail(beats, currentBeatIdx, 200) || '无';
+        const splitRuleHint = buildSplitRuleHint(currentBeat);
 
-        return `${getLanguagePrefix ? getLanguagePrefix() : ''}你是互动小说的导演裁判。请先判断当前处于本章哪个轻节拍阶段，再给出下一步宽松引导。\n\n规则：\n1) 输出必须是JSON，不要代码块，不要解释。\n2) 先定位阶段：stage_idx 应尽量贴近当前对话。\n3) should_advance 仅在当前节拍明显完成时为 true。\n4) next_hint 只给下一步短引导，不能剧透后续大事件。\n5) spoiler_hold 写本回合防剧透边界（简短一句）。\n6) tone_hint 可为空。\n7) confidence 为0-1数字。\n8) 先识别用户意图，写入 user_intent 与 intent_confidence、intent_rationale。\n\n允许的 user_intent 标签：advance, stay, neutral, switch_scene, skip, investigate, search, explore, travel, dialogue, negotiate, reflect, plan, rest, stealth, combat, summarize, clarify, request_hint, meta。\n\n章节：${chapterTitle}\n本章摘要：${chapterOutline}\n当前阶段索引：${currentBeatIdx}\n\n轻节拍列表：\n${JSON.stringify(compactBeats, null, 2)}\n\n最近对话：\n${latestDialogue}\n\n输出JSON格式：\n{\n  "stage_idx": 0,\n  "should_advance": false,\n  "user_intent": "advance",\n  "intent_confidence": 0.75,\n  "intent_rationale": "...",\n  "next_hint": "...",\n  "spoiler_hold": "...",\n  "tone_hint": "...",\n  "confidence": 0.75\n}`;
+        return `${getLanguagePrefix ? getLanguagePrefix() : ''}你是互动小说的导演裁判。请先判断当前处于本章哪个轻节拍阶段，再给出下一步宽松引导。\n\n规则：\n1) 输出必须是JSON，不要代码块，不要解释。\n2) 先定位阶段：stage_idx 应尽量贴近当前对话。\n3) should_advance 仅在当前节拍明显完成时为 true。\n4) 判定优先依据“当前节拍原文证据”，不要只看摘要。\n5) next_hint 只给下一步短引导，不能剧透后续大事件。\n6) spoiler_hold 写本回合防剧透边界（简短一句）。\n7) tone_hint 可为空。\n8) confidence 为0-1数字。\n9) 先识别用户意图，写入 user_intent 与 intent_confidence、intent_rationale。\n\n允许的 user_intent 标签：advance, stay, neutral, switch_scene, skip, investigate, search, explore, travel, dialogue, negotiate, reflect, plan, rest, stealth, combat, summarize, clarify, request_hint, meta。\n\n章节：${chapterTitle}\n本章摘要：${chapterOutline}\n当前阶段索引：${currentBeatIdx}\n当前节拍规则提示：${splitRuleHint}\n\n轻节拍列表：\n${JSON.stringify(compactBeats, null, 2)}\n\n上一节拍尾部承接（最多200字）：\n${previousTail}\n\n当前节拍原文证据（优先依据该段判定，不要越段剧透）：\n${currentOriginalForPrompt}\n\n最近对话：\n${latestDialogue}\n\n输出JSON格式：\n{\n  "stage_idx": 0,\n  "should_advance": false,\n  "user_intent": "advance",\n  "intent_confidence": 0.75,\n  "intent_rationale": "...",\n  "next_hint": "...",\n  "spoiler_hold": "...",\n  "tone_hint": "...",\n  "confidence": 0.75\n}`;
     }
 
     function normalizeDecision(rawDecision, currentBeatIdx, beats) {
@@ -657,11 +706,49 @@ export function createDirectorService(deps = {}) {
         const nextHint = decision.next_hint || toShortText(nextBeat?.summary || '', 100) || '继续围绕当前阶段互动推进。';
         const spoilerHold = decision.spoiler_hold || '不要提前描写后续关键转折或结局。';
         const toneHint = decision.tone_hint ? `\n- 基调提示: ${decision.tone_hint}` : '';
+        const splitRuleHint = buildSplitRuleHint(currentBeat);
+        const budgetLimit = Math.max(800, Number(AppState.settings?.directorInjectionCharBudget) || 2600);
+
+        let previousTail = getPreviousBeatTail(beats, stageIdx, 200);
+        let currentOriginal = String(currentBeat?.original_text || '').trim();
+
+        const reserveForMeta = 560;
+        const preferredCurrentLimit = Math.max(600, budgetLimit - reserveForMeta);
+        const minimumCurrentLimit = 500;
+
+        if (currentOriginal.length > preferredCurrentLimit) {
+            currentOriginal = `${currentOriginal.slice(0, preferredCurrentLimit)}\n...(当前节拍原文已按预算截断)`;
+        }
+
+        let currentUsage = currentOriginal.length + previousTail.length;
+        if (currentUsage > budgetLimit - reserveForMeta) {
+            const overflow = currentUsage - (budgetLimit - reserveForMeta);
+            if (previousTail.length > 0) {
+                previousTail = previousTail.slice(Math.max(0, overflow));
+            }
+        }
+
+        currentUsage = currentOriginal.length + previousTail.length;
+        if (currentUsage > budgetLimit - reserveForMeta && currentOriginal.length > minimumCurrentLimit) {
+            const shrink = currentUsage - (budgetLimit - reserveForMeta);
+            const newLen = Math.max(minimumCurrentLimit, currentOriginal.length - shrink);
+            currentOriginal = `${currentOriginal.slice(0, newLen)}\n...(当前节拍原文已按预算截断)`;
+        }
+
+        const previousTailSection = previousTail
+            ? `- 上一节拍尾部（承接，最多200字）:\n${previousTail}`
+            : '- 上一节拍尾部（承接，最多200字）: 无';
+        const currentOriginalSection = currentOriginal
+            ? `- 当前节拍原文（优先遵循，尽量保持原文情绪和句法）:\n${currentOriginal}`
+            : '- 当前节拍原文（优先遵循）: 无';
 
         return [
             '# StoryWeaver 导演提示（宽松模式）',
             `- 当前阶段: ${currentBeat?.id || `b${stageIdx + 1}`} ${currentBeat?.summary || '当前节拍'}`,
             `- 本回合优先: ${currentBeat?.summary || '围绕当前阶段展开互动'}`,
+            previousTailSection,
+            currentOriginalSection,
+            `- 切分规则提示: ${splitRuleHint}`,
             `- 下一步建议: ${nextHint}`,
             `- 防剧透边界: ${spoilerHold}`,
             `- 玩家优先原则: 若用户主动改写，优先响应并将其视为新事实保持连续性。${toneHint}`,

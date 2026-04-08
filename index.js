@@ -1,8 +1,11 @@
-import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
+import * as scriptApi from '../../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
+
+const { saveSettingsDebounced, eventSource, event_types } = scriptApi;
 
 const extensionName = 'storyweaver';
 const setupEventNamespace = '.storyweaver';
+const STORYWEAVER_REPO_URL = 'https://github.com/lokenpee/StoryWeaver';
 
 const defaultSettings = {
     panelCollapsed: true,
@@ -38,6 +41,143 @@ function directorTrace(message) {
 function getExtensionFolderName() {
     const match = /\/scripts\/extensions\/third-party\/([^/]+)\//.exec(import.meta.url);
     return match?.[1] ? decodeURIComponent(match[1]) : 'StoryWeaver';
+}
+
+function normalizeRepoUrl(repoUrl) {
+    const raw = String(repoUrl || STORYWEAVER_REPO_URL).trim();
+    if (!raw) return '';
+
+    try {
+        const url = new URL(raw);
+        if (!['https:', 'http:'].includes(url.protocol)) return '';
+        url.hash = '';
+        url.search = '';
+        return url.toString().replace(/\/$/, '');
+    } catch (_error) {
+        return '';
+    }
+}
+
+function getRepoFolderName(repoUrl) {
+    try {
+        const url = new URL(repoUrl);
+        const segments = url.pathname.split('/').filter(Boolean);
+        if (!segments.length) return '';
+        return decodeURIComponent(segments[segments.length - 1]).replace(/\.git$/i, '');
+    } catch (_error) {
+        return '';
+    }
+}
+
+function getJsonHeaders() {
+    if (typeof scriptApi.getRequestHeaders === 'function') {
+        return scriptApi.getRequestHeaders();
+    }
+    return {
+        'Content-Type': 'application/json',
+    };
+}
+
+async function updateExtensionByName(extensionFolder) {
+    const response = await fetch('/api/extensions/update', {
+        method: 'POST',
+        headers: getJsonHeaders(),
+        body: JSON.stringify({
+            extensionName: extensionFolder,
+            global: false,
+        }),
+    });
+
+    let text = '';
+    try {
+        text = await response.text();
+    } catch (_error) {
+        text = '';
+    }
+
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch (_error) {
+            data = null;
+        }
+    }
+
+    return { response, text, data };
+}
+
+async function installExtensionFromRepo(repoUrl) {
+    const response = await fetch('/api/extensions/install', {
+        method: 'POST',
+        headers: getJsonHeaders(),
+        body: JSON.stringify({
+            url: repoUrl,
+            global: false,
+            branch: '',
+        }),
+    });
+
+    let text = '';
+    try {
+        text = await response.text();
+    } catch (_error) {
+        text = '';
+    }
+
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch (_error) {
+            data = null;
+        }
+    }
+
+    return { response, text, data };
+}
+
+async function updateSelfFromRepo(repoUrl = STORYWEAVER_REPO_URL) {
+    const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
+    if (!normalizedRepoUrl) {
+        throw new Error('仓库地址无效，请检查后重试。');
+    }
+
+    const currentFolder = getExtensionFolderName();
+    const repoFolder = getRepoFolderName(normalizedRepoUrl);
+    const candidateFolders = [...new Set([currentFolder, repoFolder].filter(Boolean))];
+
+    for (const folder of candidateFolders) {
+        const { response, text, data } = await updateExtensionByName(folder);
+        if (response.ok) {
+            return {
+                mode: 'update',
+                extensionFolder: folder,
+                repoUrl: normalizedRepoUrl,
+                ...(data || {}),
+            };
+        }
+
+        if (response.status !== 404) {
+            const detail = text || response.statusText || `HTTP ${response.status}`;
+            throw new Error(`更新失败：${detail}`);
+        }
+    }
+
+    const installResult = await installExtensionFromRepo(normalizedRepoUrl);
+    if (installResult.response.ok) {
+        return {
+            mode: 'install',
+            repoUrl: normalizedRepoUrl,
+            ...(installResult.data || {}),
+        };
+    }
+
+    const installDetail = installResult.text || installResult.response.statusText || `HTTP ${installResult.response.status}`;
+    if (installResult.response.status === 409) {
+        throw new Error('检测到同名目录已存在但无法直接更新，请到插件管理页确认该插件安装状态。');
+    }
+    throw new Error(`安装失败：${installDetail}`);
 }
 
 function delay(ms) {
@@ -330,6 +470,7 @@ async function bootstrap() {
         window.StoryWeaver = {
             openTxtConverter: openTxtToWorldbookPanel,
             getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
+            updateSelfFromRepo,
         };
         console.log('[StoryWeaver] Plugin initialized successfully');
     } catch (error) {

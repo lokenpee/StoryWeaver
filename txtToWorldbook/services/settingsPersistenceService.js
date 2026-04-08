@@ -74,6 +74,8 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.useTavernApi = document.getElementById('ttw-use-tavern-api')?.checked ?? true;
         AppState.settings.parallelEnabled = AppState.config.parallel.enabled;
         AppState.settings.parallelConcurrency = AppState.config.parallel.concurrency;
+        AppState.settings.parallelMainConcurrency = AppState.config.parallel.mainConcurrency || AppState.config.parallel.concurrency || 1;
+        AppState.settings.parallelDirectorConcurrency = AppState.config.parallel.directorConcurrency || AppState.config.parallel.concurrency || 1;
         AppState.settings.parallelMode = AppState.config.parallel.mode;
         AppState.settings.categoryLightSettings = { ...AppState.config.categoryLight };
         AppState.settings.forceChapterMarker = document.getElementById('ttw-force-chapter-marker')?.checked ?? true;
@@ -175,6 +177,8 @@ export function createSettingsPersistenceService(deps) {
                 AppState.processing.volumeMode = AppState.settings.useVolumeMode || false;
                 AppState.config.parallel.enabled = AppState.settings.parallelEnabled !== undefined ? AppState.settings.parallelEnabled : true;
                 AppState.config.parallel.concurrency = AppState.settings.parallelConcurrency || 1;
+                AppState.config.parallel.mainConcurrency = AppState.settings.parallelMainConcurrency || AppState.config.parallel.concurrency || 1;
+                AppState.config.parallel.directorConcurrency = AppState.settings.parallelDirectorConcurrency || AppState.config.parallel.concurrency || 1;
                 AppState.config.parallel.mode = AppState.settings.parallelMode || 'independent';
                 const maxTokens = parseInt(AppState.settings.customApiMaxTokens, 10);
                 AppState.settings.customApiMaxTokens = Number.isFinite(maxTokens)

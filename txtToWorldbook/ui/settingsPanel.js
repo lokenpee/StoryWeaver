@@ -65,6 +65,21 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
+function buildPluginUpdateHtml() {
+    return `
+    <div class="ttw-setting-card" style="background:rgba(241,196,15,0.12);border:1px solid rgba(241,196,15,0.32);">
+        <div style="font-weight:bold;color:#f1c40f;margin-bottom:8px;">⬆️ 插件更新</div>
+        <div class="ttw-setting-hint" style="margin-bottom:10px;line-height:1.6;">
+            直接在此页面更新 StoryWeaver，无需再去插件管理页。<br>
+            远程仓库：<span style="color:#f4d03f;word-break:break-all;">https://github.com/lokenpee/StoryWeaver</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button id="ttw-update-plugin-btn" class="ttw-btn ttw-btn-small" style="background:rgba(241,196,15,0.35);">⬆️ 更新插件</button>
+            <span class="ttw-setting-hint">更新后需要刷新页面生效</span>
+        </div>
+    </div>`;
+}
+
 function buildParallelConfigHtml() {
     return `
     <div class="ttw-setting-card ttw-setting-card-blue">
@@ -75,9 +90,20 @@ function buildParallelConfigHtml() {
                 <span>启用</span>
             </label>
             <label style="font-size:12px;display:flex;align-items:center;gap:6px;">
-                并发数
+                章节并发
                 <input type="number" id="ttw-parallel-concurrency" value="1" min="1" max="10" class="ttw-input-small">
             </label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;">
+                主API并发
+                <input type="number" id="ttw-parallel-main-concurrency" value="1" min="1" max="10" class="ttw-input-small">
+            </label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;">
+                导演API并发
+                <input type="number" id="ttw-parallel-director-concurrency" value="1" min="1" max="10" class="ttw-input-small">
+            </label>
+        </div>
+        <div class="ttw-setting-hint" style="margin-top:8px;">
+            同章会并行调用主API与导演API；建议导演API并发不高于主API并发。
         </div>
         <div style="margin-top:10px;">
             <select id="ttw-parallel-mode" class="ttw-select">
@@ -184,6 +210,7 @@ export function buildSettingsHtml() {
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div class="ttw-section-content" id="ttw-settings-content">
+            ${buildPluginUpdateHtml()}
             <div class="ttw-setting-card ttw-setting-card-green">
                 <label class="ttw-checkbox-label">
                     <input type="checkbox" id="ttw-use-tavern-api" checked>
@@ -601,6 +628,12 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const parallelConcurrencyEl = document.getElementById('ttw-parallel-concurrency');
     if (parallelConcurrencyEl) parallelConcurrencyEl.value = AppState.config.parallel.concurrency;
+
+    const parallelMainConcurrencyEl = document.getElementById('ttw-parallel-main-concurrency');
+    if (parallelMainConcurrencyEl) parallelMainConcurrencyEl.value = AppState.config.parallel.mainConcurrency || AppState.config.parallel.concurrency || 1;
+
+    const parallelDirectorConcurrencyEl = document.getElementById('ttw-parallel-director-concurrency');
+    if (parallelDirectorConcurrencyEl) parallelDirectorConcurrencyEl.value = AppState.config.parallel.directorConcurrency || AppState.config.parallel.concurrency || 1;
 
     const parallelModeEl = document.getElementById('ttw-parallel-mode');
     if (parallelModeEl) parallelModeEl.value = AppState.config.parallel.mode;

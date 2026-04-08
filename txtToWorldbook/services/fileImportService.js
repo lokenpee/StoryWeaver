@@ -200,7 +200,10 @@ export function createFileImportService(deps = {}) {
             memory.chapterOutline = memory.chapterOutline || '';
             memory.chapterOutlineStatus = memory.chapterOutlineStatus || 'pending';
             memory.chapterOutlineError = memory.chapterOutlineError || '';
-            memory.chapterScript = memory.chapterScript || { goal: '', flow: '', keyNodes: [] };
+            memory.chapterScript = memory.chapterScript || { goal: '', flow: '', keyNodes: [], beats: [] };
+            if (!Array.isArray(memory.chapterScript.beats)) {
+                memory.chapterScript.beats = [];
+            }
             memory.chapterOpeningPreview = memory.chapterOpeningPreview || '';
             memory.chapterOpeningSent = memory.chapterOpeningSent === true;
             memory.chapterOpeningError = memory.chapterOpeningError || '';
@@ -291,7 +294,7 @@ export function createFileImportService(deps = {}) {
             chapterOutline: '',
             chapterOutlineStatus: 'pending',
             chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [] },
+            chapterScript: { goal: '', flow: '', keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,
             chapterOpeningError: '',

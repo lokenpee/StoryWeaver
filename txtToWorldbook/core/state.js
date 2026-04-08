@@ -35,7 +35,12 @@
             incrementalMode: true,
             volumeMode: false,
             streamContent: '',
-            activeTasks: new Set()
+            activeTasks: new Set(),
+            runId: null,
+            mainApiSemaphore: null,
+            directorApiSemaphore: null,
+            mainApiConcurrency: 0,
+            directorApiConcurrency: 0,
         },
         experience: {
             currentChapterIndex: 0,

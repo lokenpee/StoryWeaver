@@ -235,6 +235,7 @@ export function bindSettingEvents(deps = {}) {
         updateWorldbookPreview,
         ErrorHandler,
         testChapterRegex,
+        handlePluginSelfUpdate,
     } = deps;
 
     EventDelegate.batchOn(modalContainer, {
@@ -254,7 +255,27 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-api-tab-main': { click: () => switchApiTab?.('main') },
         '#ttw-api-tab-director': { click: () => switchApiTab?.('director') },
         '#ttw-parallel-enabled': { change: (e) => { AppState.config.parallel.enabled = e.target.checked; saveCurrentSettings(); } },
-        '#ttw-parallel-concurrency': { change: (e) => { AppState.config.parallel.concurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3)); e.target.value = AppState.config.parallel.concurrency; saveCurrentSettings(); } },
+        '#ttw-parallel-concurrency': { change: (e) => {
+            AppState.config.parallel.concurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3));
+            AppState.config.parallel.mainConcurrency = AppState.config.parallel.concurrency;
+            AppState.config.parallel.directorConcurrency = AppState.config.parallel.concurrency;
+            e.target.value = AppState.config.parallel.concurrency;
+            const mainEl = document.getElementById('ttw-parallel-main-concurrency');
+            if (mainEl) mainEl.value = AppState.config.parallel.mainConcurrency;
+            const directorEl = document.getElementById('ttw-parallel-director-concurrency');
+            if (directorEl) directorEl.value = AppState.config.parallel.directorConcurrency;
+            saveCurrentSettings();
+        } },
+        '#ttw-parallel-main-concurrency': { change: (e) => {
+            AppState.config.parallel.mainConcurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1));
+            e.target.value = AppState.config.parallel.mainConcurrency;
+            saveCurrentSettings();
+        } },
+        '#ttw-parallel-director-concurrency': { change: (e) => {
+            AppState.config.parallel.directorConcurrency = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1));
+            e.target.value = AppState.config.parallel.directorConcurrency;
+            saveCurrentSettings();
+        } },
         '#ttw-parallel-mode': { change: (e) => { AppState.config.parallel.mode = e.target.value; saveCurrentSettings(); } },
         '#ttw-volume-mode': { change: (e) => { AppState.processing.volumeMode = e.target.checked; const indicator = document.getElementById('ttw-volume-indicator'); if (indicator) indicator.style.display = AppState.processing.volumeMode ? 'block' : 'none'; } },
         '#ttw-rechunk-btn': { click: rechunkMemories },
@@ -264,6 +285,7 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-apply-default-entries': { click: () => { saveDefaultWorldbookEntriesUI(); const applied = applyDefaultWorldbookEntries(); if (applied) { showResultSection(true); updateWorldbookPreview(); ErrorHandler.showUserSuccess('默认世界书条目已应用！'); } else { ErrorHandler.showUserError('没有默认世界书条目'); } } },
         '#ttw-chapter-regex': { change: (e) => { AppState.config.chapterRegex.pattern = e.target.value; saveCurrentSettings(); } },
         '#ttw-test-chapter-regex': { click: testChapterRegex },
+        '#ttw-update-plugin-btn': { click: () => { if (typeof handlePluginSelfUpdate === 'function') handlePluginSelfUpdate(); } },
         '.ttw-chapter-preset': { click: (e, btn) => { const regex = btn.dataset.regex; document.getElementById('ttw-chapter-regex').value = regex; AppState.config.chapterRegex.pattern = regex; saveCurrentSettings(); } },
         '.ttw-reset-prompt': { click: (e, btn) => { const type = btn.getAttribute('data-type'); const textarea = document.getElementById(`ttw-${type}-prompt`); if (textarea) { textarea.value = ''; saveCurrentSettings(); } } }
     });

@@ -8,6 +8,7 @@
         updateStreamContent,
         debugLog,
         callAPI,
+        callDirectorAPI,
         isTokenLimitError,
         parseAIResponse,
         postProcessResultWithChapterIndex,
@@ -50,6 +51,103 @@
         return AppState.processing.status || 'idle';
     };
 
+    function nextRunId() {
+        const seed = Math.random().toString(36).slice(2, 8);
+        return `run-${Date.now()}-${seed}`;
+    }
+
+    function isRunActive(runId) {
+        if (!runId) return true;
+        return AppState.processing.runId === runId && !AppState.processing.isStopped;
+    }
+
+    function throwIfRunInactive(runId) {
+        if (!isRunActive(runId)) {
+            throw new Error('ABORTED');
+        }
+    }
+
+    function resolveApiConcurrency(kind) {
+        const fallback = Math.max(1, parseInt(AppState.config?.parallel?.concurrency, 10) || 1);
+        const key = kind === 'director' ? 'directorConcurrency' : 'mainConcurrency';
+        const fromConfig = parseInt(AppState.config?.parallel?.[key], 10);
+        const fromSettings = parseInt(
+            kind === 'director' ? AppState.settings?.parallelDirectorConcurrency : AppState.settings?.parallelMainConcurrency,
+            10
+        );
+        const limit = Number.isFinite(fromConfig)
+            ? fromConfig
+            : (Number.isFinite(fromSettings) ? fromSettings : fallback);
+        return Math.max(1, Math.min(10, limit));
+    }
+
+    function setupApiSemaphores() {
+        const mainLimit = resolveApiConcurrency('main');
+        const directorLimit = resolveApiConcurrency('director');
+        AppState.processing.mainApiSemaphore = new Semaphore(mainLimit);
+        AppState.processing.directorApiSemaphore = new Semaphore(directorLimit);
+        AppState.processing.mainApiConcurrency = mainLimit;
+        AppState.processing.directorApiConcurrency = directorLimit;
+    }
+
+    function abortApiSemaphores() {
+        if (AppState.processing.mainApiSemaphore) AppState.processing.mainApiSemaphore.abort();
+        if (AppState.processing.directorApiSemaphore) AppState.processing.directorApiSemaphore.abort();
+        AppState.processing.mainApiSemaphore = null;
+        AppState.processing.directorApiSemaphore = null;
+        AppState.processing.mainApiConcurrency = 0;
+        AppState.processing.directorApiConcurrency = 0;
+    }
+
+    async function runWithApiSemaphore(kind, runId, fn) {
+        const semaphore = kind === 'director'
+            ? AppState.processing.directorApiSemaphore
+            : AppState.processing.mainApiSemaphore;
+        if (!semaphore) {
+            throwIfRunInactive(runId);
+            return fn();
+        }
+
+        let acquired = false;
+        try {
+            throwIfRunInactive(runId);
+            await semaphore.acquire();
+            acquired = true;
+            throwIfRunInactive(runId);
+            return await fn();
+        } catch (error) {
+            if (error?.message === 'ABORTED') {
+                throw new Error('ABORTED');
+            }
+            throw error;
+        } finally {
+            if (acquired) semaphore.release();
+        }
+    }
+
+    async function waitForPreviousChapterReady(index, runId, timeoutMs = 90000) {
+        if (index <= 0) return;
+        const startedAt = Date.now();
+
+        while (true) {
+            throwIfRunInactive(runId);
+            const previousMemory = AppState.memory.queue[index - 1];
+            if (!previousMemory) return;
+
+            const chapterReady = previousMemory.processed || previousMemory.failed
+                || previousMemory.chapterOutlineStatus === 'done'
+                || previousMemory.chapterOutlineStatus === 'failed';
+            if (chapterReady) return;
+
+            if (Date.now() - startedAt > timeoutMs) {
+                updateStreamContent(`⚠️ [第${index + 1}章] 等待上一章完成超时，已降级为继续处理\n`);
+                return;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+    }
+
     function extractStatusCode(error) {
         if (typeof error?.status === 'number') {
             return error.status;
@@ -67,6 +165,8 @@
     }
 
     function shouldRetryError(error) {
+        if (error?.code === 'CHAPTER_ASSETS_VALIDATION') return true;
+
         const status = extractStatusCode(error);
         if (status === 429) return true;
         if (status >= 500 && status < 600) return true;
@@ -150,6 +250,8 @@
         if (!Array.isArray(memory.chapterScript.beats)) {
             memory.chapterScript.beats = [];
         }
+        memory.chapterScript.beats = memory.chapterScript.beats
+            .map((beat, idx) => normalizeBeatItem(beat, idx));
         if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
             memory.chapterCurrentBeatIndex = 0;
         }
@@ -167,6 +269,31 @@
         }
     }
 
+    function normalizeSplitRule(rawRule) {
+        const source = rawRule && typeof rawRule === 'object' ? rawRule : {};
+        const rawMatched = Array.isArray(source.matched)
+            ? source.matched
+            : (source.matched ? [source.matched] : []);
+        const matched = rawMatched
+            .map((rule) => String(rule || '').trim())
+            .filter(Boolean)
+            .slice(0, 8);
+
+        const fallbackPrimary = matched[0] || '';
+        let primary = String(source.primary || source.rule || source.main || fallbackPrimary || '').trim();
+        if (!primary) {
+            primary = '动作闭环';
+        }
+        if (!matched.includes(primary)) {
+            matched.unshift(primary);
+        }
+
+        return {
+            primary,
+            matched: matched.slice(0, 8),
+        };
+    }
+
     function normalizeBeatItem(rawBeat, idx, fallbackSummary = '') {
         const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
         const summary = String(source.summary || source.event || source.description || fallbackSummary || '').trim();
@@ -174,12 +301,18 @@
         const tags = Array.isArray(source.tags)
             ? source.tags.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 4)
             : [];
+        const originalText = typeof source.original_text === 'string'
+            ? source.original_text
+            : (typeof source.originalText === 'string' ? source.originalText : '');
+        const splitRule = normalizeSplitRule(source.split_rule || source.splitRule || null);
 
         return {
             id: String(source.id || `b${idx + 1}`).trim() || `b${idx + 1}`,
             summary: summary || `事件点${idx + 1}`,
             exitCondition: exitCondition || '等待用户行动或关键互动完成',
             tags,
+            original_text: originalText,
+            split_rule: splitRule,
         };
     }
 
@@ -310,6 +443,49 @@
         };
     }
 
+    function createChapterAssetsValidationError(index, message) {
+        const error = new Error(`[第${index + 1}章] 章节概览校验失败: ${message}`);
+        error.code = 'CHAPTER_ASSETS_VALIDATION';
+        return error;
+    }
+
+    function validateChapterAssetsOrThrow(assets, memory, index) {
+        const beats = Array.isArray(assets?.script?.beats) ? assets.script.beats : [];
+        if (beats.length < 3 || beats.length > 8) {
+            throw createChapterAssetsValidationError(index, `节拍数量需在3-8之间，当前为${beats.length}`);
+        }
+
+        let mergedOriginal = '';
+        for (let i = 0; i < beats.length; i++) {
+            const beat = beats[i] || {};
+            const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
+            const len = originalText.length;
+            if (len < 200 || len > 1500) {
+                throw createChapterAssetsValidationError(index, `第${i + 1}个节拍原文长度需在200-1500字，当前为${len}`);
+            }
+
+            const splitRule = beat.split_rule && typeof beat.split_rule === 'object' ? beat.split_rule : {};
+            const primary = String(splitRule.primary || '').trim();
+            const matched = Array.isArray(splitRule.matched)
+                ? splitRule.matched.map((rule) => String(rule || '').trim()).filter(Boolean)
+                : [];
+
+            if (!primary || matched.length === 0) {
+                throw createChapterAssetsValidationError(index, `第${i + 1}个节拍缺少 split_rule.primary 或 split_rule.matched`);
+            }
+            if (!matched.includes(primary)) {
+                throw createChapterAssetsValidationError(index, `第${i + 1}个节拍 split_rule.primary 未包含在 matched 中`);
+            }
+
+            mergedOriginal += originalText;
+        }
+
+        const chapterContent = String(memory?.content || '');
+        if (mergedOriginal !== chapterContent) {
+            throw createChapterAssetsValidationError(index, '节拍原文拼接后与章节正文不一致（必须字级无损、无重叠无遗漏）');
+        }
+    }
+
     function parseChapterAssetsResponse(response, memory, index) {
         const fallbackOutline = toShortOutline(memory.content, 140) || `${memory.chapterTitle || `第${index + 1}章`}剧情推进。`;
         const parsed = extractJsonObject(response);
@@ -333,7 +509,7 @@
         const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
         const previousOutline = previousMemory?.chapterOutline ? `\n上一章摘要：${previousMemory.chapterOutline}` : '';
 
-        return `${getLanguagePrefix()}你是小说章节分析助手。请基于以下内容输出本章摘要和“轻节拍”小章剧本。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 必须包含 goal、flow、keyNodes(最多3条) 与 beats(5-8个轻节拍)。\n5) beats 每项包含 id、summary、exitCondition、tags。\n6) 禁止剧透后续章节。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."],\n    "beats": [\n      { "id": "b1", "summary": "...", "exitCondition": "...", "tags": ["...", "..."] }\n    ]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
+        return `${getLanguagePrefix()}你是小说章节分析助手。请基于章节正文输出“摘要 + 节拍剧本”，并严格遵守分割规则。\n\n核心拆分规则（必须遵守）：\n1) 六条分割铁则（用于识别可切点）：动作闭环、场景切换、对话闭环、剧情转折、视角切换、互动切口。\n2) 碎片挂靠：回忆/心理/碎嘴对话不可独立成节拍，需挂靠核心节拍。\n3) 合并规则：同一叙事目的的连续小事件必须合并。\n4) 节拍数量：每章 3-8 个。\n5) 节拍原文字数：每个 200-1500 字。\n6) 无损约束：beats.original_text 按顺序拼接后，必须与章节正文逐字完全一致，且无重叠无遗漏。\n7) 剧透防护：当前节拍原文不得包含后续节拍核心信息。\n\n防碎片三保险：\n- 同目的只切一次。\n- 信号优先级：剧情转折 > 视角切换 > 场景切换 > 互动切口 > 动作/对话闭环。\n- 连续300字内多个信号按同一次叙事波动处理，仅取最强切分。\n\n输出要求：\n1) 只输出 JSON，不要代码块。\n2) 必须包含字段 outline 与 script。\n3) outline 为 1-2 句中文摘要。\n4) script 必须包含 goal、flow、keyNodes(最多3条)、beats(3-8个)。\n5) beats 每项必须包含：id、summary、exitCondition、tags、original_text、split_rule。\n6) split_rule 必须包含：primary（主导规则）、matched（命中规则数组，需包含 primary）。\n7) 不允许额外文本。\n\n输出格式：\n{\n  "outline": "...",\n  "script": {\n    "goal": "...",\n    "flow": "...",\n    "keyNodes": ["...", "...", "..."],\n    "beats": [\n      {\n        "id": "b1",\n        "summary": "...",\n        "exitCondition": "...",\n        "tags": ["...", "..."],\n        "original_text": "该节拍对应原文（必须是正文原句片段）",\n        "split_rule": {\n          "primary": "剧情转折",\n          "matched": ["剧情转折", "互动切口"]\n        }\n      }\n    ]\n  }\n}\n\n章节标题：${chapterTitle}${previousOutline}\n\n章节正文：\n---\n${memory.content}\n---`;
     }
 
     async function generateChapterAssets(index, options = {}) {
@@ -345,7 +521,14 @@
             force = false,
             taskId = index + 1,
             maxRetries = AppState.settings.chapterOutlineMaxRetries ?? 1,
+            runId = null,
         } = options;
+
+        throwIfRunInactive(runId);
+
+        // 一致性优先：尽量等上一章状态落稳后再构造“上一章摘要”上下文。
+        await waitForPreviousChapterReady(index, runId);
+        throwIfRunInactive(runId);
 
         if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
             return {
@@ -354,17 +537,23 @@
             };
         }
 
+        throwIfRunInactive(runId);
         memory.chapterOutlineStatus = 'generating';
         memory.chapterOutlineError = '';
         updateMemoryQueueUI();
 
         const prompt = buildChapterAssetsPrompt(memory, index);
         let lastError = null;
+        const chapterAssetsCaller = typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                const response = await callAPI(prompt, taskId);
+                throwIfRunInactive(runId);
+                const response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
+                throwIfRunInactive(runId);
                 const assets = parseChapterAssetsResponse(response, memory, index);
+                validateChapterAssetsOrThrow(assets, memory, index);
+                throwIfRunInactive(runId);
                 memory.chapterOutline = assets.outline;
                 memory.chapterScript = assets.script;
                 const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
@@ -383,8 +572,11 @@
                 return assets;
             } catch (error) {
                 lastError = error;
+                if (error?.message === 'ABORTED') {
+                    throw error;
+                }
                 const canRetry = shouldRetryError(error);
-                if (attempt < maxRetries && !AppState.processing.isStopped && canRetry) {
+                if (attempt < maxRetries && isRunActive(runId) && canRetry) {
                     const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
                     updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败，${delay / 1000}秒后重试...\n`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -396,6 +588,8 @@
             }
         }
 
+        throwIfRunInactive(runId);
+
         memory.chapterOutlineStatus = 'failed';
         memory.chapterOutlineError = String(lastError?.message || '大纲生成失败');
         updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败: ${memory.chapterOutlineError}\n`);
@@ -404,13 +598,22 @@
     }
 
     async function processMemoryChunkIndependent(options) {
-        const { index, retryCount = 0, customPromptSuffix = '' } = options;
+        const {
+            index,
+            retryCount = 0,
+            customPromptSuffix = '',
+            runId = AppState.processing.runId || null,
+        } = options;
         const memory = AppState.memory.queue[index];
         const maxRetries = 3;
         const taskId = index + 1;
         const chapterIndex = index + 1;
 
         if (!AppState.processing.isRerolling && AppState.processing.isStopped) throw new Error('ABORTED');
+        throwIfRunInactive(runId);
+
+        await waitForPreviousChapterReady(index, runId);
+        throwIfRunInactive(runId);
 
         ensureChapterRuntime(memory, index);
         memory.processing = true;
@@ -456,29 +659,37 @@
         updateStreamContent(`\n🔄 [第${chapterIndex}章] 开始处理: ${memory.title}\n`);
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
 
+        let chapterAssetsPromise = null;
         try {
-            debugLog(`[第${chapterIndex}章] 调用API...`);
-            const response = await callAPI(prompt, taskId);
+            debugLog(`[第${chapterIndex}章] 启动并行子任务: 主API世界书 + 导演API章节资产`);
+            const worldbookPromise = (async () => {
+                debugLog(`[第${chapterIndex}章][主API] 调用中...`);
+                const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
+                throwIfRunInactive(runId);
 
-            if (!AppState.processing.isRerolling && AppState.processing.isStopped) {
-                memory.processing = false;
-                throw new Error('ABORTED');
-            }
+                debugLog(`[第${chapterIndex}章][主API] 检查TokenLimit...`);
+                if (isTokenLimitError(response)) throw new Error('Token limit exceeded');
 
-            debugLog(`[第${chapterIndex}章] 检查TokenLimit...`);
-            if (isTokenLimitError(response)) throw new Error('Token limit exceeded');
+                debugLog(`[第${chapterIndex}章][主API] 解析AI响应...`);
+                let memoryUpdate = parseAIResponse(response);
 
-            debugLog(`[第${chapterIndex}章] 解析AI响应...`);
-            let memoryUpdate = parseAIResponse(response);
+                debugLog(`[第${chapterIndex}章][主API] 后处理章节索引...`);
+                memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
+                return memoryUpdate;
+            })();
 
-            debugLog(`[第${chapterIndex}章] 后处理章节索引...`);
-            memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
+            chapterAssetsPromise = (async () => {
+                try {
+                    return await generateChapterAssets(index, { taskId, force: true, runId });
+                } catch (error) {
+                    if (error?.message === 'ABORTED') throw error;
+                    // 章节大纲失败不阻断世界书主流程
+                    return null;
+                }
+            })();
 
-            try {
-                await generateChapterAssets(index, { taskId, force: true });
-            } catch (_) {
-                // 章节大纲失败不阻断世界书主流程
-            }
+            const [memoryUpdate] = await Promise.all([worldbookPromise, chapterAssetsPromise]);
+            throwIfRunInactive(runId);
 
             debugLog(`[第${chapterIndex}章] 处理完成`);
             updateStreamContent(`✅ [第${chapterIndex}章] 处理完成\n`);
@@ -490,19 +701,26 @@
 
             updateStreamContent(`❌ [第${chapterIndex}章] 错误: ${error.message}\n`);
 
-            if (isTokenLimitError(error.message)) throw new Error(`TOKEN_LIMIT:${index}`);
+            if (isTokenLimitError(error.message)) {
+                if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
+                throw new Error(`TOKEN_LIMIT:${index}`);
+            }
 
             const canRetry = shouldRetryError(error);
-            if (retryCount < maxRetries && !AppState.processing.isStopped && canRetry) {
+            if (retryCount < maxRetries && isRunActive(runId) && canRetry) {
+                if (chapterAssetsPromise) {
+                    await chapterAssetsPromise.catch(() => null);
+                }
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
                 updateStreamContent(`🔄 [第${chapterIndex}章] ${delay / 1000}秒后重试...\n`);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                return processMemoryChunkIndependent({ index, retryCount: retryCount + 1, customPromptSuffix });
+                return processMemoryChunkIndependent({ index, retryCount: retryCount + 1, customPromptSuffix, runId });
             }
 
             if (!canRetry) {
                 updateStreamContent(`🛑 [第${chapterIndex}章] 检测到不可重试错误，已停止自动重试\n`);
             }
+            if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
             throw error;
         }
     }
@@ -511,6 +729,7 @@
         const tasks = [];
         const results = new Map();
         const tokenLimitIndices = [];
+        const runId = AppState.processing.runId || null;
 
         for (let i = startIndex; i < endIndex && i < AppState.memory.queue.length; i++) {
             if (AppState.memory.queue[i].processed && !AppState.memory.queue[i].failed) continue;
@@ -539,9 +758,9 @@ ${'='.repeat(50)}
             try {
                 debugLog(`[任务${task.index + 1}] 获取信号量成功, 开始处理`);
                 updateProgress(((startIndex + completed) / AppState.memory.queue.length) * 100, `🚀 并行处理中 (${completed}/${tasks.length})`);
-                const result = await processMemoryChunkIndependent({ index: task.index });
+                const result = await processMemoryChunkIndependent({ index: task.index, runId });
                 completed++;
-                if (result) {
+                if (result && isRunActive(runId)) {
                     results.set(task.index, result);
                 }
                 updateMemoryQueueUI();
@@ -589,8 +808,13 @@ ${'='.repeat(50)}
         return { tokenLimitIndices };
     }
 
-    async function processMemoryChunk(index, retryCount = 0) {
+    async function processMemoryChunk(index, retryCount = 0, options = {}) {
         if (AppState.processing.isStopped) return;
+
+        const runId = options.runId ?? AppState.processing.runId ?? null;
+        throwIfRunInactive(runId);
+        await waitForPreviousChapterReady(index, runId);
+        throwIfRunInactive(runId);
 
         const memory = AppState.memory.queue[index];
         const progress = ((index + 1) / AppState.memory.queue.length) * 100;
@@ -640,27 +864,45 @@ ${'='.repeat(50)}
             prompt += '\n直接输出JSON格式结果。';
         }
 
+        let chapterAssetsPromise = null;
         try {
-            debugLog(`[串行][第${chapterIndex}章] 调用API, prompt长度=${prompt.length}`);
-            const response = await callAPI(prompt);
-            memory.processing = false;
+            chapterAssetsPromise = (async () => {
+                try {
+                    return await generateChapterAssets(index, { taskId: chapterIndex, force: true, runId });
+                } catch (error) {
+                    if (error?.message === 'ABORTED') throw error;
+                    // 章节大纲失败不阻断世界书主流程
+                    return null;
+                }
+            })();
 
-            if (AppState.processing.isStopped) { updateMemoryQueueUI(); return; }
+            debugLog(`[串行][第${chapterIndex}章] 主API调用中, prompt长度=${prompt.length}`);
+            const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt));
+            throwIfRunInactive(runId);
+
+            if (AppState.processing.isStopped) {
+                if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
+                memory.processing = false;
+                updateMemoryQueueUI();
+                return;
+            }
 
             debugLog(`[串行][第${chapterIndex}章] 检查TokenLimit...`);
             if (isTokenLimitError(response)) {
                 if (AppState.processing.volumeMode) {
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     handleStartNewVolume();
                     await MemoryHistoryDB.saveState(index);
-                    await processMemoryChunk(index, 0);
+                    await processMemoryChunk(index, 0, { runId });
                     return;
                 }
                 const splitResult = splitMemoryIntoTwo(index);
                 if (splitResult) {
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     updateMemoryQueueUI();
                     await MemoryHistoryDB.saveState(index);
-                    await processMemoryChunk(index, 0);
-                    await processMemoryChunk(index + 1, 0);
+                    await processMemoryChunk(index, 0, { runId });
+                    await processMemoryChunk(index + 1, 0, { runId });
                     return;
                 }
             }
@@ -674,14 +916,14 @@ ${'='.repeat(50)}
             debugLog(`[串行][第${chapterIndex}章] 保存Roll结果...`);
             await MemoryHistoryDB.saveRollResult(index, memoryUpdate);
 
-            try {
-                await generateChapterAssets(index, { taskId: chapterIndex, force: true });
-            } catch (_) {
-                // 章节大纲失败不阻断世界书主流程
+            if (chapterAssetsPromise) {
+                await chapterAssetsPromise;
             }
+            throwIfRunInactive(runId);
 
             debugLog(`[串行][第${chapterIndex}章] 完成`);
 
+            memory.processing = false;
             memory.processed = true;
             memory.result = memoryUpdate;
             updateMemoryQueueUI();
@@ -689,36 +931,48 @@ ${'='.repeat(50)}
         } catch (error) {
             memory.processing = false;
 
+            if (error?.message === 'ABORTED') {
+                updateMemoryQueueUI();
+                return;
+            }
+
             if (isTokenLimitError(error.message || '')) {
                 if (AppState.processing.volumeMode) {
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     handleStartNewVolume();
                     await MemoryHistoryDB.saveState(index);
                     await new Promise(r => setTimeout(r, 500));
-                    await processMemoryChunk(index, 0);
+                    await processMemoryChunk(index, 0, { runId });
                     return;
                 }
                 const splitResult = splitMemoryIntoTwo(index);
                 if (splitResult) {
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     updateMemoryQueueUI();
                     await MemoryHistoryDB.saveState(index);
                     await new Promise(r => setTimeout(r, 500));
-                    await processMemoryChunk(index, 0);
-                    await processMemoryChunk(index + 1, 0);
+                    await processMemoryChunk(index, 0, { runId });
+                    await processMemoryChunk(index + 1, 0, { runId });
                     return;
                 }
             }
 
             const canRetry = shouldRetryError(error);
-            if (retryCount < maxRetries && canRetry) {
+            if (retryCount < maxRetries && canRetry && isRunActive(runId)) {
+                if (chapterAssetsPromise) {
+                    await chapterAssetsPromise.catch(() => null);
+                }
                 const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000);
                 updateProgress(progress, `处理失败，${retryDelay / 1000}秒后重试`);
                 await new Promise(r => setTimeout(r, retryDelay));
-                return processMemoryChunk(index, retryCount + 1);
+                return processMemoryChunk(index, retryCount + 1, { runId });
             }
 
             if (!canRetry) {
                 updateStreamContent(`🛑 [第${chapterIndex}章] 检测到不可重试错误，已停止自动重试\n`);
             }
+
+            if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
 
             memory.processed = true;
             memory.failed = true;
@@ -734,8 +988,10 @@ ${'='.repeat(50)}
 
     function handleStopProcessing() {
         transitionTo('stopped');
+        AppState.processing.runId = null;
 
         if (AppState.globalSemaphore) AppState.globalSemaphore.abort();
+        abortApiSemaphores();
         AppState.processing.activeTasks.clear();
         AppState.memory.queue.forEach(m => { if (m.processing) m.processing = false; });
         updateMemoryQueueUI();
@@ -746,10 +1002,14 @@ ${'='.repeat(50)}
     async function handleStartProcessing() {
         showProgressSection(true);
         transitionTo('running');
+        const runId = nextRunId();
+        AppState.processing.runId = runId;
 
         updateStopButtonVisibility(true);
 
         if (AppState.globalSemaphore) AppState.globalSemaphore.reset();
+        abortApiSemaphores();
+        setupApiSemaphores();
         AppState.processing.activeTasks.clear();
 
         updateStreamContent('', true);
@@ -757,7 +1017,7 @@ ${'='.repeat(50)}
         const enabledCatNames = getEnabledCategories().map(c => c.name).join(', ');
         const chainDesc = (AppState.settings.promptMessageChain || []).filter(m => m.enabled !== false);
         const chainSummary = chainDesc.length <= 1 ? '默认(单条用户消息)' : `${chainDesc.length}条消息[${chainDesc.map(m => m.role === 'system' ? '系统' : m.role === 'assistant' ? 'AI' : '用户').join('→')}]`;
-        updateStreamContent(`🚀 开始处理...\n📊 处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
+        updateStreamContent(`🚀 开始处理...\n📊 处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🧵 API并发: 主API=${AppState.processing.mainApiConcurrency || 1} | 导演API=${AppState.processing.directorApiConcurrency || 1}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
         debugLog('调试模式已开启 - 将记录每步耗时');
 
         const effectiveStartIndex = AppState.memory.userSelectedIndex !== null ? AppState.memory.userSelectedIndex : AppState.memory.startIndex;
@@ -797,7 +1057,7 @@ ${'='.repeat(50)}
                         for (let i = 0; i < AppState.memory.queue.length; i++) {
                             if (AppState.processing.isStopped) break;
                             if (!AppState.memory.queue[i].processed || AppState.memory.queue[i].failed) {
-                                await processMemoryChunk(i);
+                                await processMemoryChunk(i, 0, { runId });
                             }
                         }
                     }
@@ -810,7 +1070,7 @@ ${'='.repeat(50)}
                         if (AppState.processing.isStopped) break;
                         for (const idx of tokenLimitIndices.sort((a, b) => b - a)) splitMemoryIntoTwo(idx);
                         for (let j = i; j < batchEnd && j < AppState.memory.queue.length && !AppState.processing.isStopped; j++) {
-                            if (!AppState.memory.queue[j].processed || AppState.memory.queue[j].failed) await processMemoryChunk(j);
+                            if (!AppState.memory.queue[j].processed || AppState.memory.queue[j].failed) await processMemoryChunk(j, 0, { runId });
                         }
                         i = batchEnd;
                         await MemoryHistoryDB.saveState(i);
@@ -827,7 +1087,7 @@ ${'='.repeat(50)}
                     }
                     if (AppState.memory.queue[i].processed && !AppState.memory.queue[i].failed) { i++; continue; }
                     const currentLen = AppState.memory.queue.length;
-                    await processMemoryChunk(i);
+                    await processMemoryChunk(i, 0, { runId });
                     if (AppState.memory.queue.length > currentLen) i += (AppState.memory.queue.length - currentLen);
                     i++;
                     await MemoryHistoryDB.saveState(i);
@@ -868,6 +1128,13 @@ ${'='.repeat(50)}
             updateStreamContent(`\n❌ 错误: ${error.message}\n`);
             if (currentStatus() !== 'stopped') transitionTo('idle');
             updateStartButtonState(false);
+        } finally {
+            if (AppState.processing.runId === runId && currentStatus() !== 'running') {
+                AppState.processing.runId = null;
+            }
+            if (!AppState.processing.runId || AppState.processing.runId === runId) {
+                abortApiSemaphores();
+            }
         }
     }
 
