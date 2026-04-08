@@ -93,6 +93,27 @@ export function createPromptService(deps = {}) {
     function getPreviousMemoryContext(index) {
         if (index <= 0) return '';
 
+        const safeContentSnippet = (entry) => {
+            const raw = entry?.['内容'];
+            if (typeof raw === 'string') return raw.substring(0, 200);
+            if (raw === null || raw === undefined) return '';
+            if (Array.isArray(raw)) {
+                return raw
+                    .map((item) => String(item ?? '').trim())
+                    .filter(Boolean)
+                    .join('；')
+                    .substring(0, 200);
+            }
+            if (typeof raw === 'object') {
+                try {
+                    return JSON.stringify(raw).substring(0, 200);
+                } catch (_) {
+                    return String(raw).substring(0, 200);
+                }
+            }
+            return String(raw).substring(0, 200);
+        };
+
         for (let i = index - 1; i >= 0; i--) {
             const prevMemory = AppState.memory.queue[i];
             if (prevMemory && prevMemory.processed && prevMemory.result && !prevMemory.failed) {
@@ -101,17 +122,17 @@ export function createPromptService(deps = {}) {
 
                 if (result['剧情大纲']) {
                     for (const entryName in result['剧情大纲']) {
-                        plotContext.push(`${entryName}: ${result['剧情大纲'][entryName]['内容']?.substring(0, 200) || ''}`);
+                        plotContext.push(`${entryName}: ${safeContentSnippet(result['剧情大纲'][entryName])}`);
                     }
                 }
                 if (result['剧情节点']) {
                     for (const entryName in result['剧情节点']) {
-                        plotContext.push(`${entryName}: ${result['剧情节点'][entryName]['内容']?.substring(0, 200) || ''}`);
+                        plotContext.push(`${entryName}: ${safeContentSnippet(result['剧情节点'][entryName])}`);
                     }
                 }
                 if (result['章节剧情']) {
                     for (const entryName in result['章节剧情']) {
-                        plotContext.push(`${entryName}: ${result['章节剧情'][entryName]['内容']?.substring(0, 200) || ''}`);
+                        plotContext.push(`${entryName}: ${safeContentSnippet(result['章节剧情'][entryName])}`);
                     }
                 }
 

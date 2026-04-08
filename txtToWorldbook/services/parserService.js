@@ -114,6 +114,26 @@ export function createParserService(deps = {}) {
 
     function normalizeParsedWorldbookData(data) {
         if (!data || typeof data !== 'object') return data;
+
+        const normalizeContentValue = (value) => {
+            if (typeof value === 'string') return value;
+            if (value === null || value === undefined) return '';
+            if (Array.isArray(value)) {
+                return value
+                    .map((item) => String(item ?? '').trim())
+                    .filter(Boolean)
+                    .join('\n');
+            }
+            if (typeof value === 'object') {
+                try {
+                    return JSON.stringify(value);
+                } catch (_) {
+                    return String(value);
+                }
+            }
+            return String(value);
+        };
+
         for (const category in data) {
             const categoryData = data[category];
             if (!categoryData || typeof categoryData !== 'object') continue;
@@ -121,6 +141,15 @@ export function createParserService(deps = {}) {
             for (const entryName in categoryData) {
                 const entry = categoryData[entryName];
                 if (!entry || typeof entry !== 'object') continue;
+
+                if (!Array.isArray(entry['关键词'])) {
+                    if (entry['关键词'] === null || entry['关键词'] === undefined || entry['关键词'] === '') {
+                        entry['关键词'] = [];
+                    } else {
+                        entry['关键词'] = [String(entry['关键词'])];
+                    }
+                }
+                entry['内容'] = normalizeContentValue(entry['内容']);
 
                 if (category === '角色') {
                     const normalizedRoleType = normalizeRoleType(entry['角色类型']);

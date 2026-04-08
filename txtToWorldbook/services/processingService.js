@@ -125,6 +125,38 @@
         }
     }
 
+    function ensurePendingChapterAssetsSet() {
+        if (!(AppState.processing.pendingChapterAssets instanceof Set)) {
+            AppState.processing.pendingChapterAssets = new Set();
+        }
+        return AppState.processing.pendingChapterAssets;
+    }
+
+    function trackBackgroundChapterAssets(promise) {
+        if (!promise || typeof promise.then !== 'function') return promise;
+        const pendingSet = ensurePendingChapterAssetsSet();
+        const tracked = Promise.resolve(promise)
+            .catch(() => null)
+            .finally(() => {
+                pendingSet.delete(tracked);
+            });
+        pendingSet.add(tracked);
+        return promise;
+    }
+
+    async function flushBackgroundChapterAssets(runId) {
+        const pendingSet = ensurePendingChapterAssetsSet();
+        const pending = Array.from(pendingSet);
+        if (pending.length === 0) return;
+        if (!isRunActive(runId)) return;
+
+        updateStreamContent(`⏳ 等待导演资产补齐 (${pending.length})...\n`);
+        await Promise.allSettled(pending);
+
+        if (!isRunActive(runId)) return;
+        updateStreamContent('✅ 导演资产补齐完成\n');
+    }
+
     async function waitForPreviousChapterReady(index, runId, timeoutMs = 90000) {
         if (index <= 0) return;
         const startedAt = Date.now();
@@ -183,6 +215,27 @@
             message.includes('etimedout') ||
             message.includes('eai_again')
         );
+    }
+
+    function resolveChapterCompletionMode() {
+        const mode = String(AppState.settings?.chapterCompletionMode || '').trim().toLowerCase();
+        return mode === 'throughput' ? 'throughput' : 'consistency';
+    }
+
+    function compactErrorMessage(error) {
+        const raw = String(error?.message || error || '未知错误');
+        const singleLine = raw.replace(/\s+/g, ' ').trim();
+        if (!singleLine) return '未知错误';
+        return singleLine.length > 180 ? `${singleLine.slice(0, 180)}...` : singleLine;
+    }
+
+    function formatProcessingError(error, context = {}) {
+        const chapterPrefix = Number.isInteger(context.chapterIndex) ? `[第${context.chapterIndex}章]` : '';
+        const taskPrefix = context.task ? `[${context.task}]` : '';
+        const status = extractStatusCode(error);
+        const statusPrefix = status ? `[HTTP ${status}]` : (error?.code ? `[${String(error.code)}]` : '');
+        const message = compactErrorMessage(error);
+        return `${chapterPrefix}${taskPrefix}${statusPrefix ? `${statusPrefix} ` : ''}${message}`;
     }
 
     function buildRelevantWorldbookContext(memoryContent, maxEntries = 8) {
@@ -576,14 +629,15 @@
                     throw error;
                 }
                 const canRetry = shouldRetryError(error);
+                const brief = formatProcessingError(error, { chapterIndex: index + 1, task: '导演API' });
                 if (attempt < maxRetries && isRunActive(runId) && canRetry) {
                     const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-                    updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败，${delay / 1000}秒后重试...\n`);
+                    updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
                     continue;
                 }
                 if (!canRetry) {
-                    updateStreamContent(`🛑 [第${index + 1}章] 大纲请求为不可重试错误，已停止自动重试\n`);
+                    updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
                 }
             }
         }
@@ -591,8 +645,8 @@
         throwIfRunInactive(runId);
 
         memory.chapterOutlineStatus = 'failed';
-        memory.chapterOutlineError = String(lastError?.message || '大纲生成失败');
-        updateStreamContent(`⚠️ [第${index + 1}章] 大纲生成失败: ${memory.chapterOutlineError}\n`);
+        memory.chapterOutlineError = compactErrorMessage(lastError || new Error('大纲生成失败'));
+        updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: '导演API' })}\n`);
         updateMemoryQueueUI();
         throw lastError || new Error(memory.chapterOutlineError);
     }
@@ -660,6 +714,7 @@
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
 
         let chapterAssetsPromise = null;
+        const throughputMode = resolveChapterCompletionMode() === 'throughput';
         try {
             debugLog(`[第${chapterIndex}章] 启动并行子任务: 主API世界书 + 导演API章节资产`);
             const worldbookPromise = (async () => {
@@ -688,7 +743,14 @@
                 }
             })();
 
-            const [memoryUpdate] = await Promise.all([worldbookPromise, chapterAssetsPromise]);
+            let memoryUpdate = null;
+            if (throughputMode) {
+                memoryUpdate = await worldbookPromise;
+                if (chapterAssetsPromise) trackBackgroundChapterAssets(chapterAssetsPromise);
+                updateStreamContent(`🧩 [第${chapterIndex}章] 世界书已完成，导演资产后台补齐中\n`);
+            } else {
+                [memoryUpdate] = await Promise.all([worldbookPromise, chapterAssetsPromise]);
+            }
             throwIfRunInactive(runId);
 
             debugLog(`[第${chapterIndex}章] 处理完成`);
@@ -699,7 +761,8 @@
             memory.processing = false;
             if (error.message === 'ABORTED') throw error;
 
-            updateStreamContent(`❌ [第${chapterIndex}章] 错误: ${error.message}\n`);
+            const brief = formatProcessingError(error, { chapterIndex, task: '主流程' });
+            updateStreamContent(`❌ ${brief}\n`);
 
             if (isTokenLimitError(error.message)) {
                 if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
@@ -718,7 +781,7 @@
             }
 
             if (!canRetry) {
-                updateStreamContent(`🛑 [第${chapterIndex}章] 检测到不可重试错误，已停止自动重试\n`);
+                updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
             }
             if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
             throw error;
@@ -865,6 +928,7 @@ ${'='.repeat(50)}
         }
 
         let chapterAssetsPromise = null;
+        const throughputMode = resolveChapterCompletionMode() === 'throughput';
         try {
             chapterAssetsPromise = (async () => {
                 try {
@@ -916,8 +980,11 @@ ${'='.repeat(50)}
             debugLog(`[串行][第${chapterIndex}章] 保存Roll结果...`);
             await MemoryHistoryDB.saveRollResult(index, memoryUpdate);
 
-            if (chapterAssetsPromise) {
+            if (chapterAssetsPromise && !throughputMode) {
                 await chapterAssetsPromise;
+            } else if (chapterAssetsPromise) {
+                trackBackgroundChapterAssets(chapterAssetsPromise);
+                updateStreamContent(`🧩 [第${chapterIndex}章] 世界书已完成，导演资产后台补齐中\n`);
             }
             throwIfRunInactive(runId);
 
@@ -935,6 +1002,9 @@ ${'='.repeat(50)}
                 updateMemoryQueueUI();
                 return;
             }
+
+            const brief = formatProcessingError(error, { chapterIndex, task: '主流程' });
+            updateStreamContent(`❌ ${brief}\n`);
 
             if (isTokenLimitError(error.message || '')) {
                 if (AppState.processing.volumeMode) {
@@ -969,7 +1039,7 @@ ${'='.repeat(50)}
             }
 
             if (!canRetry) {
-                updateStreamContent(`🛑 [第${chapterIndex}章] 检测到不可重试错误，已停止自动重试\n`);
+                updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
             }
 
             if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
@@ -993,6 +1063,9 @@ ${'='.repeat(50)}
         if (AppState.globalSemaphore) AppState.globalSemaphore.abort();
         abortApiSemaphores();
         AppState.processing.activeTasks.clear();
+        if (AppState.processing.pendingChapterAssets instanceof Set) {
+            AppState.processing.pendingChapterAssets.clear();
+        }
         AppState.memory.queue.forEach(m => { if (m.processing) m.processing = false; });
         updateMemoryQueueUI();
         updateStreamContent('\n⏸️ 已暂停\n');
@@ -1011,13 +1084,17 @@ ${'='.repeat(50)}
         abortApiSemaphores();
         setupApiSemaphores();
         AppState.processing.activeTasks.clear();
+        ensurePendingChapterAssetsSet().clear();
 
         updateStreamContent('', true);
 
         const enabledCatNames = getEnabledCategories().map(c => c.name).join(', ');
+        const chapterCompletionModeLabel = resolveChapterCompletionMode() === 'throughput'
+            ? '吞吐优先（主先落地，导演后补）'
+            : '一致性优先（主+导演汇合）';
         const chainDesc = (AppState.settings.promptMessageChain || []).filter(m => m.enabled !== false);
         const chainSummary = chainDesc.length <= 1 ? '默认(单条用户消息)' : `${chainDesc.length}条消息[${chainDesc.map(m => m.role === 'system' ? '系统' : m.role === 'assistant' ? 'AI' : '用户').join('→')}]`;
-        updateStreamContent(`🚀 开始处理...\n📊 处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🧵 API并发: 主API=${AppState.processing.mainApiConcurrency || 1} | 导演API=${AppState.processing.directorApiConcurrency || 1}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
+        updateStreamContent(`🚀 开始处理...\n📊 处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🧩 章节完成策略: ${chapterCompletionModeLabel}\n🧵 API并发: 主API=${AppState.processing.mainApiConcurrency || 1} | 导演API=${AppState.processing.directorApiConcurrency || 1}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
         debugLog('调试模式已开启 - 将记录每步耗时');
 
         const effectiveStartIndex = AppState.memory.userSelectedIndex !== null ? AppState.memory.userSelectedIndex : AppState.memory.startIndex;
@@ -1106,6 +1183,10 @@ ${'='.repeat(50)}
                 AppState.worldbook.volumes.push({ volumeIndex: AppState.worldbook.currentVolumeIndex, worldbook: JSON.parse(JSON.stringify(AppState.worldbook.generated)), timestamp: Date.now() });
             }
 
+            if (resolveChapterCompletionMode() === 'throughput') {
+                await flushBackgroundChapterAssets(runId);
+            }
+
             const failedCount = AppState.memory.queue.filter(m => m.failed).length;
             if (failedCount > 0) {
                 updateProgress(100, `⚠️ 完成，但有 ${failedCount} 个失败`);
@@ -1124,8 +1205,9 @@ ${'='.repeat(50)}
 
         } catch (error) {
             ErrorHandler.handle(error, 'startAIProcessing');
-            updateProgress(0, `❌ 出错: ${error.message}`);
-            updateStreamContent(`\n❌ 错误: ${error.message}\n`);
+            const brief = formatProcessingError(error, { task: '处理总流程' });
+            updateProgress(0, `❌ 出错: ${compactErrorMessage(error)}`);
+            updateStreamContent(`\n❌ ${brief}\n`);
             if (currentStatus() !== 'stopped') transitionTo('idle');
             updateStartButtonState(false);
         } finally {

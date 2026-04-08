@@ -41,6 +41,7 @@
             directorApiSemaphore: null,
             mainApiConcurrency: 0,
             directorApiConcurrency: 0,
+            pendingChapterAssets: new Set(),
         },
         experience: {
             currentChapterIndex: 0,

@@ -7,7 +7,17 @@ export function createErrorHandler(deps = {}) {
 
     return {
         handle(error, context = '') {
-            Logger.error(context || 'App', error.message || error);
+            const baseMessage = String(error?.message || error || '未知错误');
+            const status = error?.status || this.extractStatus(baseMessage);
+            const stackLine = String(error?.stack || '').split('\n').slice(1, 3).map((line) => line.trim()).filter(Boolean).join(' | ');
+            const responseSnippet = String(error?.responseText || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+            const detailParts = [
+                status ? `[HTTP ${status}]` : '',
+                baseMessage,
+                stackLine ? `stack=${stackLine}` : '',
+                responseSnippet ? `response=${responseSnippet}` : '',
+            ].filter(Boolean);
+            Logger.error(context || 'App', detailParts.join(' | '));
 
             if (error.message === 'ABORTED') {
                 return { handled: true, message: '操作已取消' };

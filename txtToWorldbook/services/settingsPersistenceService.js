@@ -77,6 +77,7 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.parallelMainConcurrency = AppState.config.parallel.mainConcurrency || AppState.config.parallel.concurrency || 1;
         AppState.settings.parallelDirectorConcurrency = AppState.config.parallel.directorConcurrency || AppState.config.parallel.concurrency || 1;
         AppState.settings.parallelMode = AppState.config.parallel.mode;
+        AppState.settings.chapterCompletionMode = document.getElementById('ttw-chapter-completion-mode')?.value || AppState.settings.chapterCompletionMode || 'consistency';
         AppState.settings.categoryLightSettings = { ...AppState.config.categoryLight };
         AppState.settings.forceChapterMarker = document.getElementById('ttw-force-chapter-marker')?.checked ?? true;
         AppState.settings.chapterRegexPattern = document.getElementById('ttw-chapter-regex')?.value || AppState.config.chapterRegex.pattern;
@@ -180,6 +181,9 @@ export function createSettingsPersistenceService(deps) {
                 AppState.config.parallel.mainConcurrency = AppState.settings.parallelMainConcurrency || AppState.config.parallel.concurrency || 1;
                 AppState.config.parallel.directorConcurrency = AppState.settings.parallelDirectorConcurrency || AppState.config.parallel.concurrency || 1;
                 AppState.config.parallel.mode = AppState.settings.parallelMode || 'independent';
+                if (!['consistency', 'throughput'].includes(AppState.settings.chapterCompletionMode)) {
+                    AppState.settings.chapterCompletionMode = 'consistency';
+                }
                 const maxTokens = parseInt(AppState.settings.customApiMaxTokens, 10);
                 AppState.settings.customApiMaxTokens = Number.isFinite(maxTokens)
                     ? Math.max(1, Math.min(8192, maxTokens))

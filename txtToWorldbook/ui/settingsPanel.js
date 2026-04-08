@@ -102,6 +102,15 @@ function buildParallelConfigHtml() {
                 <option value="batch">📦 分批模式 - 批次间累积上下文，更连贯</option>
             </select>
         </div>
+        <div style="margin-top:10px;">
+            <select id="ttw-chapter-completion-mode" class="ttw-select">
+                <option value="consistency">🧩 一致性优先 - 主+导演都完成后再标记章节完成</option>
+                <option value="throughput">⚡ 吞吐优先 - 主API先落地，导演异步后补</option>
+            </select>
+            <div class="ttw-setting-hint" style="margin-top:6px;">
+                建议默认使用一致性优先；吞吐优先更快，但章节大纲可能稍后补齐。
+            </div>
+        </div>
     </div>`;
 }
 
@@ -628,6 +637,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const parallelModeEl = document.getElementById('ttw-parallel-mode');
     if (parallelModeEl) parallelModeEl.value = AppState.config.parallel.mode;
+
+    const chapterCompletionModeEl = document.getElementById('ttw-chapter-completion-mode');
+    if (chapterCompletionModeEl) chapterCompletionModeEl.value = AppState.settings.chapterCompletionMode || 'consistency';
 
     const useTavernApiEl = document.getElementById('ttw-use-tavern-api');
     if (useTavernApiEl) {
