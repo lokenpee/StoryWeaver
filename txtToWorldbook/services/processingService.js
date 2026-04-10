@@ -272,6 +272,15 @@
         return singleLine.length > 180 ? `${singleLine.slice(0, 180)}...` : singleLine;
     }
 
+    function buildRawResponseDebugSnippet(rawText, maxChars = 5000) {
+        const text = String(rawText || '');
+        if (!text) return '[empty]';
+        if (text.length <= maxChars) return text;
+        const head = text.slice(0, Math.floor(maxChars * 0.7));
+        const tail = text.slice(-Math.floor(maxChars * 0.3));
+        return `${head}\n\n... [已截断 ${text.length - maxChars} 字符] ...\n\n${tail}`;
+    }
+
     function formatProcessingError(error, context = {}) {
         const chapterPrefix = Number.isInteger(context.chapterIndex) ? `[第${context.chapterIndex}章]` : '';
         const taskPrefix = context.task ? `[${context.task}]` : '';
@@ -336,6 +345,9 @@
         }
         if (typeof memory.chapterOutlineError !== 'string') {
             memory.chapterOutlineError = '';
+        }
+        if (typeof memory.chapterOutlineLastRawResponse !== 'string') {
+            memory.chapterOutlineLastRawResponse = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
             memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
@@ -1723,13 +1735,15 @@
     }
 
     function parseChapterAssetsResponse(response, memory, index) {
-        const rawLength = String(response || '').length;
-        const rawPreview = String(response || '').replace(/\s+/g, ' ').slice(0, 180);
+        const rawResponse = String(response || '');
+        const rawLength = rawResponse.length;
+        const rawPreview = rawResponse.replace(/\s+/g, ' ').slice(0, 180);
         const parsed = extractJsonObject(response);
         if (!parsed) {
             throw createChapterAssetsContractError(index, `导演响应不是有效JSON（响应长度=${rawLength}）`, {
                 rawLength,
                 rawPreview,
+                rawResponse,
             });
         }
 
@@ -1861,6 +1875,7 @@
         throwIfRunInactive(runId);
         memory.chapterOutlineStatus = 'generating';
         memory.chapterOutlineError = '';
+        memory.chapterOutlineLastRawResponse = '';
         updateMemoryQueueUI();
 
         let lastError = null;
@@ -1879,6 +1894,7 @@
             }
             memory.chapterOutlineStatus = 'done';
             memory.chapterOutlineError = '';
+            memory.chapterOutlineLastRawResponse = '';
             updateStreamContent(`✅ [第${index + 1}章][${source}] 章节资产校验通过，beats=${beatCount}\n`);
             updateMemoryQueueUI();
             return assets;
@@ -1908,8 +1924,18 @@
                 const isContractError = error?.code === 'CHAPTER_ASSETS_CONTRACT';
                 const isSplitError = error?.code === 'CHAPTER_ASSETS_SPLIT' || error?.code === 'CHAPTER_ASSETS_VALIDATION';
 
-                if (isContractError && error?.detail?.splitPointIndex) {
-                    updateStreamContent(`ℹ️ [第${index + 1}章][导演API] 契约诊断: split_point[${error.detail.splitPointIndex}] 重点检查 anchor 是否可定位\n`);
+                if (isContractError) {
+                    if (error?.detail?.splitPointIndex) {
+                        updateStreamContent(`ℹ️ [第${index + 1}章][导演API] 契约诊断: split_point[${error.detail.splitPointIndex}] 重点检查 anchor 是否可定位\n`);
+                    }
+                    const rawResponse = typeof error?.detail?.rawResponse === 'string'
+                        ? error.detail.rawResponse
+                        : '';
+                    if (rawResponse) {
+                        memory.chapterOutlineLastRawResponse = rawResponse;
+                        const snippet = buildRawResponseDebugSnippet(rawResponse, 5000);
+                        updateStreamContent(`🧾 [第${index + 1}章][导演API] 原始响应片段（排查JSON失败）:\n---\n${snippet}\n---\n`);
+                    }
                 }
 
                 const canRetry = shouldRetryError(error);
