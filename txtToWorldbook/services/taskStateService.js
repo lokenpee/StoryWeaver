@@ -23,20 +23,33 @@ export function createTaskStateService(deps = {}) {
     const TASK_STATE_TYPE = 'StoryWeaver.taskState';
     const TASK_STATE_VERSION = '3.2.0';
     const SPLIT_TYPES = new Set([
+        'scene_change',
+        'time_jump',
         'goal_shift',
-        'situation_change',
-        'relationship_shift',
-        'revelation',
-        'decision_point',
-        'emotional_turn',
+        'conflict_closed',
     ]);
     const LEGACY_SPLIT_TYPE_MAP = {
-        scene_switch: 'situation_change',
-        action_closed: 'goal_shift',
-        dialogue_closed: 'goal_shift',
-        plot_twist: 'revelation',
-        perspective_switch: 'relationship_shift',
-        interaction_point: 'decision_point',
+        scene_switch: 'scene_change',
+        situation_change: 'scene_change',
+        action_closed: 'conflict_closed',
+        dialogue_closed: 'conflict_closed',
+        plot_twist: 'conflict_closed',
+        perspective_switch: 'scene_change',
+        relationship_shift: 'conflict_closed',
+        revelation: 'conflict_closed',
+        decision_point: 'goal_shift',
+        emotional_turn: 'conflict_closed',
+        interaction_point: 'goal_shift',
+        scene_change: 'scene_change',
+        time_skip: 'time_jump',
+        time_jump: 'time_jump',
+        goal_shift: 'goal_shift',
+        conflict_closed: 'conflict_closed',
+        '场景明显切换': 'scene_change',
+        '时间明显跳转': 'time_jump',
+        '人物核心目标完全改变': 'goal_shift',
+        '完整冲突闭环结束': 'conflict_closed',
+        '一个完整冲突/行动闭环结束': 'conflict_closed',
     };
 
     function clampInt(value, min, max, fallback = min) {
@@ -86,7 +99,14 @@ export function createTaskStateService(deps = {}) {
             id: String(source.id || `b${index + 1}`).trim() || `b${index + 1}`,
             summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
             event_summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
-            exitCondition: String(source.exitCondition || source.exit_condition || '等待用户行动或关键互动完成').trim() || '等待用户行动或关键互动完成',
+            exitCondition: String(
+                source.exitCondition
+                || source.exit_condition
+                || source.exist_condition
+                || source.existCondition
+                || source['exist condition']
+                || '等待用户行动或关键互动完成'
+            ).trim() || '等待用户行动或关键互动完成',
             split_reason: String(source.split_reason || source.splitReason || source.reason || '用于保持叙事单元完整。').trim() || '用于保持叙事单元完整。',
             self_check: normalizeSelfCheck(
                 source.self_check
