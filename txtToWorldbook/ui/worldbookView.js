@@ -265,6 +265,7 @@
 
         EventDelegate.on(container, '.ttw-entry-select-btn', 'click', (e, btn) => {
             e.stopPropagation();
+            e.preventDefault();
             if (!batchDeleteState.enabled) return;
 
             const category = btn.dataset.category;
@@ -272,13 +273,27 @@
             if (!category || !entryName) return;
 
             const key = buildEntrySelectionKey(category, entryName);
-            if (batchDeleteState.selectedKeys.has(key)) {
+            const isSelected = batchDeleteState.selectedKeys.has(key);
+
+            if (isSelected) {
                 batchDeleteState.selectedKeys.delete(key);
+                btn.textContent = '☑️';
+                btn.title = '选择用于批量删除';
+                btn.style.background = 'rgba(52,152,219,0.45)';
             } else {
                 batchDeleteState.selectedKeys.add(key);
+                btn.textContent = '✅';
+                btn.title = '取消选择';
+                btn.style.background = 'rgba(39,174,96,0.5)';
             }
 
-            refreshWorldbookViewModal();
+            const card = btn.closest('.ttw-worldbook-entry-card');
+            if (card) {
+                card.style.boxShadow = isSelected ? '' : 'inset 0 0 0 2px rgba(39,174,96,0.6)';
+            }
+
+            const viewModal = document.getElementById('ttw-worldbook-view-modal');
+            if (viewModal) syncBatchDeleteUi(viewModal);
         });
     }
 

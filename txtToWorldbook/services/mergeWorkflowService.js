@@ -82,6 +82,16 @@ export function createMergeWorkflowService(deps = {}) {
         }
     }
 
+    function consolidateEntryLocal(category, entryName) {
+        const entry = AppState.worldbook.generated[category]?.[entryName];
+        if (!entry || !entry['内容']) return;
+
+        entry['内容'] = dedupeStructuredContent(entry['内容']);
+        if (Array.isArray(entry['关键词'])) {
+            entry['关键词'] = [...new Set(entry['关键词'])];
+        }
+    }
+
     function showConsolidateCategorySelector() {
         const categories = Object.keys(AppState.worldbook.generated).filter((cat) => {
             const entries = AppState.worldbook.generated[cat];
@@ -188,7 +198,8 @@ export function createMergeWorkflowService(deps = {}) {
 	`;
         const footerHtml = `
 		<button class="ttw-btn" id="ttw-cancel-consolidate">取消</button>
-		<button class="ttw-btn ttw-btn-primary" id="ttw-start-consolidate">🧹 开始整理</button>
+        <button class="ttw-btn ttw-btn-secondary" id="ttw-start-local-consolidate" title="仅使用本地函数整理，不调用AI">🧩 本地整理</button>
+        <button class="ttw-btn ttw-btn-primary" id="ttw-start-consolidate" title="调用AI整理，并在前后执行本地兜底">🤖 AI整理</button>
 	`;
 
         const modal = ModalFactory.create({
@@ -434,8 +445,8 @@ export function createMergeWorkflowService(deps = {}) {
 
         renderPresetsListUI();
 
-        modal.querySelector('#ttw-start-consolidate').addEventListener('click', async () => {
-            const selectedEntries = [...modal.querySelectorAll('.ttw-consolidate-entry-cb:checked')].map((cb) => {
+        function collectSelectedEntries() {
+            return [...modal.querySelectorAll('.ttw-consolidate-entry-cb:checked')].map((cb) => {
                 const cat = cb.dataset.category;
                 const presetSelect = modal.querySelector(`.ttw-consolidate-cat-preset[data-category="${cat}"]`);
                 const presetName = presetSelect ? presetSelect.value : '默认';
@@ -445,31 +456,53 @@ export function createMergeWorkflowService(deps = {}) {
                     promptTemplate: getPresetPromptByName(presetName),
                 };
             });
-            if (selectedEntries.length === 0) {
-                ErrorHandler.showUserError('请至少选择一个条目');
-                return;
-            }
+        }
+
+        function buildPresetUsageSummary(selectedEntries) {
             const presetUsage = {};
             selectedEntries.forEach((e) => {
                 const pSelect = modal.querySelector(`.ttw-consolidate-cat-preset[data-category="${e.category}"]`);
                 const pName = pSelect ? pSelect.value : '默认';
                 presetUsage[pName] = (presetUsage[pName] || 0) + 1;
             });
-            const usageSummary = Object.entries(presetUsage).map(([k, v]) => `「${k}」${v}条`).join('，');
-            if (!await confirmAction(`确定要整理 ${selectedEntries.length} 个条目吗？\n\n预设分配：${usageSummary}`, { title: '整理条目' })) return;
+            return Object.entries(presetUsage).map(([k, v]) => `「${k}」${v}条`).join('，');
+        }
+
+        async function startConsolidation(mode = 'ai') {
+            const selectedEntries = collectSelectedEntries();
+            if (selectedEntries.length === 0) {
+                ErrorHandler.showUserError('请至少选择一个条目');
+                return;
+            }
+
+            const usageSummary = buildPresetUsageSummary(selectedEntries);
+            const modeText = mode === 'local' ? '本地整理（仅函数）' : 'AI整理（含本地兜底）';
+            if (!await confirmAction(`确定要执行${modeText}，共 ${selectedEntries.length} 个条目吗？\n\n预设分配：${usageSummary}`, { title: '整理条目' })) return;
+
             modal.remove();
-            await consolidateSelectedEntries(selectedEntries);
+            await consolidateSelectedEntries(selectedEntries, { mode });
+        }
+
+        modal.querySelector('#ttw-start-local-consolidate').addEventListener('click', async () => {
+            await startConsolidation('local');
+        });
+
+        modal.querySelector('#ttw-start-consolidate').addEventListener('click', async () => {
+            await startConsolidation('ai');
         });
 
         updateSelectedCount();
     }
 
-    async function consolidateSelectedEntries(entries) {
+    async function consolidateSelectedEntries(entries, options = {}) {
+        const mode = options.mode === 'local' ? 'local' : 'ai';
+        const modeText = mode === 'local' ? '本地整理' : 'AI整理';
+
         showProgressSection(true);
         setProcessingStatus('running');
-        updateProgress(0, '开始整理条目...');
+        updateProgress(0, `开始${modeText}条目...`);
         updateStreamContent('', true);
-        updateStreamContent(`🧹 开始整理 ${entries.length} 个条目\n${'='.repeat(50)}\n`);
+        updateStreamContent(`${mode === 'local' ? '🧩' : '🤖'} 开始${modeText} ${entries.length} 个条目\n${'='.repeat(50)}\n`);
 
         const semaphore = new Semaphore(AppState.config.parallel.concurrency);
         let completed = 0;
@@ -493,14 +526,18 @@ export function createMergeWorkflowService(deps = {}) {
 
             try {
                 updateStreamContent(`📝 [${index + 1}/${entries.length}] ${entry.category} - ${entry.name}\n`);
-                await consolidateEntry(entry.category, entry.name, entry.promptTemplate);
+                if (mode === 'local') {
+                    consolidateEntryLocal(entry.category, entry.name);
+                } else {
+                    await consolidateEntry(entry.category, entry.name, entry.promptTemplate);
+                }
                 completed++;
-                updateProgress(((completed + failed) / entries.length) * 100, `整理中 (${completed}✅ ${failed}❌ / ${entries.length})`);
+                updateProgress(((completed + failed) / entries.length) * 100, `${modeText}中 (${completed}✅ ${failed}❌ / ${entries.length})`);
                 updateStreamContent('   ✅ 完成\n');
             } catch (error) {
                 failed++;
                 failedEntries.push({ category: entry.category, name: entry.name, error: error.message });
-                updateProgress(((completed + failed) / entries.length) * 100, `整理中 (${completed}✅ ${failed}❌ / ${entries.length})`);
+                updateProgress(((completed + failed) / entries.length) * 100, `${modeText}中 (${completed}✅ ${failed}❌ / ${entries.length})`);
                 updateStreamContent(`   ❌ 失败: ${error.message}\n`);
             } finally {
                 semaphore.release();
@@ -511,8 +548,8 @@ export function createMergeWorkflowService(deps = {}) {
 
         lastConsolidateFailedEntries = failedEntries;
 
-        updateProgress(100, `整理完成: 成功 ${completed}, 失败 ${failed}`);
-        updateStreamContent(`\n${'='.repeat(50)}\n✅ 整理完成！成功 ${completed}, 失败 ${failed}\n`);
+        updateProgress(100, `${modeText}完成: 成功 ${completed}, 失败 ${failed}`);
+        updateStreamContent(`\n${'='.repeat(50)}\n✅ ${modeText}完成！成功 ${completed}, 失败 ${failed}\n`);
 
         if (failedEntries.length > 0) {
             updateStreamContent('\n❗ 失败条目:\n');
@@ -525,7 +562,7 @@ export function createMergeWorkflowService(deps = {}) {
 
         updateWorldbookPreview();
 
-        let msg = `条目整理完成！\n成功: ${completed}\n失败: ${failed}`;
+        let msg = `条目${modeText}完成！\n成功: ${completed}\n失败: ${failed}`;
         if (failed > 0) {
             msg += '\n\n再次点击"整理条目"可以只选失败项重试';
             ErrorHandler.showUserError(msg);
