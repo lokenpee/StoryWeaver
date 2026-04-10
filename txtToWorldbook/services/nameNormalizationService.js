@@ -62,6 +62,129 @@ function calculateCharOverlap(a, b) {
     return overlap / Math.max(setA.size, setB.size, 1);
 }
 
+function normalizeFieldName(fieldName) {
+    const raw = safeString(fieldName).trim();
+    if (!raw) return '';
+
+    const compact = raw
+        .toLowerCase()
+        .replace(/[\s_\-（）()【】\[\]{}]/g, '')
+        .replace(/(?:补充|扩展|说明|信息)\d*$/g, '');
+
+    if (/^(姓名|人物名称|角色名称|名字|名称)$/.test(compact)) return '名称';
+    if (/^(台词|语录|话语示例|说话风格)$/.test(compact)) return '话语示例';
+    if (/^(履历|经历|背景|背景故事|过往)$/.test(compact)) return '背景故事';
+    if (/^(外貌|形象|外形)$/.test(compact)) return '外貌';
+    if (/^(能力|技能|特长)$/.test(compact)) return '能力';
+    if (/^(性格|性格特征)$/.test(compact)) return '性格';
+
+    return compact;
+}
+
+function isValueNearDuplicate(existingValue, incomingValue) {
+    const left = normalizeTextForComparison(existingValue);
+    const right = normalizeTextForComparison(incomingValue);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    if (left.includes(right) || right.includes(left)) return true;
+    return calculateCharOverlap(left, right) >= 0.9;
+}
+
+function addUniqueValue(bucket, value) {
+    const trimmed = safeString(value).trim();
+    if (!trimmed) return;
+
+    const duplicatedIndex = bucket.values.findIndex((item) => isValueNearDuplicate(item, trimmed));
+    if (duplicatedIndex === -1) {
+        bucket.values.push(trimmed);
+        return;
+    }
+
+    if (trimmed.length > bucket.values[duplicatedIndex].length) {
+        bucket.values[duplicatedIndex] = trimmed;
+    }
+}
+
+function parseStructuredContent(content) {
+    const lines = safeString(content).split(/\r?\n/);
+    const fields = new Map();
+    const fieldOrder = [];
+    const freeText = [];
+    const seenFreeText = new Set();
+    let hasField = false;
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const fieldMatch = line.match(/^(?:[-*•\d.()（）一二三四五六七八九十、\s]+)?(?:\*\*)?\s*([^:：\n]{1,40}?)\s*(?:\*\*)?\s*[:：]\s*(.+)$/);
+        if (fieldMatch) {
+            const fieldName = fieldMatch[1].trim();
+            const fieldValue = fieldMatch[2].trim();
+            const fieldKey = normalizeFieldName(fieldName);
+            if (!fieldKey || !fieldValue) continue;
+
+            hasField = true;
+            if (!fields.has(fieldKey)) {
+                fields.set(fieldKey, { name: fieldName, values: [] });
+                fieldOrder.push(fieldKey);
+            }
+            addUniqueValue(fields.get(fieldKey), fieldValue);
+            continue;
+        }
+
+        const normalized = normalizeTextForComparison(line);
+        if (!normalized || seenFreeText.has(normalized)) continue;
+        seenFreeText.add(normalized);
+        freeText.push(line);
+    }
+
+    return { fields, fieldOrder, freeText, hasField };
+}
+
+function mergeParsedStructuredContent(base, incoming) {
+    for (const key of incoming.fieldOrder) {
+        const incomingBucket = incoming.fields.get(key);
+        if (!incomingBucket) continue;
+
+        if (!base.fields.has(key)) {
+            base.fields.set(key, { name: incomingBucket.name, values: [] });
+            base.fieldOrder.push(key);
+        }
+
+        const baseBucket = base.fields.get(key);
+        for (const value of incomingBucket.values) {
+            addUniqueValue(baseBucket, value);
+        }
+    }
+
+    for (const line of incoming.freeText) {
+        const duplicated = base.freeText.some((item) => isValueNearDuplicate(item, line));
+        if (!duplicated) base.freeText.push(line);
+    }
+}
+
+function buildStructuredContent(parsed) {
+    const output = [];
+
+    for (const key of parsed.fieldOrder) {
+        const bucket = parsed.fields.get(key);
+        if (!bucket || bucket.values.length === 0) continue;
+
+        output.push(`${bucket.name}: ${bucket.values[0]}`);
+        for (let i = 1; i < bucket.values.length; i++) {
+            output.push(`${bucket.name}补充${i}: ${bucket.values[i]}`);
+        }
+    }
+
+    if (parsed.freeText.length > 0) {
+        if (output.length > 0) output.push('');
+        output.push(...parsed.freeText);
+    }
+
+    return output.join('\n').trim();
+}
+
 export function isContentNearDuplicate(existingContent, incomingContent) {
     const left = normalizeTextForComparison(existingContent);
     const right = normalizeTextForComparison(incomingContent);
@@ -94,4 +217,29 @@ export function mergeContentWithDedup(existingContent, incomingContent, separato
     }
 
     return merged.join(separator).trim();
+}
+
+export function mergeContentByFieldFusion(existingContent, incomingContent) {
+    const left = safeString(existingContent).trim();
+    const right = safeString(incomingContent).trim();
+
+    if (!left && !right) return '';
+    if (!left) {
+        const parsedRight = parseStructuredContent(right);
+        return parsedRight.hasField ? buildStructuredContent(parsedRight) : right;
+    }
+    if (!right) {
+        const parsedLeft = parseStructuredContent(left);
+        return parsedLeft.hasField ? buildStructuredContent(parsedLeft) : left;
+    }
+
+    const parsedLeft = parseStructuredContent(left);
+    const parsedRight = parseStructuredContent(right);
+
+    if (!parsedLeft.hasField && !parsedRight.hasField) {
+        return mergeContentWithDedup(left, right);
+    }
+
+    mergeParsedStructuredContent(parsedLeft, parsedRight);
+    return buildStructuredContent(parsedLeft);
 }

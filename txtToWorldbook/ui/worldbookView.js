@@ -420,12 +420,18 @@
         `;
 
         const footerHtml = `
-            <div style="font-size:11px;color:#888;margin-right:auto;">💡 点击⚙️配置，🎯单独重Roll，🗑️删除条目，点击灯图标切换蓝/绿灯</div>
-            <span id="ttw-batch-delete-status" style="font-size:11px;color:#aab2bd;white-space:nowrap;">单条删除：点击每条右侧🗑️</span>
-            <button class="ttw-btn ttw-btn-secondary" id="ttw-batch-delete-toggle-btn" title="启用多选后可批量删除条目" style="white-space:nowrap;flex-shrink:0;">🧺 多选删除</button>
-            <button class="ttw-btn ttw-btn-warning" id="ttw-batch-delete-confirm-btn" title="删除当前已选条目" style="display:none;white-space:nowrap;flex-shrink:0;">🗑️ 删除已选</button>
-            <button class="ttw-btn ttw-btn-secondary" id="ttw-manual-merge-btn" title="手动选择条目进行合并（AI识别不到时使用）" style="white-space:nowrap;flex-shrink:0;">✋ 手动合并</button>
-            <button class="ttw-btn ttw-btn-secondary" id="ttw-batch-reroll-btn" title="批量选择多个条目重Roll" style="white-space:nowrap;flex-shrink:0;">🎲 批量重Roll</button>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;width:100%;">
+                <div style="display:flex;flex-direction:column;gap:4px;min-width:220px;flex:1;">
+                    <div style="font-size:11px;color:#888;">💡 点击⚙️配置，🎯单独重Roll，🗑️删除条目，点击灯图标切换蓝/绿灯</div>
+                    <span id="ttw-batch-delete-status" style="font-size:11px;color:#aab2bd;">单条删除：点击每条右侧🗑️</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                    <button class="ttw-btn ttw-btn-secondary" id="ttw-batch-delete-toggle-btn" title="启用多选后可批量删除条目" style="white-space:nowrap;flex-shrink:0;">🧺 多选删除</button>
+                    <button class="ttw-btn ttw-btn-warning" id="ttw-batch-delete-confirm-btn" title="删除当前已选条目" style="display:none;white-space:nowrap;flex-shrink:0;">🗑️ 删除已选</button>
+                    <button class="ttw-btn ttw-btn-secondary" id="ttw-manual-merge-btn" title="手动选择条目进行合并（AI识别不到时使用）" style="white-space:nowrap;flex-shrink:0;">✋ 手动合并</button>
+                    <button class="ttw-btn ttw-btn-secondary" id="ttw-batch-reroll-btn" title="批量选择多个条目重Roll" style="white-space:nowrap;flex-shrink:0;">🎲 批量重Roll</button>
+                </div>
+            </div>
         `;
 
         const viewModal = ModalFactory.create({

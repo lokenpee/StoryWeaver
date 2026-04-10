@@ -1,4 +1,4 @@
-﻿import { mergeContentWithDedup } from './nameNormalizationService.js';
+﻿import { mergeContentByFieldFusion } from './nameNormalizationService.js';
 
 export function createWorldbookService(deps = {}) {
     const {
@@ -93,7 +93,7 @@ export function createWorldbookService(deps = {}) {
                     if (sourceEntry['内容']) {
                         const existingContent = targetEntry['内容'] || '';
                         const newContent = sourceEntry['内容'];
-                        targetEntry['内容'] = mergeContentWithDedup(existingContent, newContent);
+                        targetEntry['内容'] = mergeContentByFieldFusion(existingContent, newContent);
                     }
 
                     if (category === '角色') {

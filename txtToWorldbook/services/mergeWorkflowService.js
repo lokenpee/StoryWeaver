@@ -1,3 +1,5 @@
+import { mergeContentByFieldFusion } from './nameNormalizationService.js';
+
 export function createMergeWorkflowService(deps = {}) {
     const {
         AppState,
@@ -53,58 +55,17 @@ export function createMergeWorkflowService(deps = {}) {
     let lastConsolidateFailedEntries = [];
 
     function dedupeStructuredContent(content) {
-        const lines = String(content || '').split(/\r?\n/);
-        const fieldMap = new Map();
-        const fieldOrder = [];
-        const freeText = [];
-        const seenFreeText = new Set();
-
-        for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line) continue;
-
-            const fieldMatch = line.match(/^[-*\s]*(?:\*\*)?([^:：\n]{1,30})(?:\*\*)?\s*[:：]\s*(.+)$/);
-            if (fieldMatch) {
-                const fieldName = fieldMatch[1].trim();
-                const fieldValue = fieldMatch[2].trim();
-                const fieldKey = fieldName.toLowerCase().replace(/[\s\-_/（）()【】]/g, '');
-                const existing = fieldMap.get(fieldKey);
-                if (!existing) {
-                    fieldMap.set(fieldKey, { name: fieldName, value: fieldValue });
-                    fieldOrder.push(fieldKey);
-                } else if (fieldValue.length > existing.value.length) {
-                    fieldMap.set(fieldKey, { name: existing.name, value: fieldValue });
-                }
-                continue;
-            }
-
-            const normalized = line.toLowerCase().replace(/[\s，。！？；：,.!?;:'"“”‘’]/g, '');
-            if (!normalized || seenFreeText.has(normalized)) continue;
-            seenFreeText.add(normalized);
-            freeText.push(line);
-        }
-
-        const output = [];
-        for (const key of fieldOrder) {
-            const field = fieldMap.get(key);
-            if (!field) continue;
-            output.push(`${field.name}: ${field.value}`);
-        }
-
-        if (freeText.length > 0) {
-            if (output.length > 0) output.push('');
-            output.push(...freeText);
-        }
-
-        return output.join('\n').trim();
+        return mergeContentByFieldFusion(content, '');
     }
 
     async function consolidateEntry(category, entryName, promptTemplate) {
         const entry = AppState.worldbook.generated[category]?.[entryName];
         if (!entry || !entry['内容']) return;
 
+        const preCleanedContent = dedupeStructuredContent(entry['内容']);
+
         const template = (promptTemplate && promptTemplate.trim()) ? promptTemplate.trim() : defaultConsolidatePrompt;
-        const prompt = `${template.replace('{CONTENT}', entry['内容'])}\n\n【强制输出要求】\n1. 不要重复同一字段；同义字段合并为一条。\n2. 尽量采用“字段: 值”的结构化格式输出。\n3. 不要输出解释文字，只输出整理后的正文。`;
+        const prompt = `${template.replace('{CONTENT}', preCleanedContent)}\n\n【强制输出要求】\n1. 去重目标是字段重复，不是删减事实。\n2. 同字段同内容只保留一份，禁止重复输出。\n3. 同字段不同内容必须融合保留，不得覆盖或遗漏。\n4. 尽量采用“字段: 值”的结构化格式输出。\n5. 不要输出解释文字，只输出整理后的正文。`;
         let response = await callAPI(getLanguagePrefix() + prompt);
 
         response = filterResponseContent(response);
@@ -114,7 +75,8 @@ export function createMergeWorkflowService(deps = {}) {
             throw new Error('AI 返回了空内容，保留原条目内容');
         }
 
-        entry['内容'] = dedupeStructuredContent(finalContent);
+        const mergedAfterApi = mergeContentByFieldFusion(preCleanedContent, finalContent);
+        entry['内容'] = dedupeStructuredContent(mergedAfterApi);
         if (Array.isArray(entry['关键词'])) {
             entry['关键词'] = [...new Set(entry['关键词'])];
         }
