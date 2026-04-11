@@ -507,19 +507,9 @@ export function createApiService(deps = {}) {
         try {
             return await callTargetPrompt(prompt, taskId, 'director');
         } catch (error) {
-            const fallbackEnabled = AppState.settings.directorAutoFallbackToMain !== false;
-            if (!fallbackEnabled) {
-                throw error;
-            }
-            if (AppState.settings.useTavernApi) {
-                Logger.warn('API', `导演API失败，已跳过回退主AI（酒馆模式下避免发送链路递归）: ${error.message}`);
-                updateStreamContent('⚠️ 导演API失败，已跳过回退主AI（酒馆模式下避免卡发送）\n');
-                throw error;
-            }
-            Logger.warn('API', `导演API失败，已回退主AI: ${error.message}`);
-            updateStreamContent(`⚠️ 导演API失败，已自动回退主AI\n`);
-            const fallbackMessages = [{ role: 'user', content: String(prompt || '') }];
-            return callCustomAPI(fallbackMessages, 'main', taskId);
+            Logger.warn('API', `导演API失败，将交由本地导演兜底判定: ${error.message}`);
+            updateStreamContent('⚠️ 导演API失败，将使用本地导演兜底判定\n');
+            throw error;
         }
     }
 

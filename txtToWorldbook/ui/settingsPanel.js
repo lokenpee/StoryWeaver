@@ -53,7 +53,7 @@
     </label>
     <label class="ttw-checkbox-label" style="margin:0;">
         <input type="checkbox" id="ttw-director-fallback-main" checked>
-        <span>导演API失败时自动回退主AI</span>
+        <span>导演API失败时启用本地导演兜底判定</span>
     </label>
     <label class="ttw-checkbox-label" style="margin:0;">
         <input type="checkbox" id="ttw-director-run-every-turn" checked>
@@ -65,7 +65,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v2.6.6';
+const PLUGIN_VERSION = 'v2.7';
 
 function buildPluginUpdateHtml() {
     return '';
