@@ -323,6 +323,72 @@ export function createDirectorService(deps = {}) {
         return '';
     }
 
+    function getLatestAssistantMessage(eventData) {
+        const eventChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
+        if (eventChat.length > 0) {
+            for (let i = eventChat.length - 1; i >= 0; i--) {
+                const item = eventChat[i] || {};
+                const role = item.role || (item.is_user ? 'user' : 'assistant');
+                if (role !== 'assistant') continue;
+                const content = String(item.content || item.mes || '').trim();
+                if (content) return content;
+            }
+        }
+
+        try {
+            const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
+            const chat = Array.isArray(st?.getContext?.()?.chat) ? st.getContext().chat : [];
+            for (let i = chat.length - 1; i >= 0; i--) {
+                const item = chat[i] || {};
+                if (item.is_user) continue;
+                const content = String(item.mes || item.content || '').trim();
+                if (content) return content;
+            }
+        } catch (_) {
+            return '';
+        }
+
+        return '';
+    }
+
+    function buildDirectionContext({ beats, currentBeatIdx, isNewBeat = false, latestAssistantMessage = '', latestUserMessage = '' }) {
+        const maxIdx = Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
+        const safeIdx = Math.max(0, Math.min(currentBeatIdx || 0, maxIdx));
+        const currentBeat = Array.isArray(beats) ? (beats[safeIdx] || beats[0] || null) : null;
+        const previousTail = getPreviousBeatTail(beats, safeIdx, 100);
+        const entryEvent = toShortText(currentBeat?.entryEvent || '', 120);
+        const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 100) || '当前节拍';
+        const recentAssistant = toShortText(latestAssistantMessage || '', 220);
+        const recentUser = toShortText(latestUserMessage || '', 220);
+
+        let startAnchor = '';
+        if (isNewBeat) {
+            if (entryEvent) {
+                startAnchor = `先承接上一节拍尾部，再以“${entryEvent}”作为入场触发进入当前节拍，不复述整段背景。`;
+            } else if (previousTail) {
+                startAnchor = '先承接上一节拍尾部自然开场，再进入当前节拍动作，禁止按当前节拍原文末尾续写。';
+            } else {
+                startAnchor = `以“${currentSummary}”的开场状态进入当前节拍，保持承接感且不重铺背景。`;
+            }
+        } else if (recentAssistant) {
+            startAnchor = `优先承接最近AI输出“${recentAssistant}”，再接入用户动作继续推进，禁止从当前节拍原文末尾续写。`;
+        } else if (recentUser) {
+            startAnchor = `优先承接最近用户动作“${recentUser}”继续推进，保持当前节拍连续，不重铺背景。`;
+        } else {
+            startAnchor = `从“${currentSummary}”已进行中的局面继续推进，聚焦可见动作，不复述背景。`;
+        }
+
+        return {
+            mode: isNewBeat ? 'new_beat' : 'in_beat',
+            start_anchor: toShortText(startAnchor, 180),
+            end_guideline: '本回合只需收束到可中断的临时节点（小结果、可追问钩子或局势变化），不要求完成整个节拍。',
+            previous_tail: previousTail || '',
+            entry_event: entryEvent || '',
+            recent_assistant: recentAssistant || '',
+            recent_user: recentUser || '',
+        };
+    }
+
     function detectExplicitBeatSwitchCommand(userMessage) {
         const rawText = String(userMessage || '');
         const text = rawText.replace(/\s+/g, '');
@@ -715,7 +781,7 @@ export function createDirectorService(deps = {}) {
         return null;
     }
 
-    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, switchControl }) {
+    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, switchControl, directionContext }) {
         const compactBeats = beats.map((beat, idx) => ({
             idx,
             id: beat.id,
@@ -724,11 +790,23 @@ export function createDirectorService(deps = {}) {
             tags: beat.tags,
         }));
         const currentBeat = beats[currentBeatIdx] || beats[0] || null;
+        const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
+        const contextMode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
+        const startAnchor = toShortText(context.start_anchor || '', 180)
+            || (contextMode === 'new_beat'
+                ? '先承接上一节拍尾部，再触发当前节拍入场动作。'
+                : '承接最近AI输出，再接入用户动作继续推进。');
+        const contextPreviousTail = toShortText(context.previous_tail || '', 120) || '无';
+        const contextEntryEvent = toShortText(context.entry_event || '', 120) || '无';
+        const contextRecentAssistant = toShortText(context.recent_assistant || '', 220) || '无';
+        const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
+        const endGuideline = toShortText(context.end_guideline || '', 180)
+            || '本回合收束到可中断临时节点，不要求完成整节拍。';
         const currentOriginal = String(currentBeat?.original_text || '').trim();
         const currentOriginalForPrompt = currentOriginal
             ? `${currentOriginal.slice(0, 1800)}${currentOriginal.length > 1800 ? '\n...(已截断)' : ''}`
             : '无';
-        const previousTail = getPreviousBeatTail(beats, currentBeatIdx, 100) || '无';
+        const previousTail = contextPreviousTail || getPreviousBeatTail(beats, currentBeatIdx, 100) || '无';
         const splitRuleHint = buildSplitRuleHint(currentBeat);
         const switchStatus = switchControl?.switched === true
             ? `已切换（${switchControl.signal || switchControl.reason || 'switch'}）`
@@ -743,6 +821,8 @@ export function createDirectorService(deps = {}) {
             '2) 你要结合：当前节拍原文、最近对话（用户+AI）、上一节拍承接来编排演出。',
             '3) 若系统本回合发生节拍切换，必须给出 narrative_bridge（1-2句，40-120字）交代过渡，避免割裂。',
             '4) 必须基于当前节拍原文证据输出 direction_script（起点-过程-终点），演员将按这个框架执行。',
+            '5) direction_script.start 必须锚定“起笔锚点”；禁止从当前节拍原文末尾直接续写。',
+            '6) direction_script.end 只写“本回合临时收束点”，不要求完成整节拍，也不得暗示自动切拍。',
             '',
             '输出硬规则：',
             '1) 只输出 JSON，不要代码块，不要解释文字。',
@@ -750,6 +830,7 @@ export function createDirectorService(deps = {}) {
             '3) direction_script.steps 必须是 2-4 条短步骤。',
             `4) stage_idx 必须固定为 ${currentBeatIdx}，should_advance 必须为 false（系统已完成切拍控制）。`,
             '5) narrative_bridge 仅在系统本回合发生切拍时填写，否则留空字符串。',
+            '6) direction_script.start 需要直接引用“起笔锚点”；direction_script.end 需要直接引用“临时收束”目标。',
             '',
             '允许的 user_intent 标签：advance, stay, neutral, switch_scene, skip, investigate, search, explore, travel, dialogue, negotiate, reflect, plan, rest, stealth, combat, summarize, clarify, request_hint, meta。',
             '',
@@ -760,10 +841,21 @@ export function createDirectorService(deps = {}) {
             `系统切拍控制结果：${switchStatus}`,
             `用户最新输入：${toShortText(latestUserMessage || '无', 320) || '无'}`,
             '',
+            '起笔锚点上下文：',
+            `- 场景模式：${contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写'}`,
+            `- 起笔锚点：${startAnchor}`,
+            `- 本回合收束目标：${endGuideline}`,
+            contextMode === 'new_beat'
+                ? `- 入场事件：${contextEntryEvent}`
+                : `- 最近AI输出（优先锚点）：${contextRecentAssistant}`,
+            contextMode === 'new_beat'
+                ? `- 上一节拍尾部承接（最多100字）：${previousTail}`
+                : `- 最近用户动作（次级锚点）：${contextRecentUser}`,
+            '',
             '节拍列表（供定位阶段）：',
             JSON.stringify(compactBeats, null, 2),
             '',
-            '上一节拍尾部承接（最多100字）：',
+            '上一节拍尾部承接（最多100字，供新节拍开场）：',
             previousTail,
             '',
             '当前节拍原文证据（优先依据）：',
@@ -800,27 +892,56 @@ export function createDirectorService(deps = {}) {
         return `先用1-2句交代“${prevSummary}”的收尾，再自然切入“${targetSummary}”。`;
     }
 
-    function buildDefaultDirectionScript(currentBeat, nextBeat, shouldAdvance = false) {
+    function buildDefaultDirectionScript(currentBeat, nextBeat, shouldAdvance = false, directionContext = {}) {
         const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 88) || '当前节拍';
         const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 88) || '下一节拍';
+        const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
+        const mode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
+        const startAnchor = toShortText(context.start_anchor || '', 160);
+        const recentAssistant = toShortText(context.recent_assistant || '', 160);
+        const recentUser = toShortText(context.recent_user || '', 160);
+        const entryEvent = toShortText(context.entry_event || '', 100);
+        const endGuideline = toShortText(context.end_guideline || '', 160)
+            || '本回合收束到可承接的临时节点，不要求完成整节拍。';
+
         if (shouldAdvance) {
             return {
-                start: `从“${currentSummary}”的进行中状态直接接续，不重复背景。`,
+                start: startAnchor || `先承接当前线头，再切入“${nextSummary}”的首个可见动作，不重复背景。`,
                 steps: [
                     '先完成当前节拍里正在进行的关键互动或信息确认。',
                     '用1-2句简要交代中间推进，保持动作与因果连续。',
                     `自然切入“${nextSummary}”并展开首个可见动作。`,
                 ],
-                end: `收束在“${nextSummary}”的开场结果或新悬念处。`,
+                end: endGuideline,
             };
         }
+
+        if (mode === 'new_beat') {
+            return {
+                start: startAnchor || `先承接上一节拍尾部，再以“${entryEvent || currentSummary}”触发当前节拍开场。`,
+                steps: [
+                    entryEvent
+                        ? `先启动“${entryEvent}”对应的入场动作，不复述整段背景。`
+                        : '先用上一节拍尾部回接开场，立即进入当前节拍动作。',
+                    `围绕“${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
+                ],
+                end: endGuideline,
+            };
+        }
+
+        const inBeatStart = startAnchor
+            || (recentAssistant
+                ? `优先承接最近AI输出“${recentAssistant}”，再接入用户动作继续推进。`
+                : (recentUser
+                    ? `承接最近用户动作“${recentUser}”继续推进，不重铺背景。`
+                    : `从“${currentSummary}”已进行中的局面继续推进，不复述背景。`));
         return {
-            start: `从“${currentSummary}”的当前状态起笔，保持同一情绪与场景连续。`,
+            start: inBeatStart,
             steps: [
                 `围绕“${currentSummary}”推进1-2个具体互动动作，不空转。`,
                 '让互动产生一个清晰变化（信息、关系或局势其一）。',
             ],
-            end: '在当前节拍内收束为一个小结果或可继续追问的钩子。',
+            end: endGuideline,
         };
     }
 
@@ -829,10 +950,17 @@ export function createDirectorService(deps = {}) {
         const source = rawScript && typeof rawScript === 'object' ? rawScript : {};
         const fallback = fallbackScript && typeof fallbackScript === 'object' ? fallbackScript : {};
 
-        const start = toShortText(
+        let start = toShortText(
             source.start || source.opening || source.begin || scriptText || fallback.start || '',
             180
         );
+        if (start.length < 20) {
+            const richerFallback = toShortText(
+                fallback.start || '先锚定当前回合可见动作，再展开本回合推进，不复述背景。',
+                150
+            );
+            start = toShortText([start, richerFallback].filter(Boolean).join(' '), 180);
+        }
 
         const stepCandidates = Array.isArray(source.steps)
             ? source.steps
@@ -861,7 +989,7 @@ export function createDirectorService(deps = {}) {
         return {
             start: start || toShortText(fallback.start || '从当前局面直接接续。', 180),
             steps,
-            end: end || toShortText(fallback.end || '以可承接的结果收束。', 180),
+            end: end || toShortText(fallback.end || '本回合收束到可承接的临时节点。', 180),
         };
     }
 
@@ -951,7 +1079,7 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function normalizeDecision(rawDecision, currentBeatIdx, beats) {
+    function normalizeDecision(rawDecision, currentBeatIdx, beats, directionContext = {}) {
         const maxIdx = Math.max(0, beats.length - 1);
         const parsedIdx = Number.isInteger(rawDecision?.stage_idx)
             ? rawDecision.stage_idx
@@ -998,7 +1126,7 @@ export function createDirectorService(deps = {}) {
         const targetBeat = beats[stageIdx] || beats[0] || null;
         const nextBeat = beats[Math.min(maxIdx, stageIdx + 1)] || null;
         const jumpCount = Math.max(0, stageIdx - currentBeatIdx);
-        const fallbackDirectionScript = buildDefaultDirectionScript(targetBeat, nextBeat, shouldAdvance);
+        const fallbackDirectionScript = buildDefaultDirectionScript(targetBeat, nextBeat, shouldAdvance, directionContext);
         const directionScript = normalizeDirectionScript(
             rawDecision?.direction_script || rawDecision?.directionScript || rawDecision?.director_script || rawDecision?.guidance,
             fallbackDirectionScript
@@ -1030,11 +1158,11 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function buildFallbackDecision(currentBeatIdx, beats, reason = 'fallback') {
+    function buildFallbackDecision(currentBeatIdx, beats, reason = 'fallback', directionContext = {}) {
         const safeIdx = Math.max(0, Math.min(currentBeatIdx, Math.max(0, beats.length - 1)));
         const currentBeat = beats[safeIdx] || beats[0] || null;
         const nextBeat = beats[safeIdx + 1] || null;
-        const directionScript = buildDefaultDirectionScript(currentBeat, nextBeat, false);
+        const directionScript = buildDefaultDirectionScript(currentBeat, nextBeat, false, directionContext);
         return {
             stage_idx: safeIdx,
             should_advance: false,
@@ -1130,9 +1258,18 @@ export function createDirectorService(deps = {}) {
 
         const currentOriginalSection = currentOriginal || '（当前节拍缺少原文，请优先遵循导演演绎指导并保持语气连续）';
         const previousTailSection = previousTail || '无';
+        const directionContext = decision?.direction_context && typeof decision.direction_context === 'object'
+            ? decision.direction_context
+            : buildDirectionContext({
+                beats,
+                currentBeatIdx: stageIdx,
+                isNewBeat: decision?.is_new_beat === true,
+                latestAssistantMessage: decision?.latest_assistant_message || '',
+                latestUserMessage: decision?.latest_user_message || '',
+            });
         const directionScript = normalizeDirectionScript(
             decision.direction_script,
-            buildDefaultDirectionScript(currentBeat, nextBeat, decision.should_advance === true)
+            buildDefaultDirectionScript(currentBeat, nextBeat, decision.should_advance === true, directionContext)
         );
         const steps = Array.isArray(directionScript.steps) && directionScript.steps.length > 0
             ? directionScript.steps
@@ -1150,12 +1287,13 @@ export function createDirectorService(deps = {}) {
             : (switchDirection === 'prev'
                 ? '已切回上一节拍（必须先写1-2句回接再切入）'
                 : '停留在当前节拍内继续演出');
-
-        const actorGoal = switchDirection === 'next'
-            ? '先收束上一阶段关键动作，再用过渡句切入本节拍。'
-            : (switchDirection === 'prev'
-                ? '先用回接句对齐上下文，再按本节拍框架推进。'
-                : '在当前节拍内完成一次有效推进并形成可承接收束。');
+        const mode = directionContext?.mode === 'new_beat' ? 'new_beat' : 'in_beat';
+        const startAnchor = toShortText(directionContext?.start_anchor || '', 180) || '按导演起点说明开场。';
+        const actorGoal = mode === 'new_beat'
+            ? (switchDirection === 'next'
+                ? '先承接上一节拍尾部并触发本节拍入场事件，再按框架推进；本回合临时收束，不必覆盖整节拍。'
+                : '以本节拍入场逻辑开场并推进可见动作；本回合临时收束，不必覆盖整节拍。')
+            : '优先承接最近AI输出，其次承接用户动作继续推进；本回合临时收束，不必覆盖整节拍。';
 
         const processLines = steps
             .slice(0, 4)
@@ -1167,8 +1305,10 @@ export function createDirectorService(deps = {}) {
             `- 本回合任务: ${actorGoal}`,
             `- 导演判定: ${advanceText}`,
             `- 当前阶段: ${currentBeat?.id || `b${stageIdx + 1}`} ${currentBeat?.summary || '当前节拍'}`,
-            '- 执行顺序: 先读主剧本 -> 再接承接尾巴 -> 最后按起点/过程/终点写正文。',
+            '- 执行顺序: 先锚定起笔点 -> 再参考主剧本边界 -> 按起点/过程/终点写正文。',
+            `- 起笔锚点: ${startAnchor}`,
             '- 输出要求: 直接输出剧情正文，不要复述本执行单，不要解释规则。',
+            '- 禁止事项: 禁止按当前节拍原文末尾直接续写；禁止越出当前节拍范围。',
             '',
             '## 1) 当前节拍原文（主剧本，必须优先遵循）',
             currentOriginalSection,
@@ -1184,8 +1324,8 @@ export function createDirectorService(deps = {}) {
             switchedStage ? `- 跨节拍过渡: ${narrativeBridge}` : '- 跨节拍过渡: 本回合不需要。',
             decision.tone_hint ? `- 基调提示: ${decision.tone_hint}` : '',
             switchedStage
-                ? '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织演出；本回合先写过渡/回接，再展开本节拍正文。'
-                : '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织演出，禁止跳出当前节拍。',
+                ? '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织演出；本回合先写过渡/回接，再展开本节拍正文；本回合临时收束不等于切拍。'
+                : '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织演出；本回合临时收束不等于切拍，禁止跳出当前节拍。',
         ].join('\n');
     }
 
@@ -1229,22 +1369,37 @@ export function createDirectorService(deps = {}) {
         directorDebug(`start chapter=${chapterIndex + 1}, beat=${currentBeatIdx + 1}/${beats.length}`);
 
         const latestUserMessage = getLatestUserMessage(eventData);
+        const latestAssistantMessage = getLatestAssistantMessage(eventData);
+        const latestDialogue = getLatestDialogue(eventData);
         const ruleIntent = detectUserIntent(latestUserMessage);
         const switchCommand = detectExplicitBeatSwitchCommand(latestUserMessage);
         const switchControl = resolveBeatSwitchControl(currentBeatIdx, beats, switchCommand);
         const lockedBeatIdx = switchControl.lockedBeatIdx;
+        const previousBeatIdx = Number.isInteger(AppState.experience?.lastBeatIdx)
+            ? Math.max(0, Math.min(AppState.experience.lastBeatIdx, beats.length - 1))
+            : -1;
+        const isNewBeat = previousBeatIdx !== lockedBeatIdx;
+        const directionContext = buildDirectionContext({
+            beats,
+            currentBeatIdx: lockedBeatIdx,
+            isNewBeat,
+            latestAssistantMessage,
+            latestUserMessage,
+        });
         directorDebug(`intent-rule=${ruleIntent.kind}${ruleIntent.signal ? ` (${ruleIntent.signal})` : ''}`);
         directorDebug(`switch-command=${switchCommand.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
         directorDebug(`switch-control=${switchControl.reason}, lockedBeat=${lockedBeatIdx + 1}/${beats.length}`);
+        directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
 
         const prompt = buildDirectorPrompt({
             chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
             chapterOutline: toShortText(memory.chapterOutline || '', 140),
             currentBeatIdx: lockedBeatIdx,
             beats,
-            latestDialogue: getLatestDialogue(eventData),
+            latestDialogue,
             latestUserMessage,
             switchControl,
+            directionContext,
         });
 
         let decision = null;
@@ -1254,14 +1409,14 @@ export function createDirectorService(deps = {}) {
             const parsed = extractJsonObject(response);
             if (!parsed) {
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
-                decision = buildFallbackDecision(lockedBeatIdx, beats, 'parse-fallback');
+                decision = buildFallbackDecision(lockedBeatIdx, beats, 'parse-fallback', directionContext);
                 decisionSource = 'fallback-parse';
             } else {
-                decision = normalizeDecision(parsed, lockedBeatIdx, beats);
+                decision = normalizeDecision(parsed, lockedBeatIdx, beats, directionContext);
             }
         } catch (error) {
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
-            decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback');
+            decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback', directionContext);
             decisionSource = 'fallback-error';
         }
 
@@ -1287,6 +1442,10 @@ export function createDirectorService(deps = {}) {
         decision.switch_direction = switchControl.direction;
         decision.switch_signal = switchControl.signal;
         decision.switch_gate = switchControl.reason;
+        decision.is_new_beat = isNewBeat;
+        decision.direction_context = directionContext;
+        decision.latest_assistant_message = toShortText(latestAssistantMessage || '', 220);
+        decision.latest_user_message = toShortText(latestUserMessage || '', 220);
 
         if (switchControl.switched === true && !decision.narrative_bridge) {
             const previousBeat = beats[currentBeatIdx] || null;
@@ -1304,7 +1463,8 @@ export function createDirectorService(deps = {}) {
                 buildDefaultDirectionScript(
                     beats[lockedBeatIdx] || null,
                     beats[lockedBeatIdx + 1] || null,
-                    switchControl.shouldAdvance === true
+                    switchControl.shouldAdvance === true,
+                    directionContext
                 )
             );
         }
@@ -1319,6 +1479,7 @@ export function createDirectorService(deps = {}) {
             at: Date.now(),
         };
         AppState.experience.currentBeatIndex = decision.stage_idx;
+        AppState.experience.lastBeatIdx = lockedBeatIdx;
         AppState.experience.directorLastDecision = { ...memory.directorDecision };
         AppState.experience.directorLastDecisionAt = Date.now();
 
