@@ -938,15 +938,22 @@ export function createDirectorService(deps = {}) {
             ? '推进到下一节拍（必须先写1-2句过渡再切入）'
             : '停留在当前节拍内继续演出';
 
+        const actorGoal = decision.should_advance === true
+            ? '先收束当前阶段关键动作，再用过渡句切入下一节拍。'
+            : '在当前节拍内完成一次有效推进并形成可承接收束。';
+
         const processLines = steps
             .slice(0, 4)
             .map((step, idx) => `  ${idx + 1}. ${step}`);
 
         return [
-            '# StoryWeaver 导演提示（硬导演模式）',
+            '# StoryWeaver 导演->演员执行单（硬导演模式）',
+            '导演：演员秋青子就位！以下内容是导演给你的系统级执行指令，不是给用户看的解释。',
+            `- 本回合任务: ${actorGoal}`,
             `- 导演判定: ${advanceText}`,
             `- 当前阶段: ${currentBeat?.id || `b${stageIdx + 1}`} ${currentBeat?.summary || '当前节拍'}`,
-            `- 判定置信度: ${Number.isFinite(decision.confidence) ? decision.confidence.toFixed(2) : '0.50'}`,
+            '- 执行顺序: 先读主剧本 -> 再接承接尾巴 -> 最后按起点/过程/终点写正文。',
+            '- 输出要求: 直接输出剧情正文，不要复述本执行单，不要解释规则。',
             '',
             '## 1) 当前节拍原文（主剧本，必须优先遵循）',
             currentOriginalSection,
@@ -961,7 +968,7 @@ export function createDirectorService(deps = {}) {
             `- 终点: ${directionScript.end}`,
             decision.should_advance === true ? `- 跨节拍过渡: ${narrativeBridge}` : '- 跨节拍过渡: 本回合不需要。',
             decision.tone_hint ? `- 基调提示: ${decision.tone_hint}` : '',
-            '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织本回合演出；若推进节拍，先写过渡再切入新节拍。',
+            '- 执行要求: 必须按“起点 -> 过程 -> 终点”组织演出；若推进节拍，必须先写过渡再切入新节拍。',
         ].join('\n');
     }
 
