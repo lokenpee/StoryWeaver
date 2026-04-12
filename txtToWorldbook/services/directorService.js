@@ -261,116 +261,80 @@ export function createDirectorService(deps = {}) {
         return null;
     }
 
-    function getLatestDialogue(eventData) {
-        const lines = [];
-
-        const eventChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
-        if (eventChat.length > 0) {
-            let lastUser = '';
-            let lastAssistant = '';
-
-            for (let i = eventChat.length - 1; i >= 0; i--) {
-                const item = eventChat[i] || {};
-                const content = String(item.content || item.mes || '').trim();
-                if (!content) continue;
-
-                const role = item.role || (item.is_user ? 'user' : 'assistant');
-                if (!lastUser && role === 'user') {
-                    lastUser = content;
-                }
-                if (!lastAssistant && role === 'assistant') {
-                    lastAssistant = content;
-                }
-                if (lastUser && lastAssistant) break;
-            }
-
-            if (lastAssistant) lines.push(`AI:${toShortText(lastAssistant, 320)}`);
-            if (lastUser) lines.push(`用户:${toShortText(lastUser, 320)}`);
-        }
-
-        if (lines.length > 0) {
-            return lines.join('\n');
-        }
-
+    function getSillyTavernChatHistory() {
         try {
             const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
-            if (!st || typeof st.getContext !== 'function') return '无最近对话';
-            const chat = Array.isArray(st.getContext()?.chat) ? st.getContext().chat : [];
-            if (chat.length === 0) return '无最近对话';
-
-            let lastUser = '';
-            let lastAssistant = '';
-            for (let i = chat.length - 1; i >= 0; i--) {
-                const item = chat[i] || {};
-                const content = String(item.mes || item.content || '').trim();
-                if (!content) continue;
-                if (!lastUser && item.is_user) lastUser = content;
-                if (!lastAssistant && !item.is_user) lastAssistant = content;
-                if (lastUser && lastAssistant) break;
-            }
-            if (lastAssistant) lines.push(`AI:${toShortText(lastAssistant, 320)}`);
-            if (lastUser) lines.push(`用户:${toShortText(lastUser, 320)}`);
+            if (!st || typeof st.getContext !== 'function') return [];
+            const chat = st.getContext()?.chat;
+            return Array.isArray(chat) ? chat : [];
         } catch (_) {
-            return '无最近对话';
+            return [];
         }
+    }
+
+    function getChatItemContent(item) {
+        return String(item?.mes || item?.content || '').trim();
+    }
+
+    function resolveChatItemRole(item) {
+        if (item?.is_user === true) return 'user';
+        if (item?.is_system === true) return 'system';
+
+        const role = String(item?.role || '').toLowerCase();
+        if (role === 'user' || role === 'assistant' || role === 'system') {
+            return role;
+        }
+
+        return 'assistant';
+    }
+
+    function isUserChatItem(item) {
+        return resolveChatItemRole(item) === 'user';
+    }
+
+    function isAssistantChatItem(item) {
+        if (resolveChatItemRole(item) !== 'assistant') return false;
+        if (item?.is_system === true) return false;
+        if (item?.is_storyweaver_director === true) return false;
+        if (item?.prefix === true) return false;
+        return true;
+    }
+
+    function pickLatestFromChat(chat, matcher) {
+        const source = Array.isArray(chat) ? chat : [];
+        for (let i = source.length - 1; i >= 0; i--) {
+            const item = source[i] || {};
+            if (!matcher(item)) continue;
+            const content = getChatItemContent(item);
+            if (content) return content;
+        }
+        return '';
+    }
+
+    function getLatestDialogue(eventData) {
+        void eventData;
+        const lines = [];
+
+        const realChat = getSillyTavernChatHistory();
+        const lastAssistant = pickLatestFromChat(realChat, isAssistantChatItem);
+        const lastUser = pickLatestFromChat(realChat, isUserChatItem);
+
+        if (lastAssistant) lines.push(`AI:${toShortText(lastAssistant, 320)}`);
+        if (lastUser) lines.push(`用户:${toShortText(lastUser, 320)}`);
 
         return lines.length > 0 ? lines.join('\n') : '无最近对话';
     }
 
     function getLatestUserMessage(eventData) {
-        const eventChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
-        if (eventChat.length > 0) {
-            for (let i = eventChat.length - 1; i >= 0; i--) {
-                const item = eventChat[i] || {};
-                const role = item.role || (item.is_user ? 'user' : 'assistant');
-                if (role !== 'user') continue;
-                const content = String(item.content || item.mes || '').trim();
-                if (content) return content;
-            }
-        }
-
-        try {
-            const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
-            const chat = Array.isArray(st?.getContext?.()?.chat) ? st.getContext().chat : [];
-            for (let i = chat.length - 1; i >= 0; i--) {
-                const item = chat[i] || {};
-                if (!item.is_user) continue;
-                const content = String(item.mes || item.content || '').trim();
-                if (content) return content;
-            }
-        } catch (_) {
-            return '';
-        }
-
-        return '';
+        void eventData;
+        const realChat = getSillyTavernChatHistory();
+        return pickLatestFromChat(realChat, isUserChatItem);
     }
 
     function getLatestAssistantMessage(eventData) {
-        const eventChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
-        if (eventChat.length > 0) {
-            for (let i = eventChat.length - 1; i >= 0; i--) {
-                const item = eventChat[i] || {};
-                const role = item.role || (item.is_user ? 'user' : 'assistant');
-                if (role !== 'assistant') continue;
-                const content = String(item.content || item.mes || '').trim();
-                if (content) return content;
-            }
-        }
-
-        try {
-            const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
-            const chat = Array.isArray(st?.getContext?.()?.chat) ? st.getContext().chat : [];
-            for (let i = chat.length - 1; i >= 0; i--) {
-                const item = chat[i] || {};
-                if (item.is_user) continue;
-                const content = String(item.mes || item.content || '').trim();
-                if (content) return content;
-            }
-        } catch (_) {
-            return '';
-        }
-
-        return '';
+        void eventData;
+        const realChat = getSillyTavernChatHistory();
+        return pickLatestFromChat(realChat, isAssistantChatItem);
     }
 
     function buildDirectionContext({ beats, currentBeatIdx, isNewBeat = false, latestAssistantMessage = '', latestUserMessage = '' }) {
@@ -543,7 +507,7 @@ export function createDirectorService(deps = {}) {
             '1) 以用户本轮输入为绝对边界，导演只能在边界内组织演出，不得越界补写关键动作或结果。',
             '2) 你要结合：当前节拍原文、最近AI输出、最近用户输入，输出可执行框架。',
             '3)  必须基于当前节拍原文证据输出 direction_script（起点-过程-终点）。direction_script.action_chain 必须是单个字符串，包含2-4段递进动作并用"→"连接。格式示例：主角出门→遇到胖子→路上闲扯→到潘家园。',
-            '4) direction_script.start 必须锚定“起笔锚点”；禁止从当前节拍原文末尾直接续写。',
+            '4) direction_script.start 必须参考“起笔锚点”；禁止从当前节拍原文末尾直接续写。',
             '5) direction_script.end 只写“本回合临时收束点”，不要求完成整节拍，也不得暗示自动切拍。',
             '6) 未经用户明确输入，不得主动切换主角所在场景；若用户明确提出切拍/转场，按系统锁定节拍执行。',
             '',
@@ -561,7 +525,7 @@ export function createDirectorService(deps = {}) {
             '1) 只输出 JSON，不要代码块，不要解释文字。',
             '2) direction_script.action_chain 必须是单行字符串，包含2-4段递进动作并用"→"连接，例如：动作A→动作B→动作C。禁止输出 direction_script.steps 数组。',
             `3) stage_idx 必须固定为 ${currentBeatIdx}（系统已完成切拍控制）。`,
-            '4) direction_script.start 需要直接引用“起笔锚点”；direction_script.end 需要直接引用“临时收束”目标。',
+            '4) direction_script.start 需要参考“起笔锚点”；direction_script.end 需要直接引用“临时收束”目标。',
 
             `章节：${chapterTitle}`,
             `本章摘要：${chapterOutline}`,
