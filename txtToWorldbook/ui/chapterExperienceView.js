@@ -951,7 +951,46 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
-    function collectRecentDialogueContext() {
+    function toHeadSnippet(text, maxLen = 100) {
+        const plain = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!plain) return '';
+        return plain.slice(0, maxLen).trim();
+    }
+
+    function toTailSnippet(text, maxLen = 100) {
+        const plain = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!plain) return '';
+        if (plain.length <= maxLen) return plain;
+        return plain.slice(Math.max(0, plain.length - maxLen)).trim();
+    }
+
+    function getFirstBeatLeadSnippet(memory, maxLen = 100) {
+        const beats = Array.isArray(memory?.chapterScript?.beats) ? memory.chapterScript.beats : [];
+        const firstBeat = beats[0] && typeof beats[0] === 'object' ? beats[0] : null;
+        if (!firstBeat) return '';
+
+        const firstBeatText = String(
+            firstBeat.original_text
+            || firstBeat.originalText
+            || firstBeat.event_summary
+            || firstBeat.eventSummary
+            || firstBeat.summary
+            || ''
+        ).trim();
+        return toHeadSnippet(firstBeatText, maxLen);
+    }
+
+    function buildCurrentChapterLeadSnippet(memory, maxLen = 100) {
+        const beatLead = getFirstBeatLeadSnippet(memory, maxLen);
+        if (beatLead) return beatLead;
+
+        const contentLead = toHeadSnippet(memory?.content || '', maxLen);
+        if (contentLead) return contentLead;
+
+        return toHeadSnippet(memory?.chapterOutline || '', maxLen);
+    }
+
+    function collectLatestAssistantTail(maxLen = 100) {
         try {
             const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
             if (!st || typeof st.getContext !== 'function') return '';
@@ -959,22 +998,12 @@ export function createChapterExperienceView(deps = {}) {
             const chat = Array.isArray(context?.chat) ? context.chat : [];
             if (chat.length === 0) return '';
 
-            let lastUser = null;
-            let lastAssistant = null;
             for (let i = chat.length - 1; i >= 0; i--) {
                 const item = chat[i];
-                const text = String(item?.mes || '').trim();
+                const text = String(item?.mes || item?.content || '').trim();
                 if (!text) continue;
-                if (!lastUser && item?.is_user) lastUser = text;
-                if (!lastAssistant && !item?.is_user) lastAssistant = text;
-                if (lastUser && lastAssistant) break;
-            }
-
-            if (lastUser && lastAssistant) {
-                return `最新一轮对话：\n玩家：${toShortText(lastUser, 260)}\nAI：${toShortText(lastAssistant, 260)}`;
-            }
-            if (lastUser || lastAssistant) {
-                return `最新一轮对话：\n${lastUser ? `玩家：${toShortText(lastUser, 260)}` : ''}\n${lastAssistant ? `AI：${toShortText(lastAssistant, 260)}` : ''}`.trim();
+                if (item?.is_user) continue;
+                return toTailSnippet(text, maxLen);
             }
             return '';
         } catch (_) {
@@ -982,27 +1011,35 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
-    function buildPreviousChapterContext(index) {
-        if (index <= 0) return '';
+    function resolveOpeningAnchors(memory, index) {
+        const assistantTail = collectLatestAssistantTail(100);
+        const currentLead = buildCurrentChapterLeadSnippet(memory, 100);
 
-        const prevMemory = getMemory(index - 1);
-        if (!prevMemory) return '';
-        ensureMemoryRuntime(prevMemory, index - 1);
+        if (assistantTail) {
+            return {
+                carryOver: assistantTail,
+                carrySource: 'latest-assistant-tail',
+                leadIn: currentLead,
+            };
+        }
 
-        const prevTitle = prevMemory.chapterTitle || `第${index}章`;
-        const prevOutline = prevMemory.chapterOutline || deriveOutlineFromContent(prevMemory);
-        const prevScript = prevMemory.chapterScript && typeof prevMemory.chapterScript === 'object'
-            ? prevMemory.chapterScript
-            : deriveScriptFromOutline(prevOutline);
-        const prevNodes = Array.isArray(prevScript.keyNodes)
-            ? prevScript.keyNodes.map((node) => toShortText(node, 40)).filter(Boolean).slice(0, 4)
-            : [];
+        if (index === 0) {
+            return {
+                carryOver: currentLead,
+                carrySource: 'chapter1-current-head',
+                leadIn: currentLead,
+            };
+        }
 
-        return `上一章：${prevTitle}\n上一章摘要：${toShortText(prevOutline, 160)}\n上一章目标：${toShortText(prevScript.goal, 120)}\n上一章流程：${toShortText(prevScript.flow, 160)}\n上一章关键节点：${prevNodes.join('、') || '无'}`;
+        return {
+            carryOver: '',
+            carrySource: 'none',
+            leadIn: currentLead,
+        };
     }
 
     function buildChapterLeadSnippet(memory, minLen = 50, maxLen = 100) {
-        const plain = String(memory?.content || '').replace(/\s+/g, ' ').trim();
+        const plain = String(buildCurrentChapterLeadSnippet(memory, maxLen) || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
 
         let snippet = plain.slice(0, maxLen);
@@ -1016,7 +1053,7 @@ export function createChapterExperienceView(deps = {}) {
         return snippet.trim();
     }
 
-    function trimOpeningText(text, minLen = 50, maxLen = 100) {
+    function trimOpeningText(text, minLen = 50, maxLen = 200) {
         let normalized = String(text || '').replace(/\s+/g, ' ').trim();
         if (!normalized) return '';
 
@@ -1037,21 +1074,20 @@ export function createChapterExperienceView(deps = {}) {
 
     function buildOpeningFallback(memory, index) {
         const title = memory.chapterTitle || `第${index + 1}章`;
-        const leadSnippet = buildChapterLeadSnippet(memory, 50, 100);
-        const base = index === 0
-            ? `${title}，故事在此刻拉开帷幕，你已站在命运转折的门前。`
-            : `${title}，上一程的余波尚在，你的脚步已踏入新的局面。`;
-        const fallback = leadSnippet
-            ? `${base}${leadSnippet}`
-            : `${base}你收拢思绪，准备接住眼前即将展开的变化。`;
-        return trimOpeningText(fallback, 50, 100);
+        const chapterSummaryLead = toHeadSnippet(memory?.chapterOutline || '', 36);
+        const { carryOver, leadIn } = resolveOpeningAnchors(memory, index);
+        const carryPart = carryOver || `${title}${chapterSummaryLead ? `，${chapterSummaryLead}` : ''}`;
+        const leadPart = leadIn || buildChapterLeadSnippet(memory, 50, 100) || '你收拢思绪，准备接住眼前即将展开的变化。';
+        const carryWithPunc = /[。！？!?]$/.test(carryPart) ? carryPart : `${carryPart}。`;
+        const fallback = `${carryWithPunc}${leadPart}`;
+        return trimOpeningText(fallback, 50, 200);
     }
 
     function sanitizeOpeningText(raw, memory, index) {
         const text = trimOpeningText(String(raw || '')
             .replace(/^```[a-z]*\s*/i, '')
             .replace(/\s*```$/i, '')
-            .trim(), 50, 100);
+            .trim(), 50, 200);
         if (!text) {
             return buildOpeningFallback(memory, index);
         }
@@ -1060,26 +1096,26 @@ export function createChapterExperienceView(deps = {}) {
 
     async function generateOpeningText(memory, index) {
         const chapterTitle = memory.chapterTitle || `第${index + 1}章`;
-        const previousChapterContext = buildPreviousChapterContext(index) || '上一章信息：无（当前为第一章）';
-        const dialogueContext = collectRecentDialogueContext() || '最新一轮对话：无可用历史。';
-        const chapterLead = buildChapterLeadSnippet(memory, 50, 100) || '本章开头素材：无可用原文。';
+        const chapterSummary = toHeadSnippet(memory?.chapterOutline || '', 48) || '无';
+        const { carryOver, carrySource, leadIn } = resolveOpeningAnchors(memory, index);
+        const carryText = carryOver || '无可用AI尾部承接（非首章且聊天中暂无AI输出）';
+        const leadText = leadIn || buildChapterLeadSnippet(memory, 50, 100) || '本章开头素材缺失';
 
-        const isFirstChapter = index === 0;
-        const examples = isFirstChapter ? `
-示例1（首章）：
-雨丝斜斜地掠过窗棂，将远处的街灯晕染成一片模糊的光晕。你放下手中的咖啡杯，指尖还残留着那份文件的触感——一切就从这里开始。
+        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。
 
-示例2（首章）：
-马车在青石板上颠簸作响，你撩开车帘，暮色中的古镇笼罩在一层薄雾之中。路人的喧哗渐渐远去，只剩下车轮碾过积水的声音，和某种即将发生的预感。
-` : `
-示例1（承接上文）：
-昨夜的风暴已经平息，但空气中仍残留着一丝不安的气息。你站在船舷边，看着海平线逐渐亮起的第一缕曙光——新的港口就在眼前。
+硬性要求：
+1) 仅输出 100 字以内中文，不要解释规则，不要输出JSON，不要分点。
+2) 只能用于衔接上文并引入本章，不要推进剧情。
+3) 先承上，再启下：承上必须参考“承上素材（尾部截断）”；启下必须参考“启下素材（头部截断）”。
+4) 不得泄露本章后续目标、流程、关键节点、核心冲突、转折或结局。
 
-示例2（承接上文）：
-那场对话的余音似乎还在走廊尽头回荡，而你已推开了下一扇门。灯光从头顶倾泻下来，照亮了桌面上那份等待已久的信笺。
-`;
+当前章节：${chapterTitle}
+当前章节摘要（参考）：${chapterSummary}
+承上来源：${carrySource}
+承上素材（尾部截断100字）：${carryText}
+启下素材（头部截断100字）：${leadText}
 
-        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。\n\n硬性要求：\n1) 仅输出 50-100 字中文。\n2) 只能用于衔接上文并引入本章，不要推进剧情。\n3) 不得泄露本章的目标、流程、关键节点、核心冲突、转折或结局。\n4) 文风自然沉浸，不要解释规则，不要输出JSON，不要分点。\n\n参考示例（学习其风格，不要照搬内容）：${examples}\n\n背景信息（仅用于衔接）：\n当前章节：${chapterTitle}\n${previousChapterContext}\n${dialogueContext}\n本章开头素材（仅前50-100字）：${chapterLead}\n\n请直接输出开场白正文：`;
+请直接输出开场白正文：`;
 
         const response = await callAPI(prompt, index + 1);
         return sanitizeOpeningText(response, memory, index);
