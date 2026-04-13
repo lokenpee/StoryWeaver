@@ -22,7 +22,7 @@ export function createTaskStateService(deps = {}) {
 
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
-    const TASK_STATE_VERSION = '3.2.1';
+    const TASK_STATE_VERSION = '3.2.2';
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
