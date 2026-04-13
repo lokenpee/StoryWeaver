@@ -20,6 +20,7 @@
         showProgressPanel,
         showStoryOutlinePanel,
         showCurrentChapterPanel,
+        showSettingsPanel,
     } = deps;
 
     document.getElementById('ttw-start-btn').addEventListener('click', handleStartConversion);
@@ -90,10 +91,6 @@ export function bindExportEvents(deps = {}) {
     document.getElementById('ttw-export-json').addEventListener('click', exportCharacterCard);
     document.getElementById('ttw-export-volumes').addEventListener('click', exportVolumes);
     document.getElementById('ttw-export-st').addEventListener('click', exportToSillyTavern);
-    document.querySelector('[data-section="settings"]').addEventListener('click', () => {
-        document.querySelector('.ttw-settings-section').classList.toggle('collapsed');
-    });
-
     const memoryQueueContainer = document.getElementById('ttw-memory-queue');
     if (memoryQueueContainer) {
         memoryQueueContainer.addEventListener('click', (e) => {

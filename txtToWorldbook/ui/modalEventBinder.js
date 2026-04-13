@@ -54,6 +54,7 @@ export function createModalEventBinder(deps) {
         showProgressPanel,
         showStoryOutlinePanel,
         showCurrentChapterPanel,
+        showSettingsPanel,
         updateStreamContent,
         showPromptPreview,
         showPlotOutlineConfigModal,
@@ -136,6 +137,7 @@ export function createModalEventBinder(deps) {
             showProgressPanel,
             showStoryOutlinePanel,
             showCurrentChapterPanel,
+            showSettingsPanel,
         });
         bindStreamEventsUI({ updateStreamContent });
         bindExportEventsUI({

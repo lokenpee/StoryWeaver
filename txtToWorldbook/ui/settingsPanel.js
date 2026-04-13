@@ -65,7 +65,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.2.2';
+const PLUGIN_VERSION = 'v3.2.3';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -204,10 +204,9 @@ function buildDebugModeHtml() {
 
 export function buildSettingsHtml() {
     return `
-    <div class="ttw-section ttw-settings-section ttw-mode-txt">
-        <div class="ttw-section-header" data-section="settings">
+    <div class="ttw-section ttw-settings-section" id="ttw-settings-section" style="display:none;">
+        <div class="ttw-section-header">
             <span>⚙️ 设置</span>
-            <span class="ttw-collapse-icon">▼</span>
         </div>
         <div class="ttw-section-content" id="ttw-settings-content">
             <div class="ttw-setting-card ttw-setting-card-green">
@@ -564,6 +563,7 @@ function buildViewNavHtml() {
         <button id="ttw-view-mode-progress" class="ttw-view-tab" data-view="progress">⏳ 处理进度</button>
         <button id="ttw-view-mode-outline" class="ttw-view-tab" data-view="outline">🧭 故事大纲</button>
         <button id="ttw-view-mode-current" class="ttw-view-tab" data-view="current">🎬 当前章节概览</button>
+        <button id="ttw-view-mode-settings" class="ttw-view-tab" data-view="settings">⚙️ 设置</button>
     </div>`;
 }
 

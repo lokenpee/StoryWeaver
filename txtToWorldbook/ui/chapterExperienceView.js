@@ -28,6 +28,8 @@ export function createChapterExperienceView(deps = {}) {
         outlineModeButton: 'ttw-view-mode-outline',
         currentModeButton: 'ttw-view-mode-current',
         progressSection: 'ttw-progress-section',
+        settingsSection: 'ttw-settings-section',
+        settingsModeButton: 'ttw-view-mode-settings',
         txtModeClass: 'ttw-mode-txt',
     };
 
@@ -142,6 +144,7 @@ export function createChapterExperienceView(deps = {}) {
             progress: selectors.progressModeButton,
             outline: selectors.outlineModeButton,
             current: selectors.currentModeButton,
+            settings: selectors.settingsModeButton,
         };
         Object.entries(tabMap).forEach(([key, id]) => {
             const el = document.getElementById(id);
@@ -784,13 +787,15 @@ export function createChapterExperienceView(deps = {}) {
             .replace(/'/g, '&#39;');
     }
 
-    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false }) {
+    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false, showSettings = false }) {
         const outlineSection = document.getElementById(selectors.outlineSection);
         const currentSection = document.getElementById(selectors.currentSection);
         const progressSection = document.getElementById(selectors.progressSection);
+        const settingsSection = document.getElementById(selectors.settingsSection);
         if (outlineSection) outlineSection.style.display = showOutline ? 'block' : 'none';
         if (currentSection) currentSection.style.display = showCurrent ? 'block' : 'none';
         if (progressSection) progressSection.style.display = showProgress ? 'block' : 'none';
+        if (settingsSection) settingsSection.style.display = showSettings ? 'block' : 'none';
     }
 
     function renderOutlineList() {
@@ -1222,6 +1227,13 @@ export function createChapterExperienceView(deps = {}) {
         setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: false });
     }
 
+    function showSettingsPanelInternal() {
+        setModeTabActive('settings');
+        setTxtSectionsVisible(false);
+        setResultSectionVisibleForMode('settings');
+        setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: false, showSettings: true });
+    }
+
     async function handleOutlineAction(action, index) {
         if (action === 'toggle') {
             const body = document.getElementById(`ttw-outline-body-${index}`);
@@ -1306,6 +1318,11 @@ export function createChapterExperienceView(deps = {}) {
             }
             if (view === 'progress') {
                 showProgressPanelInternal();
+                return;
+            }
+            if (view === 'settings') {
+                showSettingsPanelInternal();
+                return;
             }
         });
     }
@@ -1356,6 +1373,10 @@ export function createChapterExperienceView(deps = {}) {
         showProgressPanel: () => {
             preparePanels();
             showProgressPanelInternal();
+        },
+        showSettingsPanel: () => {
+            preparePanels();
+            showSettingsPanelInternal();
         },
         renderStoryOutline: () => {
             preparePanels();

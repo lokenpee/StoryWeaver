@@ -994,6 +994,7 @@ const {
     showProgressPanel,
     showStoryOutlinePanel,
     showCurrentChapterPanel,
+    showSettingsPanel,
 } = chapterExperienceView;
 
     // ========== UI ==========
@@ -1242,6 +1243,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     showProgressPanel: (...args) => showProgressPanel(...args),
     showStoryOutlinePanel: (...args) => showStoryOutlinePanel(...args),
     showCurrentChapterPanel: (...args) => showCurrentChapterPanel(...args),
+    showSettingsPanel: (...args) => showSettingsPanel(...args),
     updateStreamContent,
     showPromptPreview: (...args) => showPromptPreview(...args),
     showPlotOutlineConfigModal: (...args) => showPlotOutlineConfigModal(...args),
