@@ -220,7 +220,7 @@ export function createDirectorService(deps = {}) {
         if (memory.chapterScript.beats.length > 0) {
             memory.chapterScript.beats = ensureMinimumBeatCount(
                 memory.chapterScript.beats,
-                `${memory.chapterOutline || ''} ${memory.chapterScript.flow || ''}`
+                `${memory.chapterOutline || ''}`
             );
             return memory.chapterScript.beats;
         }

@@ -222,7 +222,7 @@ export function createChapterExperienceView(deps = {}) {
             memory.chapterOutlineError = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
+            memory.chapterScript = { keyNodes: [], beats: [] };
         }
         if (!Array.isArray(memory.chapterScript.keyNodes)) {
             memory.chapterScript.keyNodes = [];
@@ -438,8 +438,6 @@ export function createChapterExperienceView(deps = {}) {
 
         return {
             chapterOutline: typeof memory.chapterOutline === 'string' ? memory.chapterOutline : deriveOutlineFromContent(memory),
-            goal: typeof script.goal === 'string' ? script.goal : '',
-            flow: typeof script.flow === 'string' ? script.flow : '',
             keyNodes: Array.isArray(script.keyNodes)
                 ? script.keyNodes.map((item) => String(item || '').trim()).filter(Boolean)
                 : [],
@@ -457,14 +455,6 @@ export function createChapterExperienceView(deps = {}) {
         <label class="ttw-editor-field">
             <span class="ttw-editor-field-label">故事摘要</span>
             <textarea id="ttw-editor-outline" rows="4" class="ttw-editor-textarea">${escapeHtml(draft.chapterOutline || '')}</textarea>
-        </label>
-        <label class="ttw-editor-field">
-            <span class="ttw-editor-field-label">章节目标</span>
-            <textarea id="ttw-editor-goal" rows="3" class="ttw-editor-textarea">${escapeHtml(draft.goal || '')}</textarea>
-        </label>
-        <label class="ttw-editor-field">
-            <span class="ttw-editor-field-label">章节流程</span>
-            <textarea id="ttw-editor-flow" rows="3" class="ttw-editor-textarea">${escapeHtml(draft.flow || '')}</textarea>
         </label>
         <label class="ttw-editor-field">
             <span class="ttw-editor-field-label">关键节点（每行一个）</span>
@@ -529,8 +519,6 @@ export function createChapterExperienceView(deps = {}) {
     function collectEditorDraft(modal, draft) {
         if (!modal || !draft) return draft;
         draft.chapterOutline = String(modal.querySelector('#ttw-editor-outline')?.value || '').trim();
-        draft.goal = String(modal.querySelector('#ttw-editor-goal')?.value || '').trim();
-        draft.flow = String(modal.querySelector('#ttw-editor-flow')?.value || '').trim();
         draft.keyNodes = parseNodeLines(modal.querySelector('#ttw-editor-keynodes')?.value || '');
 
         const cards = Array.from(modal.querySelectorAll('.ttw-beat-editor-card'));
@@ -593,8 +581,6 @@ export function createChapterExperienceView(deps = {}) {
 
         memory.chapterOutline = draft.chapterOutline || deriveOutlineFromContent(memory);
         memory.chapterScript = {
-            goal: String(draft.goal || '').trim(),
-            flow: String(draft.flow || '').trim(),
             keyNodes: Array.isArray(draft.keyNodes)
                 ? draft.keyNodes.map((item) => String(item || '').trim()).filter(Boolean)
                 : [],
@@ -729,22 +715,20 @@ export function createChapterExperienceView(deps = {}) {
             .slice(0, 3);
 
         return {
-            goal: '围绕本章关键冲突推进叙事并保持角色动机一致。',
-            flow: text || '本章推进关键事件并承接上章内容。',
             keyNodes: nodes,
             beats: nodes.map((node, idx) => ({
                 id: `b${idx + 1}`,
                 event_summary: node,
                 summary: node,
                 entry_event: '从上一节拍结果自然衔接进入当前事件。',
-                exit_condition: '当本节拍目标完成或局势发生明显转折时。',
+                exit_condition: '当本节拍核心事件完成或局势发生明显转折时。',
                 split_reason: '默认切分：用于给章节建立可推进的小剧情单元。',
                 self_check: '默认降级节拍，无完整切分诊断。',
                 tags: [],
                 original_text: '',
                 split_rule: {
                     primary: 'goal_shift',
-                    rationale: '默认规则：当前节拍重点在推进阶段目标。',
+                    rationale: '默认规则：当前节拍重点在推进阶段核心事件。',
                 },
             })),
         };
@@ -849,8 +833,6 @@ export function createChapterExperienceView(deps = {}) {
             ? memory.chapterScript
             : deriveScriptFromOutline(memory.chapterOutline);
 
-        const goal = toShortText(script.goal, 140) || '围绕本章核心冲突推进剧情。';
-        const flow = toShortText(script.flow, 220) || (memory.chapterOutline || '本章沿主线推进。');
         const beats = normalizeBeats(script, memory.chapterOutline || '');
         const currentBeatIndex = Number.isInteger(memory.chapterCurrentBeatIndex) ? memory.chapterCurrentBeatIndex : 0;
         const beatCards = beats.length > 0
@@ -880,8 +862,6 @@ export function createChapterExperienceView(deps = {}) {
 
         return `
 <div class="ttw-script-block">
-    <div class="ttw-script-field"><strong>目标：</strong>${escapeHtml(goal)}</div>
-    <div class="ttw-script-field"><strong>流程：</strong>${escapeHtml(flow)}</div>
     <div class="ttw-script-field"><strong>轻节拍器（事件点）：</strong><div class="ttw-beat-list">${beatCards}</div></div>
 </div>`;
     }

@@ -338,7 +338,7 @@
             memory.chapterOutlineError = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
+            memory.chapterScript = { keyNodes: [], beats: [] };
         }
         if (!Array.isArray(memory.chapterScript.keyNodes)) {
             memory.chapterScript.keyNodes = [];
@@ -631,9 +631,6 @@
             ? script.beats
             : (Array.isArray(script.lightBeats) ? script.lightBeats : []);
 
-        const flow = String(script.flow || '').trim() || outline;
-        const goal = String(script.goal || '').trim() || '围绕本章核心冲突推进剧情并保持叙事连续。';
-
         const fallbackNodes = keyNodes.length > 0
             ? keyNodes
             : (outline ? outline.split(/[，,。]/).map((n) => n.trim()).filter(Boolean).slice(0, 4) : []);
@@ -644,8 +641,6 @@
         const stabilizedBeats = ensureMinimumBeats(beats, outline, fallbackNodes);
 
         return {
-            goal,
-            flow,
             keyNodes: keyNodes.length > 0
                 ? keyNodes
                 : fallbackNodes.slice(0, 3),
@@ -1735,8 +1730,6 @@
             applied?.cutWarnings || []
         );
         const script = normalizeScript({
-            goal: '围绕本章核心冲突推进剧情并保持叙事连续。',
-            flow: outline,
             keyNodes: [],
             beats,
         }, outline);
@@ -1845,9 +1838,9 @@
         
         【字段含义】\n
             - anchor: 原文切分点前的一段话作为章节分割器分割锚点（10-50字，句尾，不在引号内）\n
-            - event_summary: 这个节拍事件的总结（≤30字）\n
-            - entry_event: 该节拍如何进入（开场事件/触发条件，建议一句话）\n
-            - exit_condition: 什么情况下算这个节拍结束（具体条件）\n
+            - event_summary: 这个节拍的核心事件总结（≤30字）。必须写成“谁+在哪里+做了什么+产生什么结果/变化”。要有明确的人物（或势力）主体，要有具体动作，不要只写情绪或环境描写。\n              示例：主角在城门口被守卫拦下，出示令牌后获准进城。\n              反例：❌ "主角很焦虑"（只有情绪，没有动作和地点）；❌ "关于城门的描写"（没有人，没有事）。\n
+            - entry_event: 该节拍如何进入（开场事件/触发条件，50字以内）。必须写成“谁+在哪里+做了什么”，写清楚上一节拍结束后，发生了什么事导致这个节拍开始。要包含一个具体的外部动作或他人反应，不能是空洞的过渡句。\n              示例：守卫在城门口见主角衣衫褴褛，横枪拦住去路，喝问来意。\n              反例：❌ "从上一节拍结果自然衔接进入当前事件"（没写人、没写事、没写地点）；❌ "主角决定继续走"（这是心理，不是触发条件）。\n
+            - exit_condition: 该节拍结束的具体条件（50字以内）。必须写成“当谁+在哪里+做了什么/达成什么状态时”，用“当……时”或“在……之后”的句式，写出一个可观察、可判断的客观结果，不要写模糊的感受或心理变化。\n              示例：当主角正式踏入城门、守卫收回长枪、周围行人恢复正常流动时。\n              反例：❌ "当主角心情平复时"（不可观察）；❌ "等待关键互动完成"（过于笼统，没有人和地点）。\n
             - exist_condition/exist condition: exit_condition 的兼容错拼字段（可不填）\n
             - split_reason: 为什么在这里切（剧情逻辑）\n
             - self_check: 对该切分点做一句自检（可选）\n

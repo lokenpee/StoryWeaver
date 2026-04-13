@@ -22,7 +22,7 @@ export function createTaskStateService(deps = {}) {
 
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
-    const TASK_STATE_VERSION = '3.2.0';
+    const TASK_STATE_VERSION = '3.2.1';
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
@@ -136,8 +136,6 @@ export function createTaskStateService(deps = {}) {
 
     function normalizeChapterScript(script = {}) {
         const normalized = script && typeof script === 'object' ? { ...script } : {};
-        normalized.goal = typeof normalized.goal === 'string' ? normalized.goal : '';
-        normalized.flow = typeof normalized.flow === 'string' ? normalized.flow : '';
         normalized.keyNodes = Array.isArray(normalized.keyNodes) ? normalized.keyNodes : [];
         normalized.beats = Array.isArray(normalized.beats)
             ? normalized.beats.map((beat, index) => normalizeBeatItem(beat, index))

@@ -19,7 +19,7 @@ export function createMemoryQueueActionsService(deps = {}) {
                 memory.chapterOutlineStatus = 'pending';
             }
             if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-                memory.chapterScript = { goal: '', flow: '', keyNodes: [], beats: [] };
+                memory.chapterScript = { keyNodes: [], beats: [] };
             }
             if (!Array.isArray(memory.chapterScript.beats)) {
                 memory.chapterScript.beats = [];
@@ -100,7 +100,7 @@ export function createMemoryQueueActionsService(deps = {}) {
             chapterOutline: '',
             chapterOutlineStatus: 'pending',
             chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [], beats: [] },
+            chapterScript: { keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,
             chapterOpeningError: '',
@@ -115,7 +115,7 @@ export function createMemoryQueueActionsService(deps = {}) {
             chapterOutline: '',
             chapterOutlineStatus: 'pending',
             chapterOutlineError: '',
-            chapterScript: { goal: '', flow: '', keyNodes: [], beats: [] },
+            chapterScript: { keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,
             chapterOpeningError: '',
