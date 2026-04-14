@@ -209,6 +209,7 @@ export const defaultSettings = {
     chapterCompletionMode: 'throughput',
     useTavernApi: true,
     customMergePrompt: '',
+    customConsolidatePrompt: '',
     consolidatePromptPresets: [],
     consolidateCategoryPresetMap: {},
     categoryLightSettings: null,

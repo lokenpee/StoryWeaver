@@ -15,8 +15,6 @@ export function createMergeWorkflowService(deps = {}) {
         Logger,
         getAllVolumesWorldbook,
         defaultConsolidatePrompt,
-        saveCurrentSettings,
-        promptAction,
         confirmAction,
         showProgressSection,
         setProcessingStatus,
@@ -58,13 +56,18 @@ export function createMergeWorkflowService(deps = {}) {
         return mergeContentByFieldFusion(content, '');
     }
 
+    function getGlobalConsolidatePromptTemplate() {
+        const custom = String(AppState.settings.customConsolidatePrompt || '').trim();
+        return custom || defaultConsolidatePrompt;
+    }
+
     async function consolidateEntry(category, entryName, promptTemplate) {
         const entry = AppState.worldbook.generated[category]?.[entryName];
         if (!entry || !entry['内容']) return;
 
         const preCleanedContent = dedupeStructuredContent(entry['内容']);
 
-        const template = (promptTemplate && promptTemplate.trim()) ? promptTemplate.trim() : defaultConsolidatePrompt;
+        const template = (promptTemplate && promptTemplate.trim()) ? promptTemplate.trim() : getGlobalConsolidatePromptTemplate();
         const prompt = `${template.replace('{CONTENT}', preCleanedContent)}\n\n【强制输出要求】\n1. 去重目标是字段重复，不是删减事实。\n2. 同字段同内容只保留一份，禁止重复输出。\n3. 同字段不同内容必须融合保留，不得覆盖或遗漏。\n4. 禁止输出“字段补充1/补充2/补充N”键名，补充信息必须并入主字段。\n5. 若同一字段有多条信息，写在同一个字段值内（用“；”分隔）。\n6. 尽量采用“字段: 值”的结构化格式输出。\n7. 不要输出解释文字，只输出整理后的正文。`;
         let response = await callAPI(getLanguagePrefix() + prompt);
 
@@ -130,19 +133,11 @@ export function createMergeWorkflowService(deps = {}) {
             let catTotalTokens = 0;
             entryNames.forEach((name) => { catTotalTokens += getEntryTotalTokens(AppState.worldbook.generated[cat][name]); });
 
-            const presets = AppState.settings.consolidatePromptPresets || [];
-            const currentPreset = (AppState.settings.consolidateCategoryPresetMap || {})[cat] || '默认';
-            let presetOptionsHtml = `<option value="默认" ${currentPreset === '默认' ? 'selected' : ''}>默认</option>`;
-            presets.forEach((p) => {
-                presetOptionsHtml += `<option value="${p.name}" ${currentPreset === p.name ? 'selected' : ''}>${p.name}</option>`;
-            });
-
             categoriesHtml += `
 		<div class="ttw-consolidate-cat-group" style="margin-bottom:10px;">
 			<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(52,152,219,0.15);border-radius:6px;cursor:pointer;" data-cat-toggle="${cat}">
 				<input type="checkbox" class="ttw-consolidate-cat-cb" data-category="${cat}" ${hasFailedInCat ? 'checked' : ''}>
 				<span style="font-weight:bold;font-size:12px;flex:1;">${cat}</span>
-				<select class="ttw-consolidate-cat-preset" data-category="${cat}" style="font-size:10px;padding:2px 4px;border:1px solid #666;border-radius:4px;background:rgba(0,0,0,0.4);color:#ccc;max-width:100px;cursor:pointer;" title="选择此分类使用的整理提示词预设">${presetOptionsHtml}</select>
 				<span style="color:#888;font-size:11px;">(${entryCount}条 ~${catTotalTokens}t)</span>
 				${hasFailedInCat ? '<span style="color:#e74c3c;font-size:10px;">有失败</span>' : ''}
 				<span class="ttw-cat-expand-icon" style="font-size:10px;transition:transform 0.2s;">▶</span>
@@ -160,22 +155,16 @@ export function createMergeWorkflowService(deps = {}) {
         });
 
         const hasAnyFailed = lastConsolidateFailedEntries.length > 0;
+        const usingCustomPrompt = !!String(AppState.settings.customConsolidatePrompt || '').trim();
 
         const bodyHtml = `
 		<div style="margin-bottom:12px;padding:12px;background:rgba(52,152,219,0.15);border-radius:8px;">
 			<div style="font-size:12px;color:#ccc;">展开分类可多选具体条目。AI将去除重复信息并优化格式。</div>
 		</div>
 		<div style="margin-bottom:12px;">
-			<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-				<span style="font-weight:bold;font-size:12px;color:#e67e22;">📝 整理提示词预设</span>
-				<div style="display:flex;gap:6px;">
-					<button class="ttw-btn ttw-btn-small" id="ttw-consolidate-add-preset" style="font-size:10px;background:rgba(52,152,219,0.5);">➕ 添加预设</button>
-				</div>
-			</div>
-			<div style="font-size:10px;color:#888;margin-bottom:8px;">
-				每个分类可指定不同预设。<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;color:#f39c12;">{CONTENT}</code> 会被替换为条目原始内容。「默认」预设不可删除。
-			</div>
-			<div id="ttw-consolidate-presets-list" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;"></div>
+            <div style="font-size:12px;color:#f39c12;">
+                当前使用：${usingCustomPrompt ? '提示词编辑页中的“整理条目AI提示词（自定义）”' : '内置默认整理提示词'}。
+            </div>
 		</div>
 		${hasAnyFailed ? `
 		<div style="margin-bottom:12px;padding:10px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);border-radius:6px;">
@@ -299,173 +288,15 @@ export function createMergeWorkflowService(deps = {}) {
 
         modal.querySelector('#ttw-cancel-consolidate').addEventListener('click', () => ModalFactory.close(modal));
 
-        function getPresetPromptByName(name) {
-            if (!name || name === '默认') return defaultConsolidatePrompt;
-            const preset = (AppState.settings.consolidatePromptPresets || []).find((p) => p.name === name);
-            return (preset && preset.prompt && preset.prompt.trim()) ? preset.prompt : defaultConsolidatePrompt;
-        }
-
-        function renderPresetsListUI() {
-            const container = modal.querySelector('#ttw-consolidate-presets-list');
-            if (!container) return;
-            const presets = AppState.settings.consolidatePromptPresets || [];
-            let html = '';
-
-            html += `
-                <div class="ttw-consolidate-preset-card" style="padding:8px 10px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:6px;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-                        <span style="font-weight:bold;font-size:11px;color:#2ecc71;flex:1;">📌 默认</span>
-                        <span style="font-size:10px;color:#888;">内置·不可删除</span>
-                        <button class="ttw-btn-tiny ttw-consolidate-toggle-preview" data-preset-index="-1" style="font-size:9px;">展开</button>
-                    </div>
-                    <div class="ttw-consolidate-preset-preview" data-preview-index="-1" style="display:none;">
-                        <textarea rows="3" style="width:100%;padding:6px;border:1px solid #555;border-radius:4px;background:rgba(0,0,0,0.3);color:#aaa;font-size:10px;resize:vertical;line-height:1.4;" readonly>${defaultConsolidatePrompt}</textarea>
-                    </div>
-                </div>
-            `;
-
-            presets.forEach((preset, idx) => {
-                html += `
-                    <div class="ttw-consolidate-preset-card" style="padding:8px 10px;background:rgba(230,126,34,0.1);border:1px solid rgba(230,126,34,0.3);border-radius:6px;">
-                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-                            <input type="text" class="ttw-consolidate-preset-name" data-preset-index="${idx}" value="${preset.name}" style="font-weight:bold;font-size:11px;color:#e67e22;background:transparent;border:1px solid transparent;border-radius:3px;padding:2px 4px;flex:1;min-width:0;" title="点击编辑预设名称">
-                            <button class="ttw-btn-tiny ttw-consolidate-toggle-preview" data-preset-index="${idx}" style="font-size:9px;">展开</button>
-                            <button class="ttw-btn-tiny ttw-consolidate-delete-preset" data-preset-index="${idx}" style="font-size:9px;color:#e74c3c;" title="删除预设">🗑️</button>
-                        </div>
-                        <div class="ttw-consolidate-preset-preview" data-preview-index="${idx}" style="display:none;">
-                            <textarea class="ttw-consolidate-preset-prompt" data-preset-index="${idx}" rows="3" style="width:100%;padding:6px;border:1px solid #555;border-radius:4px;background:rgba(0,0,0,0.3);color:#fff;font-size:10px;resize:vertical;line-height:1.4;" placeholder="输入提示词...必须包含 {CONTENT} 占位符">${preset.prompt || ''}</textarea>
-                        </div>
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-
-            container.querySelectorAll('.ttw-consolidate-toggle-preview').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const idx = btn.dataset.presetIndex;
-                    const preview = container.querySelector(`[data-preview-index="${idx}"]`);
-                    if (preview) {
-                        const isHidden = preview.style.display === 'none';
-                        preview.style.display = isHidden ? 'block' : 'none';
-                        btn.textContent = isHidden ? '收起' : '展开';
-                    }
-                });
-            });
-
-            container.querySelectorAll('.ttw-consolidate-preset-name').forEach((input) => {
-                input.addEventListener('focus', () => { input.style.borderColor = '#e67e22'; });
-                input.addEventListener('blur', () => {
-                    input.style.borderColor = 'transparent';
-                    const idx = parseInt(input.dataset.presetIndex, 10);
-                    const newName = input.value.trim();
-                    if (!newName) { input.value = presets[idx].name; return; }
-                    if (newName === '默认') { ErrorHandler.showUserError('不能使用"默认"作为预设名'); input.value = presets[idx].name; return; }
-                    if (presets.some((p, i) => i !== idx && p.name === newName)) { ErrorHandler.showUserError('预设名已存在'); input.value = presets[idx].name; return; }
-                    const oldName = presets[idx].name;
-                    presets[idx].name = newName;
-                    const map = AppState.settings.consolidateCategoryPresetMap || {};
-                    Object.keys(map).forEach((cat) => { if (map[cat] === oldName) map[cat] = newName; });
-                    AppState.settings.consolidatePromptPresets = presets;
-                    saveCurrentSettings();
-                    refreshCategoryPresetDropdowns();
-                });
-            });
-
-            container.querySelectorAll('.ttw-consolidate-preset-prompt').forEach((textarea) => {
-                textarea.addEventListener('input', () => {
-                    const idx = parseInt(textarea.dataset.presetIndex, 10);
-                    presets[idx].prompt = textarea.value;
-                    AppState.settings.consolidatePromptPresets = presets;
-                    saveCurrentSettings();
-                });
-            });
-
-            container.querySelectorAll('.ttw-consolidate-delete-preset').forEach((btn) => {
-                btn.addEventListener('click', async () => {
-                    const idx = parseInt(btn.dataset.presetIndex, 10);
-                    const deletedName = presets[idx].name;
-                    const confirmed = await ModalFactory.confirm({ title: '删除预设', message: `确定删除预设「${deletedName}」？`, danger: true });
-                    if (!confirmed) return;
-                    presets.splice(idx, 1);
-                    const map = AppState.settings.consolidateCategoryPresetMap || {};
-                    Object.keys(map).forEach((cat) => { if (map[cat] === deletedName) delete map[cat]; });
-                    AppState.settings.consolidatePromptPresets = presets;
-                    saveCurrentSettings();
-                    renderPresetsListUI();
-                    refreshCategoryPresetDropdowns();
-                });
-            });
-        }
-
-        function refreshCategoryPresetDropdowns() {
-            const presets = AppState.settings.consolidatePromptPresets || [];
-            const map = AppState.settings.consolidateCategoryPresetMap || {};
-            modal.querySelectorAll('.ttw-consolidate-cat-preset').forEach((select) => {
-                const cat = select.dataset.category;
-                const current = map[cat] || '默认';
-                let optionsHtml = `<option value="默认" ${current === '默认' ? 'selected' : ''}>默认</option>`;
-                presets.forEach((p) => {
-                    optionsHtml += `<option value="${p.name}" ${current === p.name ? 'selected' : ''}>${p.name}</option>`;
-                });
-                select.innerHTML = optionsHtml;
-            });
-        }
-
-        modal.querySelector('#ttw-consolidate-add-preset').addEventListener('click', async () => {
-            const name = await promptAction({ title: '添加预设', message: '输入预设名称:', placeholder: '例如：角色整理', defaultValue: '' });
-            if (!name || !name.trim()) return;
-            const trimmedName = name.trim();
-            if (trimmedName === '默认') { ErrorHandler.showUserError('不能使用"默认"作为预设名'); return; }
-            if (!AppState.settings.consolidatePromptPresets) AppState.settings.consolidatePromptPresets = [];
-            if (AppState.settings.consolidatePromptPresets.some((p) => p.name === trimmedName)) { ErrorHandler.showUserError('预设名已存在'); return; }
-            AppState.settings.consolidatePromptPresets.push({ name: trimmedName, prompt: '' });
-            saveCurrentSettings();
-            renderPresetsListUI();
-            refreshCategoryPresetDropdowns();
-            setTimeout(() => {
-                const idx = AppState.settings.consolidatePromptPresets.length - 1;
-                const btn = modal.querySelector(`.ttw-consolidate-toggle-preview[data-preset-index="${idx}"]`);
-                if (btn) btn.click();
-            }, 100);
-        });
-
-        modal.querySelectorAll('.ttw-consolidate-cat-preset').forEach((select) => {
-            select.addEventListener('change', () => {
-                const cat = select.dataset.category;
-                if (!AppState.settings.consolidateCategoryPresetMap) AppState.settings.consolidateCategoryPresetMap = {};
-                if (select.value === '默认') {
-                    delete AppState.settings.consolidateCategoryPresetMap[cat];
-                } else {
-                    AppState.settings.consolidateCategoryPresetMap[cat] = select.value;
-                }
-                saveCurrentSettings();
-            });
-        });
-
-        renderPresetsListUI();
-
         function collectSelectedEntries() {
+            const promptTemplate = getGlobalConsolidatePromptTemplate();
             return [...modal.querySelectorAll('.ttw-consolidate-entry-cb:checked')].map((cb) => {
-                const cat = cb.dataset.category;
-                const presetSelect = modal.querySelector(`.ttw-consolidate-cat-preset[data-category="${cat}"]`);
-                const presetName = presetSelect ? presetSelect.value : '默认';
                 return {
-                    category: cat,
+                    category: cb.dataset.category,
                     name: cb.dataset.entry,
-                    promptTemplate: getPresetPromptByName(presetName),
+                    promptTemplate,
                 };
             });
-        }
-
-        function buildPresetUsageSummary(selectedEntries) {
-            const presetUsage = {};
-            selectedEntries.forEach((e) => {
-                const pSelect = modal.querySelector(`.ttw-consolidate-cat-preset[data-category="${e.category}"]`);
-                const pName = pSelect ? pSelect.value : '默认';
-                presetUsage[pName] = (presetUsage[pName] || 0) + 1;
-            });
-            return Object.entries(presetUsage).map(([k, v]) => `「${k}」${v}条`).join('，');
         }
 
         async function startConsolidation(mode = 'ai') {
@@ -475,9 +306,9 @@ export function createMergeWorkflowService(deps = {}) {
                 return;
             }
 
-            const usageSummary = buildPresetUsageSummary(selectedEntries);
+            const usageSummary = usingCustomPrompt ? '自定义整理提示词' : '内置默认整理提示词';
             const modeText = mode === 'local' ? '本地整理（仅函数）' : 'AI整理（含本地兜底）';
-            if (!await confirmAction(`确定要执行${modeText}，共 ${selectedEntries.length} 个条目吗？\n\n预设分配：${usageSummary}`, { title: '整理条目' })) return;
+            if (!await confirmAction(`确定要执行${modeText}，共 ${selectedEntries.length} 个条目吗？\n\n提示词来源：${usageSummary}`, { title: '整理条目' })) return;
 
             modal.remove();
             await consolidateSelectedEntries(selectedEntries, { mode });

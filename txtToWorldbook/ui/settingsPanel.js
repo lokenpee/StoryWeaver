@@ -65,7 +65,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.5.8';
+const PLUGIN_VERSION = 'v3.5.9';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -279,6 +279,29 @@ function buildWorldbookPromptSectionHtml() {
     </div>`;
 }
 
+function buildConsolidatePromptSectionHtml() {
+    return `
+    <div class="ttw-prompt-section">
+        <div class="ttw-prompt-header" data-target="ttw-consolidate-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span>🧹</span><span style="font-weight:500;">整理条目AI提示词</span>
+                <span class="ttw-badge ttw-badge-blue">必需</span>
+            </div>
+            <span class="ttw-collapse-icon">▼</span>
+        </div>
+        <div id="ttw-consolidate-content" class="ttw-prompt-content" style="display:block;">
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">整理条目时使用的AI提示词。留空使用默认。</div>
+            <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
+                <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 必须包含占位符：</span>
+                <code>{CONTENT}</code>
+                <div style="font-size:11px;color:var(--ttw-text-muted);margin-top:4px;">此占位符会被替换为当前条目的原始内容</div>
+            </div>
+            <textarea id="ttw-consolidate-prompt" rows="6" placeholder="留空使用默认..." class="ttw-textarea-small"></textarea>
+            <div style="margin-top:8px;"><button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="consolidate">🔄 恢复默认</button></div>
+        </div>
+    </div>`;
+}
+
 function buildPlotPromptSectionHtml() {
     return `
     <div class="ttw-prompt-section">
@@ -378,11 +401,23 @@ function buildPromptConfigHtml() {
             </div>
         </div>
         <div class="ttw-section-content ttw-prompt-config-content">
-            ${buildWorldbookPromptSectionHtml()}
             ${buildCategoriesSectionHtml()}
             ${buildPlotPromptSectionHtml()}
             ${buildStylePromptSectionHtml()}
             ${buildMessageChainSectionHtml()}
+        </div>
+    </div>`;
+}
+
+function buildPromptEditorSectionHtml() {
+    return `
+    <div class="ttw-section" id="ttw-prompt-editor-section" style="display:none;">
+        <div class="ttw-section-header">
+            <span>🛠️ 提示词编辑</span>
+        </div>
+        <div class="ttw-section-content ttw-prompt-config-content">
+            ${buildWorldbookPromptSectionHtml()}
+            ${buildConsolidatePromptSectionHtml()}
         </div>
     </div>`;
 }
@@ -563,6 +598,7 @@ function buildModalBodyHtml() {
         ${buildViewNavHtml()}
         ${buildFileUploadSectionHtml()}
         ${buildChapterRegexHtml()}
+        ${buildPromptEditorSectionHtml()}
         ${buildSettingsHtml()}
         ${buildDefaultEntriesSectionHtml()}
         ${buildPromptConfigHtml()}
@@ -586,6 +622,7 @@ function buildViewNavHtml() {
         <button id="ttw-view-mode-progress" class="ttw-view-tab" data-view="progress">⏳ 处理进度</button>
         <button id="ttw-view-mode-outline" class="ttw-view-tab" data-view="outline">🧭 故事大纲</button>
         <button id="ttw-view-mode-current" class="ttw-view-tab" data-view="current">🎬 当前章节概览</button>
+        <button id="ttw-view-mode-prompt-editor" class="ttw-view-tab" data-view="prompt-editor">🛠️ 提示词编辑</button>
         <button id="ttw-view-mode-settings" class="ttw-view-tab" data-view="settings">⚙️ 设置</button>
     </div>`;
 }
@@ -646,6 +683,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const stylePromptEl = document.getElementById('ttw-style-prompt');
     if (stylePromptEl) stylePromptEl.value = AppState.settings.customStylePrompt || '';
+
+    const consolidatePromptEl = document.getElementById('ttw-consolidate-prompt');
+    if (consolidatePromptEl) consolidatePromptEl.value = AppState.settings.customConsolidatePrompt || '';
 
     const parallelEnabledEl = document.getElementById('ttw-parallel-enabled');
     if (parallelEnabledEl) parallelEnabledEl.checked = AppState.config.parallel.enabled;

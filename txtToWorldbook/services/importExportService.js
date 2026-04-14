@@ -184,6 +184,7 @@ export function createImportExportService(deps = {}) {
             entryPositionConfig: AppState.config.entryPosition,
             prompts: {
                 worldbookPrompt: AppState.settings.customWorldbookPrompt,
+                consolidatePrompt: AppState.settings.customConsolidatePrompt,
                 plotPrompt: AppState.settings.customPlotPrompt,
                 stylePrompt: AppState.settings.customStylePrompt,
                 mergePrompt: AppState.settings.customMergePrompt,
@@ -264,6 +265,9 @@ export function createImportExportService(deps = {}) {
                     if (data.prompts.worldbookPrompt !== undefined) {
                         AppState.settings.customWorldbookPrompt = data.prompts.worldbookPrompt;
                     }
+                    if (data.prompts.consolidatePrompt !== undefined) {
+                        AppState.settings.customConsolidatePrompt = data.prompts.consolidatePrompt;
+                    }
                     if (data.prompts.plotPrompt !== undefined) {
                         AppState.settings.customPlotPrompt = data.prompts.plotPrompt;
                     }
@@ -278,12 +282,6 @@ export function createImportExportService(deps = {}) {
                     }
                     if (data.prompts.batchRerollPrompt !== undefined) {
                         AppState.settings.customBatchRerollPrompt = data.prompts.batchRerollPrompt;
-                    }
-                    if (data.prompts.consolidatePrompt && data.prompts.consolidatePrompt.trim()) {
-                        if (!AppState.settings.consolidatePromptPresets) AppState.settings.consolidatePromptPresets = [];
-                        if (!AppState.settings.consolidatePromptPresets.some((p) => p.name === '旧版自定义')) {
-                            AppState.settings.consolidatePromptPresets.push({ name: '旧版自定义', prompt: data.prompts.consolidatePrompt });
-                        }
                     }
                     if (data.prompts.defaultWorldbookEntries !== undefined) {
                         AppState.settings.defaultWorldbookEntries = data.prompts.defaultWorldbookEntries;

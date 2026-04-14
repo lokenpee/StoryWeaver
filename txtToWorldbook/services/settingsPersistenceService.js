@@ -73,6 +73,7 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.customWorldbookPrompt = document.getElementById('ttw-worldbook-prompt')?.value || '';
         AppState.settings.customPlotPrompt = document.getElementById('ttw-plot-prompt')?.value || '';
         AppState.settings.customStylePrompt = document.getElementById('ttw-style-prompt')?.value || '';
+        AppState.settings.customConsolidatePrompt = document.getElementById('ttw-consolidate-prompt')?.value || '';
         AppState.settings.useTavernApi = document.getElementById('ttw-use-tavern-api')?.checked ?? true;
         AppState.settings.parallelEnabled = AppState.config.parallel.enabled;
         AppState.settings.parallelConcurrency = AppState.config.parallel.concurrency;

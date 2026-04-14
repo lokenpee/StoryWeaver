@@ -527,7 +527,7 @@ export function bindPromptEvents(deps = {}) {
         saveCurrentSettings,
     } = deps;
 
-    ['ttw-worldbook-prompt', 'ttw-plot-prompt', 'ttw-style-prompt', 'ttw-suffix-prompt'].forEach((id) => {
+    ['ttw-worldbook-prompt', 'ttw-plot-prompt', 'ttw-style-prompt', 'ttw-suffix-prompt', 'ttw-consolidate-prompt'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', saveCurrentSettings);
     });

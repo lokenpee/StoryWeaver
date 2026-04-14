@@ -28,7 +28,9 @@ export function createChapterExperienceView(deps = {}) {
         outlineModeButton: 'ttw-view-mode-outline',
         currentModeButton: 'ttw-view-mode-current',
         progressSection: 'ttw-progress-section',
+        promptEditorSection: 'ttw-prompt-editor-section',
         settingsSection: 'ttw-settings-section',
+        promptEditorModeButton: 'ttw-view-mode-prompt-editor',
         settingsModeButton: 'ttw-view-mode-settings',
         txtModeClass: 'ttw-mode-txt',
     };
@@ -144,6 +146,7 @@ export function createChapterExperienceView(deps = {}) {
             progress: selectors.progressModeButton,
             outline: selectors.outlineModeButton,
             current: selectors.currentModeButton,
+            'prompt-editor': selectors.promptEditorModeButton,
             settings: selectors.settingsModeButton,
         };
         Object.entries(tabMap).forEach(([key, id]) => {
@@ -787,14 +790,16 @@ export function createChapterExperienceView(deps = {}) {
             .replace(/'/g, '&#39;');
     }
 
-    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false, showSettings = false }) {
+    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false, showSettings = false, showPromptEditor = false }) {
         const outlineSection = document.getElementById(selectors.outlineSection);
         const currentSection = document.getElementById(selectors.currentSection);
         const progressSection = document.getElementById(selectors.progressSection);
+        const promptEditorSection = document.getElementById(selectors.promptEditorSection);
         const settingsSection = document.getElementById(selectors.settingsSection);
         if (outlineSection) outlineSection.style.display = showOutline ? 'block' : 'none';
         if (currentSection) currentSection.style.display = showCurrent ? 'block' : 'none';
         if (progressSection) progressSection.style.display = showProgress ? 'block' : 'none';
+        if (promptEditorSection) promptEditorSection.style.display = showPromptEditor ? 'block' : 'none';
         if (settingsSection) settingsSection.style.display = showSettings ? 'block' : 'none';
     }
 
@@ -1234,6 +1239,13 @@ export function createChapterExperienceView(deps = {}) {
         setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: false, showSettings: true });
     }
 
+    function showPromptEditorPanelInternal() {
+        setModeTabActive('prompt-editor');
+        setTxtSectionsVisible(false);
+        setResultSectionVisibleForMode('settings');
+        setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: false, showSettings: false, showPromptEditor: true });
+    }
+
     async function handleOutlineAction(action, index) {
         if (action === 'toggle') {
             const body = document.getElementById(`ttw-outline-body-${index}`);
@@ -1324,6 +1336,10 @@ export function createChapterExperienceView(deps = {}) {
                 showSettingsPanelInternal();
                 return;
             }
+            if (view === 'prompt-editor') {
+                showPromptEditorPanelInternal();
+                return;
+            }
         });
     }
 
@@ -1377,6 +1393,10 @@ export function createChapterExperienceView(deps = {}) {
         showSettingsPanel: () => {
             preparePanels();
             showSettingsPanelInternal();
+        },
+        showPromptEditorPanel: () => {
+            preparePanels();
+            showPromptEditorPanelInternal();
         },
         renderStoryOutline: () => {
             preparePanels();
