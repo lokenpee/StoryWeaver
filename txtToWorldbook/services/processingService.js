@@ -1914,7 +1914,7 @@
 
         let lastError = null;
         const chapterAssetsCaller = typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI;
-        const commitAssets = (assets, source = '导演API') => {
+        const commitAssets = (assets, source = 'director-unknown') => {
             memory.chapterOutline = assets.outline;
             memory.chapterScript = assets.script;
             const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
@@ -1928,7 +1928,7 @@
             }
             memory.chapterOutlineStatus = 'done';
             memory.chapterOutlineError = '';
-            updateStreamContent(`✅ [第${index + 1}章][${source}] 章节资产校验通过，beats=${beatCount}\n`);
+            updateStreamContent(`✅ [第${index + 1}章][导演API] 章节资产校验通过，source=${source}, beats=${beatCount}\n`);
             updateMemoryQueueUI();
             return assets;
         };
@@ -1939,7 +1939,16 @@
                 const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
                 const prompt = buildChapterAssetsPrompt(memory, index, retryHint);
                 updateStreamContent(`🧭 [第${index + 1}章][导演API] 发起章节资产请求（尝试 ${attempt + 1}/${contractRetryLimit + 1}）\n`);
-                const response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
+                let response = '';
+                try {
+                    response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
+                    updateStreamContent(`✅ [第${index + 1}章][导演API] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                } catch (apiError) {
+                    if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
+                        updateStreamContent(`❌ [第${index + 1}章][导演API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                    }
+                    throw apiError;
+                }
                 throwIfRunInactive(runId);
                 const assets = parseChapterAssetsResponse(response, memory, index);
                 const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
@@ -1982,6 +1991,7 @@
 
         memory.chapterOutlineStatus = 'failed';
         memory.chapterOutlineError = compactErrorMessage(lastError || new Error('大纲生成失败'));
+        updateStreamContent(`❌ [第${index + 1}章][导演API] 章节资产生成失败: ${memory.chapterOutlineError}\n`);
         updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: '导演API' })}\n`);
         updateMemoryQueueUI();
         throw lastError || new Error(memory.chapterOutlineError);
@@ -2056,14 +2066,30 @@
             debugLog(`[第${chapterIndex}章] 启动并行子任务: 主API世界书 + 导演API章节资产`);
             const worldbookPromise = (async () => {
                 debugLog(`[第${chapterIndex}章][主API] 调用中...`);
-                const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
+                updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
+                let response = '';
+                try {
+                    response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
+                    updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                } catch (apiError) {
+                    if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
+                        updateStreamContent(`❌ [第${chapterIndex}章][主API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                    }
+                    throw apiError;
+                }
                 throwIfRunInactive(runId);
 
                 debugLog(`[第${chapterIndex}章][主API] 检查TokenLimit...`);
                 if (isTokenLimitError(response)) throw new Error('Token limit exceeded');
 
                 debugLog(`[第${chapterIndex}章][主API] 解析AI响应...`);
-                let memoryUpdate = parseAIResponse(response, { strict: false });
+                let memoryUpdate = null;
+                try {
+                    memoryUpdate = parseAIResponse(response, { strict: false });
+                } catch (parseError) {
+                    updateStreamContent(`❌ [第${chapterIndex}章][主API] 响应解析失败: ${compactErrorMessage(parseError)}\n`);
+                    throw parseError;
+                }
 
                 debugLog(`[第${chapterIndex}章][主API] 后处理章节索引...`);
                 memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
@@ -2280,7 +2306,17 @@ ${'='.repeat(50)}
             })();
 
             debugLog(`[串行][第${chapterIndex}章] 主API调用中, prompt长度=${prompt.length}`);
-            const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt));
+            updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
+            let response = '';
+            try {
+                response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, chapterIndex));
+                updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
+            } catch (apiError) {
+                if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
+                    updateStreamContent(`❌ [第${chapterIndex}章][主API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                }
+                throw apiError;
+            }
             throwIfRunInactive(runId);
 
             if (AppState.processing.isStopped) {
@@ -2311,7 +2347,13 @@ ${'='.repeat(50)}
             }
 
             debugLog(`[串行][第${chapterIndex}章] 解析AI响应...`);
-            let memoryUpdate = parseAIResponse(response, { strict: false });
+            let memoryUpdate = null;
+            try {
+                memoryUpdate = parseAIResponse(response, { strict: false });
+            } catch (parseError) {
+                updateStreamContent(`❌ [第${chapterIndex}章][主API] 响应解析失败: ${compactErrorMessage(parseError)}\n`);
+                throw parseError;
+            }
             memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
             updateStreamContent(`✅ [第${chapterIndex}章][主API] 世界书响应解析完成\n`);
 

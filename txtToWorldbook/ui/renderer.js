@@ -33,14 +33,14 @@ export function highlightEscapedText(text, keyword) {
 
     return safeText.replace(
         new RegExp(escapedRegex, 'g'),
-        `<span style="background:#f1c40f;color:#000;padding:1px 2px;border-radius:2px;">${safeKeyword}</span>`
+        `<span style="background:rgba(255,255,255,0.18);color:var(--ttw-text-primary);padding:1px 2px;border-radius:2px;">${safeKeyword}</span>`
     );
 }
 
 export function formatEscapedMultilineContent(text, keyword = '', enableBold = true) {
     let formatted = highlightEscapedText(String(text || ''), keyword);
     if (enableBold) {
-        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#3498db;">$1</strong>');
+        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--ttw-text-primary);">$1</strong>');
     }
     return formatted.split(String.fromCharCode(10)).join('<br>');
 }
@@ -73,7 +73,7 @@ export function createListRenderer(deps = {}) {
         renderItems(items, renderItem, options = {}) {
             const { emptyMessage = '暂无数据' } = options;
             if (!items || items.length === 0) {
-                return `<div style="text-align:center;color:#888;padding:20px;">${emptyMessage}</div>`;
+                return `<div style="text-align:center;color:var(--ttw-text-secondary);padding:20px;">${emptyMessage}</div>`;
             }
             return items.map((item, index) => renderItem(item, index)).join('');
         },
@@ -95,17 +95,17 @@ export function createListRenderer(deps = {}) {
 
             const styleParts = [];
             if (memory.processing) {
-                styleParts.push('border-left:3px solid #3498db;background:rgba(52,152,219,0.15);');
+                styleParts.push('border-left:3px solid rgba(198,206,216,0.55);background:rgba(255,255,255,0.07);');
             } else if (memory.processed && !memory.failed) {
-                styleParts.push('opacity:0.6;');
+                styleParts.push('opacity:0.92;');
             } else if (memory.failed) {
-                styleParts.push('border-left:3px solid #e74c3c;');
+                styleParts.push('border-left:3px solid rgba(180,140,140,0.72);background:rgba(255,255,255,0.05);');
             }
 
             const checkboxHtml = multiSelect
-                ? `<input type="checkbox" class="ttw-memory-checkbox" data-index="${index}" ${selected ? 'checked' : ''} style="width:16px;height:16px;accent-color:#e74c3c;">`
+                ? `<input type="checkbox" class="ttw-memory-checkbox" data-index="${index}" ${selected ? 'checked' : ''} style="width:16px;height:16px;accent-color:#9ea4ae;">`
                 : '';
-            const failedHtml = memory.failed ? '<small style="color:#e74c3c;font-size:11px;">错误</small>' : '';
+            const failedHtml = memory.failed ? '<small style="color:#d8b8b8;font-size:11px;">错误</small>' : '';
             const titleText = context.useChapterLabel ? `第${index + 1}章` : this.escapeHtml(memory.title || `记忆 ${index + 1}`);
             const sizeText = context.useApproxK
                 ? `${((memory.content || '').length / 1000).toFixed(1)}k`
@@ -115,7 +115,7 @@ export function createListRenderer(deps = {}) {
                 ${checkboxHtml}
                 <span>${statusIcon}</span>
                 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${titleText}</span>
-                <small style="font-size:11px;color:#888;">${sizeText}</small>
+                <small style="font-size:11px;color:var(--ttw-text-secondary);">${sizeText}</small>
                 ${failedHtml}
             </div>`;
         },
@@ -182,34 +182,34 @@ export function createListRenderer(deps = {}) {
             const highlightStyle = isBelowThreshold ? 'background:#7f1d1d;border-left:3px solid #ef4444;' : 'border-left:3px solid #3498db;';
             const tokenStyle = isBelowThreshold ? 'color:#ef4444;font-weight:bold;' : 'color:#f1c40f;';
             const mergedBadge = isManualMergedHighlight
-                ? `<span style="font-size:10px;color:#f1c40f;background:rgba(241,196,15,0.2);border:1px solid rgba(241,196,15,0.45);padding:1px 6px;border-radius:999px;">✨ 新合并</span>`
+                ? `<span style="font-size:10px;color:var(--ttw-text-primary);background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);padding:1px 6px;border-radius:999px;">✨ 新合并</span>`
                 : '';
             const isBatchDeleteMode = !!context.batchDeleteMode;
             const isSelectedForBatchDelete = !!context.isSelectedForBatchDelete;
             const selectionBtn = isBatchDeleteMode
-                ? `<button class="ttw-entry-select-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="${isSelectedForBatchDelete ? '取消选择' : '选择用于批量删除'}" style="background:${isSelectedForBatchDelete ? 'rgba(39,174,96,0.5)' : 'rgba(52,152,219,0.45)'};border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:#fff;">${isSelectedForBatchDelete ? '✅' : '☑️'}</button>`
+                ? `<button class="ttw-entry-select-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="${isSelectedForBatchDelete ? '取消选择' : '选择用于批量删除'}" style="background:${isSelectedForBatchDelete ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)'};border:1px solid rgba(255,255,255,0.22);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:var(--ttw-text-primary);">${isSelectedForBatchDelete ? '✅' : '☑️'}</button>`
                 : '';
             const roleType = this.getEntryRoleType(category, entry);
             const roleBadge = roleType
-                ? `<span style="font-size:10px;color:#2ecc71;background:rgba(46,204,113,0.16);border:1px solid rgba(46,204,113,0.5);padding:1px 6px;border-radius:999px;">${this.escapeHtml(roleType)}</span>`
+                ? `<span style="font-size:10px;color:var(--ttw-text-secondary);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);padding:1px 6px;border-radius:999px;">${this.escapeHtml(roleType)}</span>`
                 : '';
             const keywordSource = Array.isArray(entry?.['关键词']) ? entry['关键词'].join(', ') : (entry?.['关键词'] || '');
             const keywordTokens = keywordSource && typeof estimateTokenCount === 'function' ? estimateTokenCount(keywordSource) : 0;
             const contentSource = entry?.['内容'] || '';
             const contentTokens = contentSource && typeof estimateTokenCount === 'function' ? estimateTokenCount(contentSource) : 0;
             const keywordHtml = keywordSource ? `
-                <div style="margin-bottom:8px;padding:8px;background:#252525;border-left:3px solid #9b59b6;border-radius:4px;">
-                    <div style="color:#9b59b6;font-size:11px;margin-bottom:4px;display:flex;justify-content:space-between;">
+                <div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.04);border-left:3px solid rgba(255,255,255,0.26);border-radius:4px;">
+                    <div style="color:var(--ttw-text-primary);font-size:11px;margin-bottom:4px;display:flex;justify-content:space-between;">
                         <span>🔑 关键词</span>
-                        <span style="color:#888;">~${keywordTokens} tk</span>
+                        <span style="color:var(--ttw-text-secondary);">~${keywordTokens} tk</span>
                     </div>
                     <div style="font-size:13px;">${highlightEscapedText(keywordSource, context.searchKeyword || '')}</div>
                 </div>` : '';
             const contentHtml = contentSource ? `
-                <div style="padding:8px;background:#252525;border-left:3px solid #27ae60;border-radius:4px;line-height:1.6;">
-                    <div style="color:#27ae60;font-size:11px;margin-bottom:4px;display:flex;justify-content:space-between;">
+                <div style="padding:8px;background:rgba(255,255,255,0.04);border-left:3px solid rgba(255,255,255,0.26);border-radius:4px;line-height:1.6;">
+                    <div style="color:var(--ttw-text-primary);font-size:11px;margin-bottom:4px;display:flex;justify-content:space-between;">
                         <span>📝 内容</span>
-                        <span style="color:#888;">~${contentTokens} tk</span>
+                        <span style="color:var(--ttw-text-secondary);">~${contentTokens} tk</span>
                     </div>
                     <div style="font-size:13px;">${formatEscapedMultilineContent(contentSource, context.searchKeyword || '', true)}</div>
                 </div>` : '';
@@ -217,15 +217,15 @@ export function createListRenderer(deps = {}) {
             const selectedOutline = isSelectedForBatchDelete ? 'box-shadow:inset 0 0 0 2px rgba(39,174,96,0.6);' : '';
 
             return `
-                <div class="${isManualMergedHighlight ? 'ttw-entry-merged-highlight' : ''}" style="margin:8px;border:1px solid #555;border-radius:6px;overflow:hidden;${selectedOutline}">
-                    <div class="ttw-entry-toggle" style="background:#3a3a3a;padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;${highlightStyle}">
-                        <span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${warningIcon}📄 ${safeEntryNameText}${roleBadge}${mergedBadge}${selectionBtn}<button class="ttw-entry-config-btn ttw-config-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="配置位置/深度/顺序">⚙️</button><button class="ttw-entry-reroll-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="单独重Roll此条目" style="background:rgba(155,89,182,0.4);border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:#fff;">🎯</button><button class="ttw-entry-delete-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="删除此条目" style="background:rgba(231,76,60,0.42);border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:#fff;">🗑️</button></span>
-                        <span style="font-size:9px;color:#888;display:flex;gap:4px;align-items:center;">
+                <div class="${isManualMergedHighlight ? 'ttw-entry-merged-highlight' : ''}" style="margin:8px;border:1px solid rgba(255,255,255,0.14);border-radius:6px;overflow:hidden;${selectedOutline}">
+                    <div class="ttw-entry-toggle" style="background:rgba(255,255,255,0.06);padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;${highlightStyle}">
+                        <span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;color:var(--ttw-text-primary);">${warningIcon}📄 ${safeEntryNameText}${roleBadge}${mergedBadge}${selectionBtn}<button class="ttw-entry-config-btn ttw-config-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="配置位置/深度/顺序">⚙️</button><button class="ttw-entry-reroll-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="单独重Roll此条目" style="background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:var(--ttw-text-primary);">🎯</button><button class="ttw-entry-delete-btn" data-category="${safeCategoryAttr}" data-entry="${safeEntryNameAttr}" title="删除此条目" style="background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;color:var(--ttw-text-primary);">🗑️</button></span>
+                        <span class="ttw-entry-meta" style="font-size:9px;color:var(--ttw-text-secondary);display:flex;gap:4px;align-items:center;">
                             <span style="${tokenStyle}">${entryTokens}tk</span>
                             <span>D${config.depth}O${displayOrder}${autoIncrement ? '↗' : ''}</span>
                         </span>
                     </div>
-                    <div style="display:none;background:#1c1c1c;padding:12px;">
+                    <div style="display:none;background:rgba(10,10,12,0.88);padding:12px;">
                         ${keywordHtml}
                         ${contentHtml}
                     </div>
@@ -233,20 +233,20 @@ export function createListRenderer(deps = {}) {
         },
 
         renderWorldbookCategory(config) {
-            return `<div style="margin-bottom:12px;border:1px solid #e67e22;border-radius:8px;overflow:hidden;">
-                <div class="ttw-category-toggle" style="background:linear-gradient(135deg,#e67e22,#d35400);padding:10px 14px;cursor:pointer;font-weight:bold;display:flex;justify-content:space-between;align-items:center;">
+            return `<div style="margin-bottom:12px;border:1px solid rgba(255,255,255,0.16);border-radius:8px;overflow:hidden;">
+                <div class="ttw-category-toggle" style="background:rgba(255,255,255,0.08);padding:10px 14px;cursor:pointer;font-weight:bold;display:flex;justify-content:space-between;align-items:center;color:var(--ttw-text-primary);">
                     <span style="display:flex;align-items:center;">📁 ${config.safeCategoryText}<button class="ttw-light-toggle ${config.lightClass}" data-category="${config.safeCategoryAttr}" title="${this.escapeAttribute(config.lightTitle)}">${config.lightIcon}</button><button class="ttw-config-btn" data-category="${config.safeCategoryAttr}" title="配置分类默认位置/深度">⚙️</button></span>
-                    <span style="font-size:12px;">${config.entryCount} 条目 | <span style="color:#f1c40f;">~${config.categoryTokens} tk</span></span>
+                    <span style="font-size:12px;color:var(--ttw-text-secondary);">${config.entryCount} 条目 | <span style="color:var(--ttw-text-secondary);">~${config.categoryTokens} tk</span></span>
                 </div>
-                <div style="background:#2d2d2d;display:none;">${config.entriesHtml}</div>
+                <div style="background:rgba(8,8,10,0.72);display:none;">${config.entriesHtml}</div>
             </div>`;
         },
 
         renderWorldbookSummary(stats) {
             const thresholdInfo = stats.tokenThreshold > 0
-                ? ` | <span style="color:#ef4444;">⚠️ ${stats.belowThresholdCount}个条目低于${stats.tokenThreshold}tk</span>`
+                ? ` | <span style="color:var(--ttw-text-secondary);">⚠️ ${stats.belowThresholdCount}个条目低于${stats.tokenThreshold}tk</span>`
                 : '';
-            return `<div style="margin-bottom:12px;font-size:13px;">共 ${stats.categoryCount} 个分类, ${stats.totalEntries} 个条目 | <span style="color:#f1c40f;">总计 ~${stats.totalTokens} tk</span>${thresholdInfo}</div>`;
+            return `<div style="margin-bottom:12px;font-size:13px;color:var(--ttw-text-primary);">共 ${stats.categoryCount} 个分类, ${stats.totalEntries} 个条目 | <span style="color:var(--ttw-text-secondary);">总计 ~${stats.totalTokens} tk</span>${thresholdInfo}</div>`;
         },
 
         getStatusIcon(item) {
@@ -259,7 +259,7 @@ export function createListRenderer(deps = {}) {
         highlightKeyword(text, keyword) {
             if (!keyword) return text;
             const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-            return text.replace(regex, '<mark style="background:yellow;">$1</mark>');
+            return text.replace(regex, '<mark style="background:rgba(255,255,255,0.2);color:var(--ttw-text-primary);">$1</mark>');
         },
 
         updateList(containerId, html) {

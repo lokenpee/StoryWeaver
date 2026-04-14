@@ -119,7 +119,7 @@ export function createMemoryQueueView(deps = {}) {
         if (existingModal) existingModal.remove();
 
         const statusText = memory.processing ? '🔄 处理中' : (memory.processed ? (memory.failed ? '❗ 失败' : '✅ 完成') : '⏳ 等待');
-        const statusColor = memory.processing ? '#3498db' : (memory.processed ? (memory.failed ? '#e74c3c' : '#27ae60') : '#f39c12');
+        const statusColor = memory.processing ? 'var(--ttw-text-primary)' : (memory.processed ? (memory.failed ? '#d8b8b8' : 'var(--ttw-text-primary)') : 'var(--ttw-text-secondary)');
 
         let resultHtml = '';
         if (memory.processed && memory.result && !memory.failed) {
@@ -135,18 +135,18 @@ export function createMemoryQueueView(deps = {}) {
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;">
 <div>
 <span style="color:${statusColor};font-weight:bold;">${statusText}</span>
-<span style="margin-left:16px;color:#888;">字数: <span id="ttw-char-count">${memory.content.length.toLocaleString()}</span></span>
+<span style="margin-left:16px;color:var(--ttw-text-secondary);">字数: <span id="ttw-char-count">${memory.content.length.toLocaleString()}</span></span>
 </div>
 <div style="display:flex;gap:8px;">
 <button id="ttw-copy-memory-content" class="ttw-btn ttw-btn-small">📋 复制</button>
-<button id="ttw-roll-history-btn" class="ttw-btn ttw-btn-small" style="background:rgba(155,89,182,0.3);">🎲 Roll历史</button>
+<button id="ttw-roll-history-btn" class="ttw-btn ttw-btn-small" style="background:rgba(255,255,255,0.12);">🎲 Roll历史</button>
 <button id="ttw-delete-memory-btn" class="ttw-btn ttw-btn-warning ttw-btn-small">🗑️ 删除</button>
 </div>
 </div>
-${memory.failedError ? `<div style="margin-bottom:16px;padding:10px;background:rgba(231,76,60,0.2);border-radius:6px;color:#e74c3c;font-size:12px;">❌ ${memory.failedError}</div>` : ''}
+${memory.failedError ? `<div style="margin-bottom:16px;padding:10px;background:rgba(255,255,255,0.08);border-radius:6px;color:#e9d2d2;font-size:12px;">❌ ${memory.failedError}</div>` : ''}
 <div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-<h4 style="color:#3498db;margin:0;">📝 原文内容 <span style="font-size:12px;font-weight:normal;color:#888;">(可编辑)</span></h4>
+<h4 style="color:var(--ttw-text-primary);margin:0;">📝 原文内容 <span style="font-size:12px;font-weight:normal;color:var(--ttw-text-secondary);">(可编辑)</span></h4>
 <div style="display:flex;gap:8px;">
 <button id="ttw-append-to-prev" class="ttw-btn ttw-btn-small" ${index === 0 ? 'disabled style="opacity:0.5;"' : ''} title="追加到上一章末尾，并删除当前章">⬆️ 合并到上一章</button>
 <button id="ttw-append-to-next" class="ttw-btn ttw-btn-small" ${index === AppState.memory.queue.length - 1 ? 'disabled style="opacity:0.5;"' : ''} title="追加到下一章开头，并删除当前章">⬇️ 合并到下一章</button>
@@ -284,18 +284,18 @@ ${resultHtml}
                 ? Object.keys(memory.result).reduce((sum, cat) => sum + (typeof memory.result[cat] === 'object' ? Object.keys(memory.result[cat]).length : 0), 0)
                 : 0;
             listHtml += `
-<div class="ttw-processed-item" data-index="${realIndex}" style="padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:4px;cursor:pointer;border-left:2px solid #27ae60;">
-<div style="font-size:11px;font-weight:bold;color:#27ae60;">✅ 第${realIndex + 1}章</div>
-<div style="font-size:9px;color:#888;">${entryCount}条 | ${(memory.content.length / 1000).toFixed(1)}k字</div>
+<div class="ttw-processed-item" data-index="${realIndex}" style="padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:4px;cursor:pointer;border-left:2px solid rgba(255,255,255,0.28);">
+<div style="font-size:11px;font-weight:bold;color:var(--ttw-text-primary);">✅ 第${realIndex + 1}章</div>
+<div style="font-size:9px;color:var(--ttw-text-secondary);">${entryCount}条 | ${(memory.content.length / 1000).toFixed(1)}k字</div>
 </div>
 `;
         });
 
         const bodyHtml = `
 <div class="ttw-processed-results-container" style="display:flex;gap:10px;height:450px;">
-<div class="ttw-processed-results-left" style="width:100px;min-width:100px;max-width:100px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:8px;">${listHtml}</div>
-<div id="ttw-result-detail" style="flex:1;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:15px;">
-<div style="text-align:center;color:#888;padding:40px;font-size:12px;">👈 点击左侧章节查看结果</div>
+<div class="ttw-processed-results-left" style="width:100px;min-width:100px;max-width:100px;overflow-y:auto;background:rgba(8,8,10,0.72);border-radius:8px;padding:8px;">${listHtml}</div>
+<div id="ttw-result-detail" style="flex:1;overflow-y:auto;background:rgba(8,8,10,0.72);border-radius:8px;padding:15px;">
+<div style="text-align:center;color:var(--ttw-text-secondary);padding:40px;font-size:12px;">👈 点击左侧章节查看结果</div>
 </div>
 </div>
 `;
@@ -318,13 +318,13 @@ ${resultHtml}
                 const memory = AppState.memory.queue[index];
                 const detailDiv = resultsModal.querySelector('#ttw-result-detail');
                 resultsModal.querySelectorAll('.ttw-processed-item').forEach((i) => {
-                    i.style.background = 'rgba(0,0,0,0.2)';
+                    i.style.background = 'rgba(255,255,255,0.04)';
                 });
-                item.style.background = 'rgba(0,0,0,0.4)';
+                item.style.background = 'rgba(255,255,255,0.12)';
                 if (memory && memory.result) {
                     detailDiv.innerHTML = `
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-<h4 style="color:#27ae60;margin:0;font-size:14px;">第${index + 1}章 - ${memory.title}</h4>
+<h4 style="color:var(--ttw-text-primary);margin:0;font-size:14px;">第${index + 1}章 - ${memory.title}</h4>
 <button class="ttw-btn ttw-btn-small" id="ttw-copy-result">📋 复制</button>
 </div>
 <pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;line-height:1.5;">${JSON.stringify(memory.result, null, 2)}</pre>

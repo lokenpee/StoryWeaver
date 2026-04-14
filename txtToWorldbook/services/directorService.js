@@ -27,6 +27,13 @@ export function createDirectorService(deps = {}) {
         directorDebug(msg);
     }
 
+    function buildDirectorTurnPrefix(chapterIndex) {
+        const chapterNo = Number.isInteger(chapterIndex) ? chapterIndex + 1 : 0;
+        return chapterNo > 0
+            ? `[第${chapterNo}章][导演裁判]`
+            : '[导演裁判]';
+    }
+
     function toShortText(text, maxLen = 180) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
@@ -934,6 +941,7 @@ export function createDirectorService(deps = {}) {
             ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, beats.length - 1))
             : 0;
         memory.chapterCurrentBeatIndex = currentBeatIdx;
+        const turnPrefix = buildDirectorTurnPrefix(chapterIndex);
         directorDebug(`start chapter=${chapterIndex + 1}, beat=${currentBeatIdx + 1}/${beats.length}`);
 
         const latestUserMessage = getLatestUserMessage(eventData);
@@ -970,10 +978,19 @@ export function createDirectorService(deps = {}) {
         let decision = null;
         let decisionSource = 'model';
         try {
+            if (typeof updateStreamContent === 'function') {
+                updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
+            }
             const response = await callDirectorAPI(prompt, chapterIndex + 1);
+            if (typeof updateStreamContent === 'function') {
+                updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${String(response || '').length} 字符\n`);
+            }
             const parsed = extractJsonObject(response);
             if (!parsed) {
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
+                if (typeof updateStreamContent === 'function') {
+                    updateStreamContent(`⚠️ ${turnPrefix} 响应不是有效JSON，已切换回退判定\n`);
+                }
                 decision = buildFallbackDecision(lockedBeatIdx, beats, 'parse-fallback', directionContext);
                 decisionSource = 'fallback-parse';
             } else {
@@ -981,6 +998,10 @@ export function createDirectorService(deps = {}) {
             }
         } catch (error) {
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
+            if (typeof updateStreamContent === 'function') {
+                updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${error?.message || String(error)}\n`);
+                updateStreamContent(`⚠️ ${turnPrefix} 已启用本地回退判定\n`);
+            }
             decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback', directionContext);
             decisionSource = 'fallback-error';
         }
@@ -1028,6 +1049,9 @@ export function createDirectorService(deps = {}) {
         decision.previous_stage_idx = currentBeatIdx;
 
         directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}`);
+        if (typeof updateStreamContent === 'function') {
+            updateStreamContent(`✅ ${turnPrefix} 判定完成：source=${decisionSource}, 锁定节拍=${decision.stage_idx + 1}/${beats.length}, switch=${decision.switch_direction || 'none'}\n`);
+        }
 
         memory.chapterCurrentBeatIndex = decision.stage_idx;
         memory.directorDecision = {
@@ -1052,6 +1076,9 @@ export function createDirectorService(deps = {}) {
             is_storyweaver_director: true,
         });
         directorInfo(`注入完成 chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
+        if (typeof updateStreamContent === 'function') {
+            updateStreamContent(`✅ ${turnPrefix} 注入导演提示词完成（activeBeat=${decision.stage_idx + 1}）\n`);
+        }
 
         return decision;
     }

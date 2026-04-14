@@ -547,15 +547,15 @@ export function ensureModalStyles() {
         .ttw-memory-queue {
             max-height: 220px;
             overflow-y: auto;
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(8, 8, 10, 0.78);
             border-radius: 8px;
             padding: 10px;
-            border: 1px solid var(--ttw-border-color);
+            border: 1px solid rgba(255, 255, 255, 0.12);
         }
         
         .ttw-memory-item {
             padding: 10px 14px;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.03);
             border-radius: 6px;
             margin-bottom: 8px;
             font-size: 14px;
@@ -564,12 +564,13 @@ export function ensureModalStyles() {
             gap: 10px;
             cursor: pointer;
             transition: all 0.2s ease;
-            border: 1px solid transparent;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--ttw-text-primary);
         }
         
         .ttw-memory-item:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: var(--ttw-border-color);
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.16);
         }
         
         .ttw-memory-item.multi-select-mode {
@@ -577,8 +578,8 @@ export function ensureModalStyles() {
         }
         
         .ttw-memory-item.selected-for-delete {
-            background: rgba(255, 69, 58, 0.15);
-            border-color: rgba(255, 69, 58, 0.3);
+            background: rgba(255, 255, 255, 0.09);
+            border-color: rgba(255, 255, 255, 0.24);
         }
         
         /* --- 进度条 --- */
@@ -652,13 +653,19 @@ export function ensureModalStyles() {
         .ttw-result-preview {
             max-height: 350px;
             overflow-y: auto;
-            background: rgba(0, 0, 0, 0.25);
+            background: rgba(8, 8, 10, 0.78);
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 16px;
             font-size: 13px;
-            border: 1px solid var(--ttw-border-color);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             line-height: 1.6;
+            color: var(--ttw-text-primary);
+        }
+
+        .ttw-result-preview small,
+        .ttw-result-preview .ttw-entry-meta {
+            color: var(--ttw-text-secondary);
         }
         
         .ttw-result-actions {

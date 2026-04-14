@@ -55,7 +55,7 @@ export function createApiService(deps = {}) {
 
     async function callSillyTavernAPI(messages, taskId = null) {
         const timeout = AppState.settings.apiTimeout || 120000;
-        const logPrefix = taskId !== null ? `[任务${taskId}]` : '';
+        const logPrefix = buildApiLogPrefix('main', taskId);
         const combinedPrompt = messagesToString(messages);
         updateStreamContent(`\n📤 ${logPrefix} 发送请求到酒馆API (${messages.length}条消息)...\n`);
         debugLog(`${logPrefix} 酒馆API开始调用, 消息数=${messages.length}, 总长度=${combinedPrompt.length}, 超时=${timeout / 1000}秒`);
@@ -109,7 +109,8 @@ export function createApiService(deps = {}) {
             return result;
         } catch (error) {
             debugLog(`${logPrefix} 酒馆API出错: ${error.message}`);
-            updateStreamContent(`\n❌ ${logPrefix} 错误: ${error.message}\n`);
+            updateStreamContent(`\n❌ ${logPrefix} 请求失败: ${error.message}\n`);
+            try { error.__apiLogged = true; } catch (_) {}
             throw error;
         }
     }
@@ -336,8 +337,13 @@ export function createApiService(deps = {}) {
             const normalized = APICaller.handleError(error, '自定义API');
             debugLog(`${logPrefix} 出错: ${error.name || 'Error'} - ${error.message}`);
             if (normalized.type === 'timeout') {
-                throw new Error(`API请求超时 (${timeout / 1000}秒)`);
+                const timeoutError = new Error(`API请求超时 (${timeout / 1000}秒)`);
+                updateStreamContent(`❌ ${logPrefix} 请求失败: ${timeoutError.message}\n`);
+                timeoutError.__apiLogged = true;
+                throw timeoutError;
             }
+            updateStreamContent(`❌ ${logPrefix} 请求失败: ${error.message}\n`);
+            try { error.__apiLogged = true; } catch (_) {}
             throw error;
         }
     }
