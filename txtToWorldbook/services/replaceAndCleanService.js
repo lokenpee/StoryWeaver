@@ -15,6 +15,15 @@ export function createReplaceAndCleanService(deps = {}) {
             .filter((line) => line.length > 0 && /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(line));
     }
 
+    function getWorldbookStatus(memory) {
+        const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+        return status || 'pending';
+    }
+
+    function isWorldbookDone(memory) {
+        return getWorldbookStatus(memory) === 'done';
+    }
+
     function groupMatchesBySource(matches) {
         const groups = {};
         for (const m of matches) {
@@ -421,7 +430,7 @@ tochao">thinking\ntucao\ntochao</textarea>
         if (mode === 'unprocessed') {
             return all.filter((idx) => {
                 const memory = queue[idx] || {};
-                return !(memory.processed && !memory.failed);
+                return !isWorldbookDone(memory);
             });
         }
 
@@ -458,7 +467,7 @@ tochao">thinking\ntucao\ntochao</textarea>
                     index,
                     chapterTitle: String(memory.chapterTitle || `第${index + 1}章`),
                     memoryTitle: String(memory.title || `记忆${index + 1}`),
-                    processed: !!memory.processed && !memory.failed,
+                    processed: isWorldbookDone(memory),
                     hits: chapterHits,
                     removedChars: chapterRemovedChars,
                 });
@@ -478,6 +487,12 @@ tochao">thinking\ntucao\ntochao</textarea>
 
     function resetChapterRuntimeAfterContentCleanup(memory) {
         if (!memory || typeof memory !== 'object') return;
+        memory.worldbookStatus = 'pending';
+        memory.worldbookError = '';
+        memory.worldbookProcessing = false;
+        memory.directorStatus = 'pending';
+        memory.directorError = '';
+        memory.directorProcessing = false;
         memory.processed = false;
         memory.failed = false;
         memory.processing = false;
@@ -520,7 +535,7 @@ tochao">thinking\ntucao\ntochao</textarea>
 
             if (chapterHits <= 0 || next === original) continue;
 
-            if (memory.processed && !memory.failed) {
+            if (isWorldbookDone(memory)) {
                 resetProcessedIndices.push(index);
             }
 
@@ -653,7 +668,7 @@ tochao">thinking\ntucao\ntochao</textarea>
             const checked = selectedIndices.has(idx) ? 'checked' : '';
             const chapterTitle = escapeHtml(memory?.chapterTitle || `第${idx + 1}章`);
             const memoryTitle = escapeHtml(memory?.title || `记忆${idx + 1}`);
-            const isProcessed = !!memory?.processed && !memory?.failed;
+            const isProcessed = isWorldbookDone(memory);
             const status = isProcessed
                 ? '<span style="font-size:10px;color:#f39c12;">已处理</span>'
                 : '<span style="font-size:10px;color:#2ecc71;">未处理</span>';

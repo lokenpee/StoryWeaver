@@ -124,11 +124,16 @@ export function createHistoryView(deps = {}) {
             const history = await MemoryHistoryDB.rollbackToHistory(historyId);
             for (let i = 0; i < AppState.memory.queue.length; i++) {
                 if (i < history.memoryIndex) {
+                    AppState.memory.queue[i].worldbookStatus = 'done';
+                    AppState.memory.queue[i].worldbookError = '';
                     AppState.memory.queue[i].processed = true;
                 } else {
+                    AppState.memory.queue[i].worldbookStatus = 'pending';
+                    AppState.memory.queue[i].worldbookError = '';
                     AppState.memory.queue[i].processed = false;
                     AppState.memory.queue[i].failed = false;
                 }
+                AppState.memory.queue[i].processing = false;
             }
             await MemoryHistoryDB.saveState(history.memoryIndex);
             ErrorHandler.showUserSuccess('回退成功！页面将刷新。');

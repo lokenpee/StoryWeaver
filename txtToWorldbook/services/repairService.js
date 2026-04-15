@@ -17,6 +17,34 @@ export function createRepairService(deps = {}) {
         splitMemoryIntoTwo,
     } = deps;
 
+    function getWorldbookStatus(memory) {
+        const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+        return status || 'pending';
+    }
+
+    function setWorldbookStatus(memory, status, error = '') {
+        const next = ['pending', 'generating', 'done', 'failed'].includes(String(status || '').toLowerCase())
+            ? String(status).toLowerCase()
+            : 'pending';
+        memory.worldbookStatus = next;
+        memory.worldbookError = next === 'failed' ? String(error || '未知错误') : '';
+        memory.processed = next === 'done' || next === 'failed';
+        memory.failed = next === 'failed';
+        memory.processing = next === 'generating';
+        if (next === 'failed') {
+            memory.failedError = memory.worldbookError;
+        } else if (next !== 'generating') {
+            memory.failedError = '';
+        }
+    }
+
+    function countWorldbookReady(queue) {
+        return queue.filter((item) => {
+            const status = getWorldbookStatus(item);
+            return status === 'done' || status === 'failed';
+        }).length;
+    }
+
     async function handleRepairSingleMemory(index) {
         const memory = AppState.memory.queue[index];
         const chapterIndex = index + 1;
@@ -64,18 +92,16 @@ ${generateDynamicJsonTemplate()}
 
         try {
             await handleRepairSingleMemory(memoryIndex);
-            memory.failed = false;
-            memory.failedError = null;
-            memory.processed = true;
+            setWorldbookStatus(memory, 'done');
             stats.successCount++;
             updateMemoryQueueUI();
-            await MemoryHistoryDB.saveState(AppState.memory.queue.filter((item) => item.processed).length);
+            await MemoryHistoryDB.saveState(countWorldbookReady(AppState.memory.queue));
             await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (error) {
             if (isTokenLimitError(error.message || '')) {
                 if (AppState.processing.volumeMode) {
                     handleStartNewVolume();
-                    await MemoryHistoryDB.saveState(AppState.memory.queue.filter((item) => item.processed).length);
+                    await MemoryHistoryDB.saveState(countWorldbookReady(AppState.memory.queue));
                     await new Promise((resolve) => setTimeout(resolve, 500));
                     await handleRepairMemoryWithSplit(memoryIndex, stats);
                     return;
@@ -84,7 +110,7 @@ ${generateDynamicJsonTemplate()}
                 const splitResult = splitMemoryIntoTwo(memoryIndex);
                 if (splitResult) {
                     updateMemoryQueueUI();
-                    await MemoryHistoryDB.saveState(AppState.memory.queue.filter((item) => item.processed).length);
+                    await MemoryHistoryDB.saveState(countWorldbookReady(AppState.memory.queue));
                     await new Promise((resolve) => setTimeout(resolve, 500));
                     const part1Index = AppState.memory.queue.indexOf(splitResult.part1);
                     await handleRepairMemoryWithSplit(part1Index, stats);
@@ -92,11 +118,11 @@ ${generateDynamicJsonTemplate()}
                     await handleRepairMemoryWithSplit(part2Index, stats);
                 } else {
                     stats.stillFailedCount++;
-                    memory.failedError = error.message;
+                    setWorldbookStatus(memory, 'failed', error.message);
                 }
             } else {
                 stats.stillFailedCount++;
-                memory.failedError = error.message;
+                setWorldbookStatus(memory, 'failed', error.message);
                 updateMemoryQueueUI();
                 await new Promise((resolve) => setTimeout(resolve, 1000));
             }

@@ -13,6 +13,18 @@ export function createMemoryQueueView(deps = {}) {
 
     function resetDerivedChapterData(memory) {
         if (!memory) return;
+        memory.worldbookStatus = 'pending';
+        memory.worldbookError = '';
+        memory.worldbookProcessing = false;
+        memory.processed = false;
+        memory.failed = false;
+        memory.processing = false;
+        memory.failedError = '';
+        memory.result = null;
+
+        memory.directorStatus = 'pending';
+        memory.directorError = '';
+        memory.directorProcessing = false;
         memory.chapterOutline = '';
         memory.chapterOutlineStatus = 'pending';
         memory.chapterOutlineError = '';
@@ -73,7 +85,11 @@ export function createMemoryQueueView(deps = {}) {
 
         let optionsHtml = '';
         AppState.memory.queue.forEach((memory, index) => {
-            const status = memory.processed ? (memory.failed ? '❗' : '✅') : '⏳';
+            const worldbookStatus = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            const directorStatus = String(memory?.directorStatus || memory?.chapterOutlineStatus || '').trim().toLowerCase();
+            const mainIcon = worldbookStatus === 'done' ? '✅' : (worldbookStatus === 'failed' ? '❗' : (worldbookStatus === 'generating' ? '🔄' : '⏳'));
+            const directorIcon = directorStatus === 'done' ? '🎬✅' : (directorStatus === 'failed' ? '🎬❗' : (directorStatus === 'generating' ? '🎬🔄' : '🎬⏳'));
+            const status = `${mainIcon} ${directorIcon}`;
             const currentSelected = AppState.memory.userSelectedIndex !== null ? AppState.memory.userSelectedIndex : AppState.memory.startIndex;
             optionsHtml += `<option value="${index}" ${index === currentSelected ? 'selected' : ''}>${status} 第${index + 1}章 - ${ListRenderer.escapeHtml(memory.title)} (${memory.content.length.toLocaleString()}字)</option>`;
         });
@@ -118,11 +134,16 @@ export function createMemoryQueueView(deps = {}) {
         const existingModal = document.getElementById('ttw-memory-content-modal');
         if (existingModal) existingModal.remove();
 
-        const statusText = memory.processing ? '🔄 处理中' : (memory.processed ? (memory.failed ? '❗ 失败' : '✅ 完成') : '⏳ 等待');
-        const statusColor = memory.processing ? 'var(--ttw-text-primary)' : (memory.processed ? (memory.failed ? '#d8b8b8' : 'var(--ttw-text-primary)') : 'var(--ttw-text-secondary)');
+        const worldbookStatus = String(memory?.worldbookStatus || '').trim().toLowerCase();
+        const directorStatus = String(memory?.directorStatus || memory?.chapterOutlineStatus || '').trim().toLowerCase();
+        const mainText = worldbookStatus === 'done' ? '✅ 世界书完成' : (worldbookStatus === 'failed' ? '❗ 世界书失败' : (worldbookStatus === 'generating' ? '🔄 世界书处理中' : '⏳ 世界书等待'));
+        const directorText = directorStatus === 'done' ? '🎬 导演完成' : (directorStatus === 'failed' ? '🎬❗ 导演失败' : (directorStatus === 'generating' ? '🎬🔄 导演处理中' : '🎬⏳ 导演等待'));
+        const statusText = `${mainText} | ${directorText}`;
+        const statusColor = worldbookStatus === 'failed' ? '#d8b8b8' : 'var(--ttw-text-primary)';
+        const worldbookReady = worldbookStatus === 'done';
 
         let resultHtml = '';
-        if (memory.processed && memory.result && !memory.failed) {
+        if (worldbookReady && memory.result) {
             resultHtml = `
 <div style="margin-top:16px;">
 <h4 style="color:#9b59b6;margin:0 0 10px;">📊 处理结果</h4>
@@ -143,7 +164,8 @@ export function createMemoryQueueView(deps = {}) {
 <button id="ttw-delete-memory-btn" class="ttw-btn ttw-btn-warning ttw-btn-small">🗑️ 删除</button>
 </div>
 </div>
-${memory.failedError ? `<div style="margin-bottom:16px;padding:10px;background:rgba(255,255,255,0.08);border-radius:6px;color:#e9d2d2;font-size:12px;">❌ ${memory.failedError}</div>` : ''}
+    ${memory.failedError ? `<div style="margin-bottom:12px;padding:10px;background:rgba(255,255,255,0.08);border-radius:6px;color:#e9d2d2;font-size:12px;">❌ 世界书错误: ${memory.failedError}</div>` : ''}
+    ${memory.directorError ? `<div style="margin-bottom:16px;padding:10px;background:rgba(255,255,255,0.08);border-radius:6px;color:#e9d2d2;font-size:12px;">❌ 导演错误: ${memory.directorError}</div>` : ''}
 <div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
 <h4 style="color:var(--ttw-text-primary);margin:0;">📝 原文内容 <span style="font-size:12px;font-weight:normal;color:var(--ttw-text-secondary);">(可编辑)</span></h4>
@@ -184,9 +206,6 @@ ${resultHtml}
             const newContent = editor.value;
             if (newContent !== memory.content) {
                 memory.content = newContent;
-                memory.processed = false;
-                memory.failed = false;
-                memory.result = null;
                 resetDerivedChapterData(memory);
                 updateMemoryQueueUI();
                 updateStartButtonState(false);
@@ -219,9 +238,6 @@ ${resultHtml}
             const prevMemory = AppState.memory.queue[index - 1];
             if (await confirmAction(`将当前内容合并到 "${prevMemory.title}" 的末尾？\n\n⚠️ 合并后当前章将被删除！`, { title: '合并到上一章', danger: true })) {
                 prevMemory.content += '\n\n' + editor.value;
-                prevMemory.processed = false;
-                prevMemory.failed = false;
-                prevMemory.result = null;
                 resetDerivedChapterData(prevMemory);
                 AppState.memory.queue.splice(index, 1);
                 AppState.memory.queue.forEach((m, i) => {
@@ -245,9 +261,6 @@ ${resultHtml}
             const nextMemory = AppState.memory.queue[index + 1];
             if (await confirmAction(`将当前内容合并到 "${nextMemory.title}" 的开头？\n\n⚠️ 合并后当前章将被删除！`, { title: '合并到下一章', danger: true })) {
                 nextMemory.content = editor.value + '\n\n' + nextMemory.content;
-                nextMemory.processed = false;
-                nextMemory.failed = false;
-                nextMemory.result = null;
                 resetDerivedChapterData(nextMemory);
                 AppState.memory.queue.splice(index, 1);
                 AppState.memory.queue.forEach((m, i) => {
@@ -268,7 +281,11 @@ ${resultHtml}
     }
 
     function showProcessedResults() {
-        const processedMemories = AppState.memory.queue.filter((m) => m.processed && !m.failed && m.result);
+        const processedMemories = AppState.memory.queue.filter((memory) => {
+            const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            const ready = status === 'done';
+            return ready && !!memory?.result;
+        });
         if (processedMemories.length === 0) {
             ErrorHandler.showUserError('暂无已处理的结果');
             return;

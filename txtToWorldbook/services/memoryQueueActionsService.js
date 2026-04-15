@@ -18,6 +18,18 @@ export function createMemoryQueueActionsService(deps = {}) {
             if (!memory.chapterOutlineStatus) {
                 memory.chapterOutlineStatus = 'pending';
             }
+            if (!memory.worldbookStatus) {
+                memory.worldbookStatus = memory.failed ? 'failed' : (memory.processed ? 'done' : 'pending');
+            }
+            if (!memory.directorStatus) {
+                memory.directorStatus = memory.chapterOutlineStatus || 'pending';
+            }
+            memory.worldbookError = typeof memory.worldbookError === 'string'
+                ? memory.worldbookError
+                : (typeof memory.failedError === 'string' ? memory.failedError : '');
+            memory.directorError = typeof memory.directorError === 'string'
+                ? memory.directorError
+                : (typeof memory.chapterOutlineError === 'string' ? memory.chapterOutlineError : '');
             if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
                 memory.chapterScript = { keyNodes: [], beats: [] };
             }
@@ -94,6 +106,12 @@ export function createMemoryQueueActionsService(deps = {}) {
             title: baseName + suffix1,
             chapterTitle: `${baseChapterTitle}(上)`,
             content: content1,
+            worldbookStatus: 'pending',
+            worldbookError: '',
+            worldbookProcessing: false,
+            directorStatus: 'pending',
+            directorError: '',
+            directorProcessing: false,
             processed: false,
             failed: false,
             failedError: null,
@@ -109,6 +127,12 @@ export function createMemoryQueueActionsService(deps = {}) {
             title: baseName + suffix2,
             chapterTitle: `${baseChapterTitle}(下)`,
             content: content2,
+            worldbookStatus: 'pending',
+            worldbookError: '',
+            worldbookProcessing: false,
+            directorStatus: 'pending',
+            directorError: '',
+            directorProcessing: false,
             processed: false,
             failed: false,
             failedError: null,
@@ -145,7 +169,12 @@ export function createMemoryQueueActionsService(deps = {}) {
             return;
         }
 
-        const hasProcessed = [...AppState.ui.selectedIndices].some((index) => AppState.memory.queue[index]?.processed && !AppState.memory.queue[index]?.failed);
+        const hasProcessed = [...AppState.ui.selectedIndices].some((index) => {
+            const memory = AppState.memory.queue[index];
+            if (!memory) return false;
+            const status = String(memory.worldbookStatus || '').trim().toLowerCase();
+            return status === 'done';
+        });
         let confirmMsg = `确定要删除选中的 ${AppState.ui.selectedIndices.size} 个章节吗？`;
         if (hasProcessed) {
             confirmMsg += '\n\n⚠️ 警告：选中的章节中包含已处理的章节，删除后相关的世界书数据不会自动更新！';

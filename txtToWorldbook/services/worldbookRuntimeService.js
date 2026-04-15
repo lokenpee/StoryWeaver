@@ -88,7 +88,9 @@ export function createWorldbookRuntimeService(deps = {}) {
     function rebuildWorldbookFromMemories() {
         AppState.worldbook.generated = createEmptyWorldbook();
         for (const memory of AppState.memory.queue) {
-            if (memory.processed && memory.result && !memory.failed) {
+            const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            const worldbookReady = status === 'done';
+            if (worldbookReady && memory.result) {
                 mergeWorldbookDataIncremental(AppState.worldbook.generated, memory.result);
             }
         }

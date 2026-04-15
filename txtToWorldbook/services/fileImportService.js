@@ -294,6 +294,14 @@ export function createFileImportService(deps = {}) {
             memory.chapterOutline = memory.chapterOutline || '';
             memory.chapterOutlineStatus = memory.chapterOutlineStatus || 'pending';
             memory.chapterOutlineError = memory.chapterOutlineError || '';
+            memory.worldbookStatus = memory.worldbookStatus || (memory.failed ? 'failed' : (memory.processed ? 'done' : 'pending'));
+            memory.directorStatus = memory.directorStatus || memory.chapterOutlineStatus;
+            memory.worldbookError = typeof memory.worldbookError === 'string'
+                ? memory.worldbookError
+                : (typeof memory.failedError === 'string' ? memory.failedError : '');
+            memory.directorError = typeof memory.directorError === 'string'
+                ? memory.directorError
+                : (typeof memory.chapterOutlineError === 'string' ? memory.chapterOutlineError : '');
             memory.chapterScript = memory.chapterScript || { keyNodes: [], beats: [] };
             if (!Array.isArray(memory.chapterScript.beats)) {
                 memory.chapterScript.beats = [];
@@ -353,7 +361,10 @@ export function createFileImportService(deps = {}) {
             return;
         }
 
-        const processedCount = AppState.memory.queue.filter((m) => m.processed && !m.failed).length;
+        const processedCount = AppState.memory.queue.filter((memory) => {
+            const status = String(memory.worldbookStatus || '').trim().toLowerCase();
+            return status === 'done';
+        }).length;
         if (processedCount > 0) {
             const confirmMsg = `⚠️ 警告：当前有 ${processedCount} 个已处理的章节。\n\n重新分块将会：\n1. 清除所有已处理状态\n2. 需要重新从头开始转换\n3. 但不会清除已生成的世界书数据\n\n确定要重新分块吗？`;
             if (!await confirmAction(confirmMsg, { title: '重新分块', danger: true })) {
@@ -382,6 +393,12 @@ export function createFileImportService(deps = {}) {
             title: `记忆${chunkIndex}`,
             chapterTitle: chapterTitle || `第${chunkIndex}章`,
             content,
+            worldbookStatus: 'pending',
+            worldbookError: '',
+            worldbookProcessing: false,
+            directorStatus: 'pending',
+            directorError: '',
+            directorProcessing: false,
             processed: false,
             failed: false,
             processing: false,

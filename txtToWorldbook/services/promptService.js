@@ -93,6 +93,11 @@ export function createPromptService(deps = {}) {
     function getPreviousMemoryContext(index) {
         if (index <= 0) return '';
 
+        const isWorldbookReady = (memory) => {
+            const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            return status === 'done';
+        };
+
         const safeContentSnippet = (entry) => {
             const raw = entry?.['内容'];
             if (typeof raw === 'string') return raw.substring(0, 200);
@@ -116,7 +121,7 @@ export function createPromptService(deps = {}) {
 
         for (let i = index - 1; i >= 0; i--) {
             const prevMemory = AppState.memory.queue[i];
-            if (prevMemory && prevMemory.processed && prevMemory.result && !prevMemory.failed) {
+            if (prevMemory && isWorldbookReady(prevMemory) && prevMemory.result) {
                 const plotContext = [];
                 const result = prevMemory.result;
 

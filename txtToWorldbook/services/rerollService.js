@@ -20,6 +20,27 @@
         showProgressSection,
     } = deps;
 
+    function getWorldbookStatus(memory) {
+        const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+        return status || 'pending';
+    }
+
+    function setWorldbookStatus(memory, status, error = '') {
+        const next = ['pending', 'generating', 'done', 'failed'].includes(String(status || '').toLowerCase())
+            ? String(status).toLowerCase()
+            : 'pending';
+        memory.worldbookStatus = next;
+        memory.worldbookError = next === 'failed' ? String(error || '未知错误') : '';
+        memory.processed = next === 'done' || next === 'failed';
+        memory.failed = next === 'failed';
+        memory.processing = next === 'generating';
+        if (next === 'failed') {
+            memory.failedError = memory.worldbookError;
+        } else if (next !== 'generating') {
+            memory.failedError = '';
+        }
+    }
+
     const transitionTo = (status) => {
         if (typeof setProcessingStatus === 'function') {
             setProcessingStatus(status);
@@ -42,7 +63,8 @@
         const sources = [];
         for (let i = 0; i < AppState.memory.queue.length; i++) {
             const memory = AppState.memory.queue[i];
-            if (!memory.result || memory.failed) continue;
+            const status = getWorldbookStatus(memory);
+            if (!memory.result || status === 'failed') continue;
             if (memory.result[category] && memory.result[category][entryName]) {
                 sources.push({
                     memoryIndex: i,
@@ -67,18 +89,17 @@
         updateStreamContent(`\n🎲 开始重Roll: ${memory.title} (第${index + 1}章)\n`);
 
         try {
-            memory.processing = true;
+            setWorldbookStatus(memory, 'generating');
             updateMemoryQueueUI();
 
             const result = await processMemoryChunkIndependent({ index, retryCount: 0, customPromptSuffix: customPrompt });
 
-            memory.processing = false;
+            setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
 
             if (result) {
                 await MemoryHistoryDB.saveRollResult(index, result);
                 memory.result = result;
-                memory.processed = true;
-                memory.failed = false;
+                setWorldbookStatus(memory, 'done');
                 await mergeWorldbookDataWithHistory({
                     target: AppState.worldbook.generated,
                     source: result,
@@ -91,7 +112,11 @@
                 return result;
             }
         } catch (error) {
-            memory.processing = false;
+            if (error.message !== 'ABORTED') {
+                setWorldbookStatus(memory, 'failed', error.message);
+            } else {
+                setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
+            }
             if (error.message !== 'ABORTED') {
                 updateStreamContent(`❌ 重Roll失败: ${error.message}\n`);
             }

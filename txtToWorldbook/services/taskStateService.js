@@ -22,7 +22,7 @@ export function createTaskStateService(deps = {}) {
 
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
-    const TASK_STATE_VERSION = '3.5.1';
+    const TASK_STATE_VERSION = '3.6.0';
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
@@ -57,6 +57,11 @@ export function createTaskStateService(deps = {}) {
         const parsed = parseInt(value, 10);
         if (!Number.isFinite(parsed)) return fallback;
         return Math.max(min, Math.min(max, parsed));
+    }
+
+    function normalizePipelineStatus(status, fallback = 'pending') {
+        const value = String(status || '').trim().toLowerCase();
+        return ['pending', 'generating', 'done', 'failed'].includes(value) ? value : fallback;
     }
 
     function normalizeSplitType(type) {
@@ -152,12 +157,37 @@ export function createTaskStateService(deps = {}) {
             ? normalized.chapterTitle
             : `第${index + 1}章`;
         normalized.content = typeof normalized.content === 'string' ? normalized.content : '';
-        normalized.processed = normalized.processed === true;
-        normalized.failed = normalized.failed === true;
+        const legacyProcessed = normalized.processed === true;
+        const legacyFailed = normalized.failed === true;
+        const worldbookStatus = normalizePipelineStatus(
+            normalized.worldbookStatus,
+            legacyFailed ? 'failed' : (legacyProcessed ? 'done' : (normalized.processing === true ? 'generating' : 'pending'))
+        );
+        const directorStatus = normalizePipelineStatus(
+            normalized.directorStatus,
+            normalizePipelineStatus(normalized.chapterOutlineStatus, 'pending')
+        );
+
+        normalized.worldbookStatus = worldbookStatus;
+        normalized.worldbookError = typeof normalized.worldbookError === 'string'
+            ? normalized.worldbookError
+            : (typeof normalized.failedError === 'string' ? normalized.failedError : '');
+        normalized.worldbookProcessing = false;
+
+        normalized.directorStatus = directorStatus;
+        normalized.directorError = typeof normalized.directorError === 'string'
+            ? normalized.directorError
+            : (typeof normalized.chapterOutlineError === 'string' ? normalized.chapterOutlineError : '');
+        normalized.directorProcessing = false;
+
+        normalized.processed = worldbookStatus === 'done' || worldbookStatus === 'failed';
+        normalized.failed = worldbookStatus === 'failed';
         normalized.processing = false;
         normalized.chapterOutline = typeof normalized.chapterOutline === 'string' ? normalized.chapterOutline : '';
-        normalized.chapterOutlineStatus = normalized.chapterOutlineStatus || 'pending';
-        normalized.chapterOutlineError = typeof normalized.chapterOutlineError === 'string' ? normalized.chapterOutlineError : '';
+        normalized.chapterOutlineStatus = directorStatus;
+        normalized.chapterOutlineError = typeof normalized.chapterOutlineError === 'string'
+            ? normalized.chapterOutlineError
+            : (directorStatus === 'failed' ? normalized.directorError : '');
         normalized.chapterScript = normalizeChapterScript(normalized.chapterScript);
         normalized.chapterOpeningPreview = typeof normalized.chapterOpeningPreview === 'string' ? normalized.chapterOpeningPreview : '';
         normalized.chapterOpeningSent = normalized.chapterOpeningSent === true;
@@ -188,6 +218,24 @@ export function createTaskStateService(deps = {}) {
     function clampStartIndex(value, queueLength) {
         if (queueLength <= 0) return 0;
         return clampInt(value, 0, Math.max(0, queueLength - 1), 0);
+    }
+
+    function getWorldbookStatus(memory = {}) {
+        const status = normalizePipelineStatus(memory.worldbookStatus, '');
+        if (status) return status;
+        if (memory.failed === true) return 'failed';
+        if (memory.processed === true) return 'done';
+        if (memory.processing === true) return 'generating';
+        return 'pending';
+    }
+
+    function isWorldbookReady(memory = {}) {
+        const status = getWorldbookStatus(memory);
+        return status === 'done' || status === 'failed';
+    }
+
+    function isWorldbookDone(memory = {}) {
+        return getWorldbookStatus(memory) === 'done';
     }
 
     async function saveTaskState() {
@@ -239,7 +287,7 @@ export function createTaskStateService(deps = {}) {
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
-        const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
+        const processedCount = AppState.memory.queue.filter((m) => isWorldbookReady(m)).length;
         ErrorHandler.showUserSuccess(`工程包已导出！已处理: ${processedCount}/${AppState.memory.queue.length}（含故事大纲与当前章节进度）`);
     }
 
@@ -305,7 +353,7 @@ export function createTaskStateService(deps = {}) {
                     rebuildWorldbookFromMemories();
                 }
 
-                const firstUnprocessed = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
+                const firstUnprocessed = AppState.memory.queue.findIndex((m) => !isWorldbookDone(m));
                 if (state.queueState && typeof state.queueState === 'object') {
                     AppState.memory.startIndex = clampStartIndex(state.queueState.startIndex, AppState.memory.queue.length);
                     AppState.memory.userSelectedIndex = Number.isInteger(state.queueState.userSelectedIndex)
@@ -330,7 +378,7 @@ export function createTaskStateService(deps = {}) {
                     updateWorldbookPreview();
                 }
 
-                const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
+                const processedCount = AppState.memory.queue.filter((m) => isWorldbookReady(m)).length;
                 ErrorHandler.showUserSuccess(`工程包导入成功！已处理: ${processedCount}/${AppState.memory.queue.length}（已恢复故事大纲与当前章节进度）`);
                 document.getElementById('ttw-start-btn').disabled = false;
             } catch (error) {
@@ -358,7 +406,7 @@ export function createTaskStateService(deps = {}) {
 
             for (let i = 0; i < AppState.memory.queue.length; i++) {
                 const memory = AppState.memory.queue[i];
-                if (memory.processed && !memory.failed && !memory.result) {
+                if (isWorldbookDone(memory) && !memory.result) {
                     try {
                         const rollResults = await MemoryHistoryDB.getRollResults(i);
                         if (rollResults.length > 0) {
@@ -381,7 +429,7 @@ export function createTaskStateService(deps = {}) {
             if (AppState.processing.volumeMode) updateVolumeIndicator();
 
             if (Object.keys(AppState.worldbook.generated).length === 0) {
-                const hasProcessedWithResult = AppState.memory.queue.some((m) => m.processed && !m.failed && m.result);
+                const hasProcessedWithResult = AppState.memory.queue.some((m) => isWorldbookDone(m) && m.result);
                 if (hasProcessedWithResult) {
                     rebuildWorldbookFromMemories();
                 }
@@ -398,7 +446,7 @@ export function createTaskStateService(deps = {}) {
         try {
             const savedState = await MemoryHistoryDB.loadState();
             if (savedState && savedState.memoryQueue && savedState.memoryQueue.length > 0) {
-                const processedCount = savedState.memoryQueue.filter((m) => m.processed).length;
+                const processedCount = savedState.memoryQueue.filter((m) => isWorldbookReady(m)).length;
                 if (await confirmAction(`检测到未完成任务\n已处理: ${processedCount}/${savedState.memoryQueue.length}\n\n是否恢复？`, { title: '恢复未完成任务' })) {
                     AppState.memory.queue = normalizeMemoryQueue(savedState.memoryQueue);
                     AppState.worldbook.generated = savedState.generatedWorldbook && typeof savedState.generatedWorldbook === 'object'
@@ -426,7 +474,7 @@ export function createTaskStateService(deps = {}) {
                             ? clampStartIndex(savedState.queueState.userSelectedIndex, AppState.memory.queue.length)
                             : null;
                     } else {
-                        AppState.memory.startIndex = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
+                        AppState.memory.startIndex = AppState.memory.queue.findIndex((m) => !isWorldbookDone(m));
                         if (AppState.memory.startIndex === -1) AppState.memory.startIndex = AppState.memory.queue.length;
                         AppState.memory.userSelectedIndex = null;
                     }

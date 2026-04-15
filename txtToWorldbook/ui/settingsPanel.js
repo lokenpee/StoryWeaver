@@ -67,7 +67,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.6.3';
+const PLUGIN_VERSION = 'v3.6.5';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -105,12 +105,8 @@ function buildParallelConfigHtml() {
             </select>
         </div>
         <div style="margin-top:10px;">
-            <select id="ttw-chapter-completion-mode" class="ttw-select">
-                <option value="consistency">🧩 一致性优先 - 主+导演都完成后再标记章节完成</option>
-                <option value="throughput">⚡ 吞吐优先 - 主API先落地，导演异步后补</option>
-            </select>
-            <div class="ttw-setting-hint" style="margin-top:6px;">
-                建议默认使用一致性优先；吞吐优先更快，但章节大纲可能稍后补齐。
+            <div class="ttw-setting-hint" style="padding:8px 10px;background:rgba(255,255,255,0.06);border-radius:6px;">
+                当前版本已固定为“双流水线独立模式”：世界书与导演按各自上一章放行并行推进，互不等待。
             </div>
         </div>
     </div>`;
@@ -709,9 +705,6 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const parallelModeEl = document.getElementById('ttw-parallel-mode');
     if (parallelModeEl) parallelModeEl.value = AppState.config.parallel.mode;
-
-    const chapterCompletionModeEl = document.getElementById('ttw-chapter-completion-mode');
-    if (chapterCompletionModeEl) chapterCompletionModeEl.value = AppState.settings.chapterCompletionMode || 'consistency';
 
     const useTavernApiEl = document.getElementById('ttw-use-tavern-api');
     if (useTavernApiEl) {

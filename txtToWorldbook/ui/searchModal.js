@@ -58,9 +58,14 @@ export function createSearchModal(deps = {}) {
         const results = [];
         const memoryIndicesSet = new Set();
 
+        const isWorldbookFailed = (memory) => {
+            const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            return status === 'failed';
+        };
+
         for (let i = 0; i < AppState.memory.queue.length; i++) {
             const memory = AppState.memory.queue[i];
-            if (!memory.result || memory.failed) continue;
+            if (!memory.result || isWorldbookFailed(memory)) continue;
 
             for (const category in memory.result) {
                 for (const entryName in memory.result[category]) {

@@ -21,6 +21,22 @@
         updateWorldbookPreview,
     } = deps;
 
+    function setWorldbookStatus(memory, status, error = '') {
+        const next = ['pending', 'generating', 'done', 'failed'].includes(String(status || '').toLowerCase())
+            ? String(status).toLowerCase()
+            : 'pending';
+        memory.worldbookStatus = next;
+        memory.worldbookError = next === 'failed' ? String(error || '未知错误') : '';
+        memory.processed = next === 'done' || next === 'failed';
+        memory.failed = next === 'failed';
+        memory.processing = next === 'generating';
+        if (next === 'failed') {
+            memory.failedError = memory.worldbookError;
+        } else if (next !== 'generating') {
+            memory.failedError = '';
+        }
+    }
+
     function buildRerollSourcesHtml(sources) {
         if (sources.length === 0) {
             return '<div style="color:#e74c3c;font-size:12px;">⚠️ 未找到该条目的来源章节（可能是默认条目或导入条目）</div>';
@@ -549,8 +565,7 @@
             try { parsed = JSON.parse(editor.value); }
             catch (e) { ErrorHandler.showUserError('JSON格式错误！\n\n' + e.message); return; }
             memory.result = parsed;
-            memory.processed = true;
-            memory.failed = false;
+            setWorldbookStatus(memory, 'done');
             try { await MemoryHistoryDB.saveRollResult(index, parsed); }
             catch (dbErr) { Logger.error('DB', '保存到数据库失败:', dbErr); }
             rebuildWorldbookFromMemories();
@@ -600,9 +615,7 @@
             }
             try {
                 memory.result = resultToUse;
-                memory.processed = true;
-                memory.failed = false;
-                memory.failedError = null;
+                setWorldbookStatus(memory, 'done');
                 await MemoryHistoryDB.saveRollResult(index, resultToUse);
                 rebuildWorldbookFromMemories();
                 updateMemoryQueueUI();

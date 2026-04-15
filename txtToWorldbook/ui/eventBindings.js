@@ -518,10 +518,6 @@ export function bindSettingEvents(deps = {}) {
             saveCurrentSettings();
         } },
         '#ttw-parallel-mode': { change: (e) => { AppState.config.parallel.mode = e.target.value; saveCurrentSettings(); } },
-        '#ttw-chapter-completion-mode': { change: (e) => {
-            AppState.settings.chapterCompletionMode = e.target.value === 'throughput' ? 'throughput' : 'consistency';
-            saveCurrentSettings();
-        } },
         '#ttw-volume-mode': { change: (e) => { AppState.processing.volumeMode = e.target.checked; const indicator = document.getElementById('ttw-volume-indicator'); if (indicator) indicator.style.display = AppState.processing.volumeMode ? 'block' : 'none'; } },
         '#ttw-rechunk-btn': { click: rechunkMemories },
         '#ttw-add-category': { click: showAddCategoryModal },

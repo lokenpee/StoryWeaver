@@ -346,7 +346,11 @@ export function createChapterExperienceView(deps = {}) {
     }
 
     function countProcessedMemories() {
-        return AppState.memory.queue.filter((item) => item && item.processed).length;
+        return AppState.memory.queue.filter((item) => {
+            if (!item) return false;
+            const status = String(item.worldbookStatus || '').trim().toLowerCase();
+            return status === 'done' || status === 'failed';
+        }).length;
     }
 
     function parseNodeLines(text) {

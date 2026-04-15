@@ -206,7 +206,7 @@ export const defaultSettings = {
     parallelMainConcurrency: 2,
     parallelDirectorConcurrency: 2,
     parallelMode: 'independent',
-    chapterCompletionMode: 'throughput',
+    chapterCompletionMode: 'independent',
     useTavernApi: true,
     customMergePrompt: '',
     customConsolidatePrompt: '',

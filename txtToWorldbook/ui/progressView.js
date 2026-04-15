@@ -23,13 +23,29 @@ export function createProgressView(deps = {}) {
 
     function updateProgress(percent, text) {
         document.getElementById('ttw-progress-fill').style.width = `${percent}%`;
-        document.getElementById('ttw-progress-text').textContent = text;
 
-        const failedCount = AppState.memory.queue.filter((m) => m.failed).length;
+        const worldbookCompleted = AppState.memory.queue.filter((memory) => {
+            const status = String(memory?.worldbookStatus || '').trim().toLowerCase();
+            return status === 'done' || status === 'failed';
+        }).length;
+        const directorCompleted = AppState.memory.queue.filter((memory) => {
+            const status = String(memory?.directorStatus || memory?.chapterOutlineStatus || '').trim().toLowerCase();
+            return status === 'done' || status === 'failed';
+        }).length;
+        const total = AppState.memory.queue.length;
+        const suffix = total > 0
+            ? ` | 世界书 ${worldbookCompleted}/${total} | 导演 ${directorCompleted}/${total}`
+            : '';
+        document.getElementById('ttw-progress-text').textContent = `${text}${suffix}`;
+
+        const failedCount = AppState.memory.queue.filter((m) => {
+            const status = String(m?.worldbookStatus || '').trim().toLowerCase();
+            return status === 'failed';
+        }).length;
         const repairBtn = document.getElementById('ttw-repair-btn');
         if (failedCount > 0) {
             repairBtn.style.display = 'inline-block';
-            repairBtn.textContent = `🔧 修复失败 (${failedCount})`;
+            repairBtn.textContent = `🔧 修复世界书失败 (${failedCount})`;
         } else {
             repairBtn.style.display = 'none';
         }
