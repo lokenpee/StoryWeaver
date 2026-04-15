@@ -304,7 +304,7 @@ export function createChapterExperienceView(deps = {}) {
         const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
         const eventSummary = toShortText(
             source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${idx + 1}`,
-            90
+            200
         );
         const entryEvent = toShortText(
             source.entryEvent
@@ -758,14 +758,14 @@ export function createChapterExperienceView(deps = {}) {
     }
 
     function deriveOutlineFromContent(memory) {
-        const raw = toShortText(memory.content || '', 140);
+        const raw = toShortText(memory.content || '', 200);
         if (!raw) return `${memory.chapterTitle}剧情推进。`;
         const firstSentence = raw.split(/[。！？!?]/).map((s) => s.trim()).filter(Boolean).slice(0, 2).join('，');
         return firstSentence || raw;
     }
 
     function deriveScriptFromOutline(outline) {
-        const text = toShortText(outline, 160);
+        const text = toShortText(outline, 200);
         const nodes = text
             .split(/[，,。]/)
             .map((node) => node.trim())

@@ -980,7 +980,7 @@
         const points = Array.isArray(splitPoints) ? splitPoints : [];
         const lastIdx = list.length - 1;
         return list.map((seg, idx) => {
-            const summary = toShortOutline(seg, 36) || `第${chapterIndex}章节拍${idx + 1}`;
+            const summary = toShortOutline(seg, 200) || `第${chapterIndex}章节拍${idx + 1}`;
             const tags = idx === 0 ? ['开场'] : (idx === lastIdx ? ['收束'] : ['推进']);
             // split_points are boundaries between beats, so beat-1 has no preceding split point.
             const pointIndex = (points.length > 0 && idx > 0)
@@ -1652,8 +1652,8 @@
     }
 
     function normalizeToNewContract(parsed, memory, index, meta = {}) {
-        const fallbackOutline = toShortOutline(memory?.content || '', 140) || `${memory?.chapterTitle || `第${index + 1}章`}剧情推进。`;
-        const outline = toShortOutline(parsed?.outline || parsed?.summary || parsed?.chapter_outline || '', 140) || fallbackOutline;
+        const fallbackOutline = toShortOutline(memory?.content || '', 200) || `${memory?.chapterTitle || `第${index + 1}章`}剧情推进。`;
+        const outline = toShortOutline(parsed?.outline || parsed?.summary || parsed?.chapter_outline || '', 200) || fallbackOutline;
 
         const parsedScriptCandidate = parsed?.script || parsed?.chapterScript || null;
         if (parsedScriptCandidate && typeof parsedScriptCandidate === 'object' && Array.isArray(parsedScriptCandidate.beats)) {

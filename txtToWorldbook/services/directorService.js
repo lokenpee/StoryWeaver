@@ -140,7 +140,7 @@ export function createDirectorService(deps = {}) {
             : [];
         return {
             id: String(source.id || `b${idx + 1}`),
-            summary: toShortText(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${idx + 1}`, 100),
+            summary: toShortText(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${idx + 1}`, 200),
             entryEvent: toShortText(
                 source.entryEvent
                 || source.entry_event
@@ -576,8 +576,8 @@ export function createDirectorService(deps = {}) {
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
-        const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 88) || '当前节拍';
-        const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 88) || '下一节拍';
+        const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 200) || '当前节拍';
+        const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 200) || '下一节拍';
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const mode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const startAnchor = toShortText(context.start_anchor || '', 160);
@@ -967,7 +967,7 @@ export function createDirectorService(deps = {}) {
 
         const prompt = buildDirectorPrompt({
             chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
-            chapterOutline: toShortText(memory.chapterOutline || '', 140),
+            chapterOutline: toShortText(memory.chapterOutline || '', 200),
             currentBeatIdx: lockedBeatIdx,
             beats,
             latestDialogue,
@@ -1017,7 +1017,7 @@ export function createDirectorService(deps = {}) {
         decision.latest_user_message = toShortText(latestUserMessage || '', 220);
 
         const nextBeat = beats[lockedBeatIdx + 1] || null;
-        const nextBeatSummary = toShortText(nextBeat?.summary || '', 120);
+        const nextBeatSummary = toShortText(nextBeat?.summary || '', 200);
         const nextBeatEntryEvent = toShortText(nextBeat?.entryEvent || '', 140);
         const nextBeatPreview200 = toHeadText(nextBeat?.original_text || '', 200)
             || (nextBeatSummary ? `摘要：${nextBeatSummary}` : '');
