@@ -20,6 +20,8 @@ export function createChapterExperienceView(deps = {}) {
         currentOpening: 'ttw-current-opening',
         chapterHint: 'ttw-current-chapter-hint',
         editButton: 'ttw-edit-current-chapter-btn',
+        prevBeatButton: 'ttw-prev-beat-btn',
+        nextBeatButton: 'ttw-next-beat-btn',
         nextButton: 'ttw-next-chapter-btn',
         startFirstButton: 'ttw-start-reading-first',
         viewTabs: 'ttw-view-nav',
@@ -346,11 +348,57 @@ export function createChapterExperienceView(deps = {}) {
     }
 
     function countProcessedMemories() {
-        return AppState.memory.queue.filter((item) => {
-            if (!item) return false;
-            const status = String(item.worldbookStatus || '').trim().toLowerCase();
-            return status === 'done' || status === 'failed';
-        }).length;
+        return AppState.memory.queue.filter((item) => item && item.processed).length;
+    }
+
+    async function persistCurrentState() {
+        if (!MemoryHistoryDB || typeof MemoryHistoryDB.saveState !== 'function') return;
+        try {
+            await MemoryHistoryDB.saveState(countProcessedMemories(), { immediate: true });
+        } catch (error) {
+            ErrorHandler.showUserError(`状态落盘失败：${error?.message || error}`);
+        }
+    }
+
+    async function switchCurrentBeat(offset = 0) {
+        ensureState();
+        const chapterIndex = Math.max(0, Math.min(AppState.experience.currentChapterIndex || 0, Math.max(0, AppState.memory.queue.length - 1)));
+        const memory = getMemory(chapterIndex);
+        if (!memory) {
+            ErrorHandler.showUserError('暂无可切换节拍的章节');
+            return;
+        }
+
+        ensureMemoryRuntime(memory, chapterIndex);
+        const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
+        const beatCount = beats.length;
+        if (beatCount <= 1) {
+            renderCurrentPanel();
+            ErrorHandler.showUserError('当前章节只有一个节拍，无法切换');
+            return;
+        }
+
+        const maxBeatIndex = beatCount - 1;
+        const currentBeatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
+            ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, maxBeatIndex))
+            : 0;
+        const targetBeatIndex = Math.max(0, Math.min(currentBeatIndex + offset, maxBeatIndex));
+
+        if (targetBeatIndex === currentBeatIndex) {
+            if (offset > 0) {
+                ErrorHandler.showUserError('已是最后一个节拍');
+            } else if (offset < 0) {
+                ErrorHandler.showUserError('已是第一个节拍');
+            }
+            renderCurrentPanel();
+            return;
+        }
+
+        memory.chapterCurrentBeatIndex = targetBeatIndex;
+        AppState.experience.currentBeatIndex = targetBeatIndex;
+        renderCurrentPanel();
+        await persistCurrentState();
+        ErrorHandler.showUserSuccess(`已切换到第${targetBeatIndex + 1}节拍（共${beatCount}节拍）`);
     }
 
     function parseNodeLines(text) {
@@ -891,6 +939,8 @@ export function createChapterExperienceView(deps = {}) {
         const scriptEl = document.getElementById(selectors.currentScript);
         const openingEl = document.getElementById(selectors.currentOpening);
         const hintEl = document.getElementById(selectors.chapterHint);
+        const prevBeatBtn = document.getElementById(selectors.prevBeatButton);
+        const nextBeatBtn = document.getElementById(selectors.nextBeatButton);
         const nextBtn = document.getElementById(selectors.nextButton);
 
         if (!memory) {
@@ -899,6 +949,8 @@ export function createChapterExperienceView(deps = {}) {
             if (scriptEl) scriptEl.innerHTML = '<div class="ttw-script-empty">暂无剧本数据</div>';
             if (openingEl) openingEl.textContent = '暂无开场白';
             if (hintEl) hintEl.textContent = '请先完成TXT处理。';
+            if (prevBeatBtn) prevBeatBtn.disabled = true;
+            if (nextBeatBtn) nextBeatBtn.disabled = true;
             if (nextBtn) nextBtn.disabled = true;
             return;
         }
@@ -907,6 +959,15 @@ export function createChapterExperienceView(deps = {}) {
 
         const title = memory.chapterTitle || `第${idx + 1}章`;
         const outline = memory.chapterOutline || deriveOutlineFromContent(memory);
+        const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
+        const beatCount = beats.length;
+        const maxBeatIndex = Math.max(0, beatCount - 1);
+        const currentBeatIndex = beatCount > 0
+            ? (Number.isInteger(memory.chapterCurrentBeatIndex)
+                ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, maxBeatIndex))
+                : 0)
+            : 0;
+        memory.chapterCurrentBeatIndex = currentBeatIndex;
         if (!memory.chapterOutline) {
             memory.chapterOutline = outline;
         }
@@ -930,17 +991,26 @@ export function createChapterExperienceView(deps = {}) {
         }
 
         const isLast = idx >= AppState.memory.queue.length - 1;
+        if (prevBeatBtn) {
+            prevBeatBtn.disabled = beatCount <= 1 || currentBeatIndex <= 0;
+        }
+        if (nextBeatBtn) {
+            nextBeatBtn.disabled = beatCount <= 1 || currentBeatIndex >= maxBeatIndex;
+        }
         if (nextBtn) {
             nextBtn.disabled = isLast;
             nextBtn.textContent = isLast ? '⏹ 已是最后一章' : '⏭ 下一章';
         }
         if (hintEl) {
+            const beatHint = beatCount > 1
+                ? `当前节拍：${currentBeatIndex + 1}/${beatCount}。可点按钮切换，也可在输入中写“上一节拍/下一节拍”触发。`
+                : '当前章仅1个节拍，暂不可切换。';
             if (isLast) {
-                hintEl.textContent = '当前已到最后一章。';
+                hintEl.textContent = `当前已到最后一章。${beatHint}`;
             } else if (idx === 0) {
-                hintEl.textContent = '首章由“开始阅读第一章”触发开场白；后续章节由“下一章”触发。';
+                hintEl.textContent = `首章由“开始阅读第一章”触发开场白；后续章节由“下一章”触发。${beatHint}`;
             } else {
-                hintEl.textContent = '点击“下一章”将进入下一章并自动发送其开场白。';
+                hintEl.textContent = `点击“下一章”将进入下一章并自动发送其开场白。${beatHint}`;
             }
         }
     }
@@ -1348,6 +1418,22 @@ export function createChapterExperienceView(deps = {}) {
     }
 
     function bindCurrentEvents() {
+        const prevBeatBtn = document.getElementById(selectors.prevBeatButton);
+        if (prevBeatBtn && !prevBeatBtn.dataset.bound) {
+            prevBeatBtn.dataset.bound = '1';
+            prevBeatBtn.addEventListener('click', async () => {
+                await switchCurrentBeat(-1);
+            });
+        }
+
+        const nextBeatBtn = document.getElementById(selectors.nextBeatButton);
+        if (nextBeatBtn && !nextBeatBtn.dataset.bound) {
+            nextBeatBtn.dataset.bound = '1';
+            nextBeatBtn.addEventListener('click', async () => {
+                await switchCurrentBeat(1);
+            });
+        }
+
         const nextBtn = document.getElementById(selectors.nextButton);
         if (nextBtn && !nextBtn.dataset.bound) {
             nextBtn.dataset.bound = '1';

@@ -67,7 +67,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.6.7';
+const PLUGIN_VERSION = 'v3.6.8';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -572,8 +572,12 @@ function buildResultSectionHtml() {
             <div id="ttw-current-chapter-section" class="ttw-story-panel" style="display:none;">
                 <div class="ttw-story-panel-header">
                     <h4 id="ttw-current-chapter-title">当前章节概览</h4>
-                    <button id="ttw-edit-current-chapter-btn" class="ttw-btn ttw-btn-small">✏️ 编辑章节概览</button>
-                    <button id="ttw-next-chapter-btn" class="ttw-btn ttw-btn-small">⏭ 下一章</button>
+                    <div class="ttw-current-panel-actions">
+                        <button id="ttw-edit-current-chapter-btn" class="ttw-btn ttw-btn-small">✏️ 编辑章节概览</button>
+                        <button id="ttw-prev-beat-btn" class="ttw-btn ttw-btn-small">⏮ 上一节拍</button>
+                        <button id="ttw-next-beat-btn" class="ttw-btn ttw-btn-small">⏭ 下一节拍</button>
+                        <button id="ttw-next-chapter-btn" class="ttw-btn ttw-btn-small">⏭ 下一章</button>
+                    </div>
                 </div>
                 <div id="ttw-current-chapter-hint" class="ttw-current-hint">进入章节后将自动发送开场白。</div>
 

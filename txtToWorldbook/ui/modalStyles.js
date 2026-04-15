@@ -696,6 +696,18 @@ export function ensureModalStyles() {
             color: var(--ttw-text-primary);
         }
 
+        .ttw-current-panel-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .ttw-current-panel-actions .ttw-btn {
+            white-space: nowrap;
+        }
+
         .ttw-story-outline-list {
             display: flex;
             flex-direction: column;
@@ -1066,6 +1078,16 @@ export function ensureModalStyles() {
         }
 
         @media (max-width: 900px) {
+            .ttw-story-panel-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .ttw-current-panel-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
             .ttw-chapter-editor-grid {
                 grid-template-columns: 1fr;
             }
