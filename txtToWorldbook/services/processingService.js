@@ -88,85 +88,6 @@
         return `run-${Date.now()}-${seed}`;
     }
 
-    function normalizePipelineStatus(status, fallback = 'pending') {
-        const value = String(status || '').trim().toLowerCase();
-        return ['pending', 'generating', 'done', 'failed'].includes(value) ? value : fallback;
-    }
-
-    function inferWorldbookStatus(memory) {
-        const explicit = normalizePipelineStatus(memory?.worldbookStatus, '');
-        if (explicit) return explicit;
-        if (memory?.failed === true) return 'failed';
-        if (memory?.processed === true) return 'done';
-        if (memory?.processing === true) return 'generating';
-        return 'pending';
-    }
-
-    function inferDirectorStatus(memory) {
-        const explicit = normalizePipelineStatus(memory?.directorStatus, '');
-        if (explicit) return explicit;
-        const outlineStatus = normalizePipelineStatus(memory?.chapterOutlineStatus, 'pending');
-        if (outlineStatus !== 'pending') return outlineStatus;
-        return 'pending';
-    }
-
-    function syncLegacyCompletionFlags(memory) {
-        if (!memory) return;
-        const worldbookStatus = normalizePipelineStatus(memory.worldbookStatus, inferWorldbookStatus(memory));
-        const directorStatus = normalizePipelineStatus(memory.directorStatus, inferDirectorStatus(memory));
-
-        memory.worldbookStatus = worldbookStatus;
-        memory.directorStatus = directorStatus;
-        memory.worldbookProcessing = worldbookStatus === 'generating';
-        memory.directorProcessing = directorStatus === 'generating';
-
-        memory.processed = worldbookStatus === 'done' || worldbookStatus === 'failed';
-        memory.failed = worldbookStatus === 'failed';
-        memory.processing = worldbookStatus === 'generating';
-        if (memory.failed && !String(memory.failedError || '').trim() && String(memory.worldbookError || '').trim()) {
-            memory.failedError = memory.worldbookError;
-        }
-
-        memory.chapterOutlineStatus = directorStatus;
-        if (directorStatus !== 'failed') {
-            memory.chapterOutlineError = '';
-        } else if (String(memory.directorError || '').trim()) {
-            memory.chapterOutlineError = memory.directorError;
-        }
-    }
-
-    function setWorldbookStatus(memory, status, error = '') {
-        if (!memory) return;
-        memory.worldbookStatus = normalizePipelineStatus(status, 'pending');
-        if (memory.worldbookStatus === 'failed') {
-            memory.worldbookError = String(error || '未知错误');
-        } else if (memory.worldbookStatus !== 'generating') {
-            memory.worldbookError = '';
-        }
-        syncLegacyCompletionFlags(memory);
-    }
-
-    function setDirectorStatus(memory, status, error = '') {
-        if (!memory) return;
-        memory.directorStatus = normalizePipelineStatus(status, 'pending');
-        if (memory.directorStatus === 'failed') {
-            memory.directorError = String(error || '未知错误');
-        } else if (memory.directorStatus !== 'generating') {
-            memory.directorError = '';
-        }
-        syncLegacyCompletionFlags(memory);
-    }
-
-    function isWorldbookReady(memory) {
-        const status = normalizePipelineStatus(memory?.worldbookStatus, inferWorldbookStatus(memory));
-        return status === 'done' || status === 'failed';
-    }
-
-    function isDirectorReady(memory) {
-        const status = normalizePipelineStatus(memory?.directorStatus, inferDirectorStatus(memory));
-        return status === 'done' || status === 'failed';
-    }
-
     function isRunActive(runId) {
         if (!runId) return true;
         return AppState.processing.runId === runId && !AppState.processing.isStopped;
@@ -236,6 +157,38 @@
         }
     }
 
+    function ensurePendingChapterAssetsSet() {
+        if (!(AppState.processing.pendingChapterAssets instanceof Set)) {
+            AppState.processing.pendingChapterAssets = new Set();
+        }
+        return AppState.processing.pendingChapterAssets;
+    }
+
+    function trackBackgroundChapterAssets(promise) {
+        if (!promise || typeof promise.then !== 'function') return promise;
+        const pendingSet = ensurePendingChapterAssetsSet();
+        const tracked = Promise.resolve(promise)
+            .catch(() => null)
+            .finally(() => {
+                pendingSet.delete(tracked);
+            });
+        pendingSet.add(tracked);
+        return promise;
+    }
+
+    async function flushBackgroundChapterAssets(runId) {
+        const pendingSet = ensurePendingChapterAssetsSet();
+        const pending = Array.from(pendingSet);
+        if (pending.length === 0) return;
+        if (!isRunActive(runId)) return;
+
+        updateStreamContent(`⏳ 等待导演资产补齐 (${pending.length})...\n`);
+        await Promise.allSettled(pending);
+
+        if (!isRunActive(runId)) return;
+        updateStreamContent('✅ 导演资产补齐完成\n');
+    }
+
     function queueStateSave(processedIndex) {
         Promise.resolve(MemoryHistoryDB.saveState(processedIndex)).catch((error) => {
             debugLog(`状态保存失败(queued): ${error?.message || error}`);
@@ -246,7 +199,7 @@
         await MemoryHistoryDB.saveState(processedIndex, { immediate: true });
     }
 
-    async function waitForPreviousWorldbookReady(index, runId, timeoutMs = 90000) {
+    async function waitForPreviousChapterReady(index, runId, timeoutMs = 90000) {
         if (index <= 0) return;
         const startedAt = Date.now();
 
@@ -254,34 +207,14 @@
             throwIfRunInactive(runId);
             const previousMemory = AppState.memory.queue[index - 1];
             if (!previousMemory) return;
-            ensureChapterRuntime(previousMemory, index - 1);
 
-            const chapterReady = isWorldbookReady(previousMemory);
+            const chapterReady = previousMemory.processed || previousMemory.failed
+                || previousMemory.chapterOutlineStatus === 'done'
+                || previousMemory.chapterOutlineStatus === 'failed';
             if (chapterReady) return;
 
             if (Date.now() - startedAt > timeoutMs) {
-                updateStreamContent(`⚠️ [第${index + 1}章][主API] 等待上一章世界书完成超时，已降级为继续处理\n`);
-                return;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 120));
-        }
-    }
-
-    async function waitForPreviousDirectorReady(index, runId, timeoutMs = 90000) {
-        if (index <= 0) return;
-        const startedAt = Date.now();
-
-        while (true) {
-            throwIfRunInactive(runId);
-            const previousMemory = AppState.memory.queue[index - 1];
-            if (!previousMemory) return;
-            ensureChapterRuntime(previousMemory, index - 1);
-
-            if (isDirectorReady(previousMemory)) return;
-
-            if (Date.now() - startedAt > timeoutMs) {
-                updateStreamContent(`⚠️ [第${index + 1}章][导演API] 等待上一章导演结果超时，已降级为继续处理\n`);
+                updateStreamContent(`⚠️ [第${index + 1}章] 等待上一章完成超时，已降级为继续处理\n`);
                 return;
             }
 
@@ -332,6 +265,11 @@
             message.includes('etimedout') ||
             message.includes('eai_again')
         );
+    }
+
+    function resolveChapterCompletionMode() {
+        const mode = String(AppState.settings?.chapterCompletionMode || '').trim().toLowerCase();
+        return mode === 'throughput' ? 'throughput' : 'consistency';
     }
 
     function compactErrorMessage(error) {
@@ -435,22 +373,6 @@
         if (typeof memory.chapterOpeningError !== 'string') {
             memory.chapterOpeningError = '';
         }
-
-        if (typeof memory.worldbookError !== 'string') {
-            memory.worldbookError = '';
-        }
-        if (typeof memory.directorError !== 'string') {
-            memory.directorError = '';
-        }
-        memory.worldbookStatus = inferWorldbookStatus(memory);
-        memory.directorStatus = inferDirectorStatus(memory);
-        if (memory.worldbookStatus === 'failed' && !memory.worldbookError && typeof memory.failedError === 'string') {
-            memory.worldbookError = memory.failedError;
-        }
-        if (memory.directorStatus === 'failed' && !memory.directorError && typeof memory.chapterOutlineError === 'string') {
-            memory.directorError = memory.chapterOutlineError;
-        }
-        syncLegacyCompletionFlags(memory);
     }
 
     function normalizeSelfCheck(rawValue, extraWarnings = []) {
@@ -1974,11 +1896,11 @@
 
         throwIfRunInactive(runId);
 
-        // 导演流水线只依赖上一章导演状态。
-        await waitForPreviousDirectorReady(index, runId);
+        // 一致性优先：尽量等上一章状态落稳后再构造“上一章摘要”上下文。
+        await waitForPreviousChapterReady(index, runId);
         throwIfRunInactive(runId);
 
-        if (!force && memory.directorStatus === 'done' && memory.chapterOutline) {
+        if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
             return {
                 outline: memory.chapterOutline,
                 script: memory.chapterScript,
@@ -1986,7 +1908,8 @@
         }
 
         throwIfRunInactive(runId);
-        setDirectorStatus(memory, 'generating');
+        memory.chapterOutlineStatus = 'generating';
+        memory.chapterOutlineError = '';
         updateMemoryQueueUI();
 
         let lastError = null;
@@ -2003,7 +1926,8 @@
             } else {
                 memory.chapterCurrentBeatIndex = 0;
             }
-            setDirectorStatus(memory, 'done');
+            memory.chapterOutlineStatus = 'done';
+            memory.chapterOutlineError = '';
             updateStreamContent(`✅ [第${index + 1}章][导演API] 章节资产校验通过，source=${source}, beats=${beatCount}\n`);
             updateMemoryQueueUI();
             return assets;
@@ -2065,12 +1989,12 @@
 
         throwIfRunInactive(runId);
 
-        const directorError = compactErrorMessage(lastError || new Error('大纲生成失败'));
-        setDirectorStatus(memory, 'failed', directorError);
-        updateStreamContent(`❌ [第${index + 1}章][导演API] 章节资产生成失败: ${directorError}\n`);
-        updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(directorError), { chapterIndex: index + 1, task: '导演API' })}\n`);
+        memory.chapterOutlineStatus = 'failed';
+        memory.chapterOutlineError = compactErrorMessage(lastError || new Error('大纲生成失败'));
+        updateStreamContent(`❌ [第${index + 1}章][导演API] 章节资产生成失败: ${memory.chapterOutlineError}\n`);
+        updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: '导演API' })}\n`);
         updateMemoryQueueUI();
-        throw lastError || new Error(directorError);
+        throw lastError || new Error(memory.chapterOutlineError);
     }
 
     async function processMemoryChunkIndependent(options) {
@@ -2088,11 +2012,11 @@
         if (!AppState.processing.isRerolling && AppState.processing.isStopped) throw new Error('ABORTED');
         throwIfRunInactive(runId);
 
-        await waitForPreviousWorldbookReady(index, runId);
+        await waitForPreviousChapterReady(index, runId);
         throwIfRunInactive(runId);
 
         ensureChapterRuntime(memory, index);
-        setWorldbookStatus(memory, 'generating');
+        memory.processing = true;
         updateMemoryQueueUI();
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
@@ -2132,68 +2056,88 @@
             prompt += `\n\n${AppState.settings.customSuffixPrompt.trim()}`;
         }
 
-        updateStreamContent(`\n🔄 [第${chapterIndex}章][主API] 开始处理: ${memory.title}\n`);
+        updateStreamContent(`\n🔄 [第${chapterIndex}章] 开始处理: ${memory.title}\n`);
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
-        updateStreamContent(`📡 [第${chapterIndex}章] 已发起主API世界书任务\n`);
+        updateStreamContent(`📡 [第${chapterIndex}章] 已发起并行子任务：主API世界书 + 导演API章节资产\n`);
 
+        let chapterAssetsPromise = null;
+        const throughputMode = resolveChapterCompletionMode() === 'throughput';
         try {
-            debugLog(`[第${chapterIndex}章][主API] 调用中...`);
-            updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
-            let response = '';
-            try {
-                response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
-                updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
-            } catch (apiError) {
-                if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
-                    updateStreamContent(`❌ [第${chapterIndex}章][主API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+            debugLog(`[第${chapterIndex}章] 启动并行子任务: 主API世界书 + 导演API章节资产`);
+            const worldbookPromise = (async () => {
+                debugLog(`[第${chapterIndex}章][主API] 调用中...`);
+                updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
+                let response = '';
+                try {
+                    response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
+                    updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                } catch (apiError) {
+                    if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
+                        updateStreamContent(`❌ [第${chapterIndex}章][主API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                    }
+                    throw apiError;
                 }
-                throw apiError;
+                throwIfRunInactive(runId);
+
+                debugLog(`[第${chapterIndex}章][主API] 检查TokenLimit...`);
+                if (isTokenLimitError(response)) throw new Error('Token limit exceeded');
+
+                debugLog(`[第${chapterIndex}章][主API] 解析AI响应...`);
+                let memoryUpdate = null;
+                try {
+                    memoryUpdate = parseAIResponse(response, { strict: false });
+                } catch (parseError) {
+                    updateStreamContent(`❌ [第${chapterIndex}章][主API] 响应解析失败: ${compactErrorMessage(parseError)}\n`);
+                    throw parseError;
+                }
+
+                debugLog(`[第${chapterIndex}章][主API] 后处理章节索引...`);
+                memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
+                updateStreamContent(`✅ [第${chapterIndex}章][主API] 世界书响应解析完成\n`);
+                return memoryUpdate;
+            })();
+
+            chapterAssetsPromise = (async () => {
+                try {
+                    return await generateChapterAssets(index, { taskId, force: true, runId });
+                } catch (error) {
+                    if (error?.message === 'ABORTED') throw error;
+                    // 章节大纲失败不阻断世界书主流程
+                    return null;
+                }
+            })();
+
+            let memoryUpdate = null;
+            if (throughputMode) {
+                memoryUpdate = await worldbookPromise;
+                if (chapterAssetsPromise) trackBackgroundChapterAssets(chapterAssetsPromise);
+                updateStreamContent(`🧩 [第${chapterIndex}章] 世界书已完成，导演资产后台补齐中\n`);
+            } else {
+                [memoryUpdate] = await Promise.all([worldbookPromise, chapterAssetsPromise]);
             }
             throwIfRunInactive(runId);
 
-            debugLog(`[第${chapterIndex}章][主API] 检查TokenLimit...`);
-            if (isTokenLimitError(response)) throw new Error('Token limit exceeded');
-
-            debugLog(`[第${chapterIndex}章][主API] 解析AI响应...`);
-            let memoryUpdate = null;
-            try {
-                memoryUpdate = parseAIResponse(response, { strict: false });
-            } catch (parseError) {
-                updateStreamContent(`❌ [第${chapterIndex}章][主API] 响应解析失败: ${compactErrorMessage(parseError)}\n`);
-                throw parseError;
-            }
-
-            debugLog(`[第${chapterIndex}章][主API] 后处理章节索引...`);
-            memoryUpdate = postProcessResultWithChapterIndex(memoryUpdate, chapterIndex);
-            memory.result = memoryUpdate;
-            memory.failedError = '';
-            setWorldbookStatus(memory, 'done');
-
             debugLog(`[第${chapterIndex}章] 处理完成`);
             updateStreamContent(`✅ [第${chapterIndex}章] 处理完成\n`);
-            updateMemoryQueueUI();
             return memoryUpdate;
 
         } catch (error) {
-            if (error.message === 'ABORTED') {
-                if (memory.worldbookStatus === 'generating') {
-                    setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
-                    updateMemoryQueueUI();
-                }
-                throw error;
-            }
+            memory.processing = false;
+            if (error.message === 'ABORTED') throw error;
 
             const brief = formatProcessingError(error, { chapterIndex, task: '主流程' });
             updateStreamContent(`❌ ${brief}\n`);
 
             if (isTokenLimitError(error.message)) {
-                setWorldbookStatus(memory, 'pending');
-                updateMemoryQueueUI();
+                if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                 throw new Error(`TOKEN_LIMIT:${index}`);
             }
 
             const canRetry = shouldRetryError(error);
             if (retryCount < maxRetries && isRunActive(runId) && canRetry) {
+                if (chapterAssetsPromise) {
+                    await chapterAssetsPromise.catch(() => null);
+                }
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
                 updateStreamContent(`🔄 [第${chapterIndex}章] ${delay / 1000}秒后重试...\n`);
                 await new Promise(resolve => setTimeout(resolve, delay));
@@ -2203,11 +2147,7 @@
             if (!canRetry) {
                 updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
             }
-
-            const worldbookError = compactErrorMessage(error);
-            setWorldbookStatus(memory, 'failed', worldbookError);
-            memory.failedError = worldbookError;
-            updateMemoryQueueUI();
+            if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
             throw error;
         }
     }
@@ -2219,10 +2159,8 @@
         const runId = AppState.processing.runId || null;
 
         for (let i = startIndex; i < endIndex && i < AppState.memory.queue.length; i++) {
-            const memory = AppState.memory.queue[i];
-            ensureChapterRuntime(memory, i);
-            if (memory.worldbookStatus === 'done') continue;
-            tasks.push({ index: i, memory });
+            if (AppState.memory.queue[i].processed && !AppState.memory.queue[i].failed) continue;
+            tasks.push({ index: i, memory: AppState.memory.queue[i] });
         }
 
         if (tasks.length === 0) return { tokenLimitIndices };
@@ -2256,17 +2194,15 @@ ${'='.repeat(50)}
                 return result;
             } catch (error) {
                 completed++;
+                task.memory.processing = false;
 
                 if (error.message === 'ABORTED') { updateMemoryQueueUI(); return null; }
                 if (error.message.startsWith('TOKEN_LIMIT:')) {
                     tokenLimitIndices.push(parseInt(error.message.split(':')[1], 10));
                 } else {
-                    const worldbookError = compactErrorMessage(error);
-                    setWorldbookStatus(task.memory, 'failed', worldbookError);
-                    task.memory.failedError = worldbookError;
-                    if (!AppState.memory.failedQueue.find((m) => m.index === task.index)) {
-                        AppState.memory.failedQueue.push({ index: task.index, memory: task.memory, error: worldbookError });
-                    }
+                    task.memory.failed = true;
+                    task.memory.failedError = error.message;
+                    task.memory.processed = true;
                 }
                 updateMemoryQueueUI();
                 return null;
@@ -2283,8 +2219,9 @@ ${'='.repeat(50)}
         const orderedTasks = tasks.filter(task => results.has(task.index)).sort((a, b) => a.index - b.index);
         for (const task of orderedTasks) {
             const result = results.get(task.index);
-            setWorldbookStatus(task.memory, 'done');
-            task.memory.failedError = '';
+            task.memory.processed = true;
+            task.memory.failed = false;
+            task.memory.processing = false;
             task.memory.result = result;
             await mergeWorldbookDataWithHistory({ target: AppState.worldbook.generated, source: result, memoryIndex: task.index, memoryTitle: task.memory.title });
             await MemoryHistoryDB.saveRollResult(task.index, result);
@@ -2303,7 +2240,7 @@ ${'='.repeat(50)}
 
         const runId = options.runId ?? AppState.processing.runId ?? null;
         throwIfRunInactive(runId);
-        await waitForPreviousWorldbookReady(index, runId);
+        await waitForPreviousChapterReady(index, runId);
         throwIfRunInactive(runId);
 
         const memory = AppState.memory.queue[index];
@@ -2315,9 +2252,9 @@ ${'='.repeat(50)}
 
         debugLog(`[串行][第${chapterIndex}章] 开始, 重试=${retryCount}`);
         updateProgress(progress, `正在处理: ${memory.title} (第${chapterIndex}章)${retryCount > 0 ? ` (重试 ${retryCount})` : ''}`);
-        updateStreamContent(`📡 [第${chapterIndex}章] 已发起主API世界书任务\n`);
+        updateStreamContent(`📡 [第${chapterIndex}章] 已发起并行子任务：主API世界书 + 导演API章节资产\n`);
 
-        setWorldbookStatus(memory, 'generating');
+        memory.processing = true;
         updateMemoryQueueUI();
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
@@ -2355,7 +2292,19 @@ ${'='.repeat(50)}
             prompt += '\n直接输出JSON格式结果。';
         }
 
+        let chapterAssetsPromise = null;
+        const throughputMode = resolveChapterCompletionMode() === 'throughput';
         try {
+            chapterAssetsPromise = (async () => {
+                try {
+                    return await generateChapterAssets(index, { taskId: chapterIndex, force: true, runId });
+                } catch (error) {
+                    if (error?.message === 'ABORTED') throw error;
+                    // 章节大纲失败不阻断世界书主流程
+                    return null;
+                }
+            })();
+
             debugLog(`[串行][第${chapterIndex}章] 主API调用中, prompt长度=${prompt.length}`);
             updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
             let response = '';
@@ -2371,7 +2320,8 @@ ${'='.repeat(50)}
             throwIfRunInactive(runId);
 
             if (AppState.processing.isStopped) {
-                setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
+                if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
+                memory.processing = false;
                 updateMemoryQueueUI();
                 return;
             }
@@ -2379,7 +2329,7 @@ ${'='.repeat(50)}
             debugLog(`[串行][第${chapterIndex}章] 检查TokenLimit...`);
             if (isTokenLimitError(response)) {
                 if (AppState.processing.volumeMode) {
-                    setWorldbookStatus(memory, 'pending');
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     handleStartNewVolume();
                     await flushStateSave(index);
                     await processMemoryChunk(index, 0, { runId });
@@ -2387,7 +2337,7 @@ ${'='.repeat(50)}
                 }
                 const splitResult = splitMemoryIntoTwo(index);
                 if (splitResult) {
-                    setWorldbookStatus(memory, 'pending');
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     updateMemoryQueueUI();
                     await flushStateSave(index);
                     await processMemoryChunk(index, 0, { runId });
@@ -2412,20 +2362,25 @@ ${'='.repeat(50)}
             debugLog(`[串行][第${chapterIndex}章] 保存Roll结果...`);
             await MemoryHistoryDB.saveRollResult(index, memoryUpdate);
 
+            if (chapterAssetsPromise && !throughputMode) {
+                await chapterAssetsPromise;
+            } else if (chapterAssetsPromise) {
+                trackBackgroundChapterAssets(chapterAssetsPromise);
+                updateStreamContent(`🧩 [第${chapterIndex}章] 世界书已完成，导演资产后台补齐中\n`);
+            }
             throwIfRunInactive(runId);
 
             debugLog(`[串行][第${chapterIndex}章] 完成`);
 
-            setWorldbookStatus(memory, 'done');
-            memory.failedError = '';
+            memory.processing = false;
+            memory.processed = true;
             memory.result = memoryUpdate;
             updateMemoryQueueUI();
 
         } catch (error) {
+            memory.processing = false;
+
             if (error?.message === 'ABORTED') {
-                if (memory.worldbookStatus === 'generating') {
-                    setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
-                }
                 updateMemoryQueueUI();
                 return;
             }
@@ -2435,7 +2390,7 @@ ${'='.repeat(50)}
 
             if (isTokenLimitError(error.message || '')) {
                 if (AppState.processing.volumeMode) {
-                    setWorldbookStatus(memory, 'pending');
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     handleStartNewVolume();
                     await flushStateSave(index);
                     await new Promise(r => setTimeout(r, 500));
@@ -2444,7 +2399,7 @@ ${'='.repeat(50)}
                 }
                 const splitResult = splitMemoryIntoTwo(index);
                 if (splitResult) {
-                    setWorldbookStatus(memory, 'pending');
+                    if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
                     updateMemoryQueueUI();
                     await flushStateSave(index);
                     await new Promise(r => setTimeout(r, 500));
@@ -2456,6 +2411,9 @@ ${'='.repeat(50)}
 
             const canRetry = shouldRetryError(error);
             if (retryCount < maxRetries && canRetry && isRunActive(runId)) {
+                if (chapterAssetsPromise) {
+                    await chapterAssetsPromise.catch(() => null);
+                }
                 const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000);
                 updateProgress(progress, `处理失败，${retryDelay / 1000}秒后重试`);
                 await new Promise(r => setTimeout(r, retryDelay));
@@ -2466,120 +2424,18 @@ ${'='.repeat(50)}
                 updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
             }
 
-            const worldbookError = compactErrorMessage(error);
-            setWorldbookStatus(memory, 'failed', worldbookError);
-            memory.failedError = worldbookError;
+            if (chapterAssetsPromise) chapterAssetsPromise.catch(() => null);
+
+            memory.processed = true;
+            memory.failed = true;
+            memory.failedError = error.message;
             if (!AppState.memory.failedQueue.find(m => m.index === index)) {
-                AppState.memory.failedQueue.push({ index, memory, error: worldbookError });
+                AppState.memory.failedQueue.push({ index, memory, error: error.message });
             }
             updateMemoryQueueUI();
         }
 
-        if (isWorldbookReady(memory)) await new Promise(r => setTimeout(r, 1000));
-    }
-
-    function shouldRunDirectorPipeline() {
-        return AppState.settings?.enableChapterOutline !== false;
-    }
-
-    function getWorldbookProcessedCount() {
-        return AppState.memory.queue.filter((memory, index) => {
-            ensureChapterRuntime(memory, index);
-            return isWorldbookReady(memory);
-        }).length;
-    }
-
-    function getDirectorProcessedCount() {
-        return AppState.memory.queue.filter((memory, index) => {
-            ensureChapterRuntime(memory, index);
-            return isDirectorReady(memory);
-        }).length;
-    }
-
-    async function processDirectorChunk(index, retryCount = 0, options = {}) {
-        if (AppState.processing.isStopped) return null;
-        const runId = options.runId ?? AppState.processing.runId ?? null;
-        const force = options.force === true;
-        const memory = AppState.memory.queue[index];
-        if (!memory) return null;
-        ensureChapterRuntime(memory, index);
-
-        if (!force && memory.directorStatus === 'done') {
-            return {
-                outline: memory.chapterOutline,
-                script: memory.chapterScript,
-            };
-        }
-
-        throwIfRunInactive(runId);
-        await waitForPreviousDirectorReady(index, runId);
-        throwIfRunInactive(runId);
-
-        const chapterIndex = index + 1;
-        const maxRetries = 2;
-        try {
-            return await generateChapterAssets(index, {
-                force: true,
-                taskId: chapterIndex,
-                maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
-                runId,
-            });
-        } catch (error) {
-            if (error?.message === 'ABORTED') {
-                if (memory.directorStatus === 'generating') {
-                    setDirectorStatus(memory, memory.chapterOutline ? 'done' : 'pending');
-                    updateMemoryQueueUI();
-                }
-                throw error;
-            }
-
-            const canRetry = shouldRetryError(error);
-            const brief = formatProcessingError(error, { chapterIndex, task: '导演流程' });
-            if (retryCount < maxRetries && canRetry && isRunActive(runId)) {
-                const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 8000);
-                updateStreamContent(`⚠️ ${brief}，${retryDelay / 1000}秒后重试...\n`);
-                await new Promise((resolve) => setTimeout(resolve, retryDelay));
-                return processDirectorChunk(index, retryCount + 1, { runId, force: true });
-            }
-
-            if (!canRetry) {
-                updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
-            }
-
-            const directorError = compactErrorMessage(error);
-            setDirectorStatus(memory, 'failed', directorError);
-            updateMemoryQueueUI();
-            return null;
-        }
-    }
-
-    async function runDirectorPipeline(startIndex, runId) {
-        if (!shouldRunDirectorPipeline()) {
-            AppState.memory.queue.forEach((memory, index) => {
-                ensureChapterRuntime(memory, index);
-                if (memory.directorStatus === 'pending' || memory.directorStatus === 'generating') {
-                    setDirectorStatus(memory, 'done');
-                }
-            });
-            updateMemoryQueueUI();
-            return;
-        }
-
-        updateStreamContent(`🎬 导演流水线启动（从第${startIndex + 1}章）\n`);
-        for (let i = startIndex; i < AppState.memory.queue.length; i++) {
-            if (!isRunActive(runId)) break;
-            ensureChapterRuntime(AppState.memory.queue[i], i);
-            if (AppState.memory.queue[i].directorStatus === 'done') continue;
-            try {
-                await processDirectorChunk(i, 0, { runId });
-            } catch (error) {
-                if (error?.message === 'ABORTED') break;
-            }
-        }
-
-        if (isRunActive(runId)) {
-            updateStreamContent('🎬 导演流水线结束\n');
-        }
+        if (memory.processed) await new Promise(r => setTimeout(r, 1000));
     }
 
     function handleStopProcessing() {
@@ -2589,15 +2445,10 @@ ${'='.repeat(50)}
         if (AppState.globalSemaphore) AppState.globalSemaphore.abort();
         abortApiSemaphores();
         AppState.processing.activeTasks.clear();
-        AppState.memory.queue.forEach((memory, index) => {
-            ensureChapterRuntime(memory, index);
-            if (memory.worldbookStatus === 'generating') {
-                setWorldbookStatus(memory, memory.result ? 'done' : 'pending');
-            }
-            if (memory.directorStatus === 'generating') {
-                setDirectorStatus(memory, memory.chapterOutline ? 'done' : 'pending');
-            }
-        });
+        if (AppState.processing.pendingChapterAssets instanceof Set) {
+            AppState.processing.pendingChapterAssets.clear();
+        }
+        AppState.memory.queue.forEach(m => { if (m.processing) m.processing = false; });
         updateMemoryQueueUI();
         updateStreamContent('\n⏸️ 已暂停\n');
         updateStopButtonVisibility(true);
@@ -2615,22 +2466,23 @@ ${'='.repeat(50)}
         abortApiSemaphores();
         setupApiSemaphores();
         AppState.processing.activeTasks.clear();
+        ensurePendingChapterAssetsSet().clear();
 
         updateStreamContent('', true);
 
         const enabledCatNames = getEnabledCategories().map(c => c.name).join(', ');
+        const chapterCompletionModeLabel = resolveChapterCompletionMode() === 'throughput'
+            ? '吞吐优先（主先落地，导演后补）'
+            : '一致性优先（主+导演汇合）';
         const chainDesc = (AppState.settings.promptMessageChain || []).filter(m => m.enabled !== false);
         const chainSummary = chainDesc.length <= 1 ? '默认(单条用户消息)' : `${chainDesc.length}条消息[${chainDesc.map(m => m.role === 'system' ? '系统' : m.role === 'assistant' ? 'AI' : '用户').join('→')}]`;
-        updateStreamContent(`🚀 开始处理...\n📊 世界书处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🎬 导演处理模式: 独立流水线（按导演上一章放行）\n🧵 API并发: 主API=${AppState.processing.mainApiConcurrency || 1} | 导演API=${AppState.processing.directorApiConcurrency || 1}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
+        updateStreamContent(`🚀 开始处理...\n📊 处理模式: ${AppState.config.parallel.enabled ? `并行 (${AppState.config.parallel.concurrency}并发)` : '串行'}\n🧩 章节完成策略: ${chapterCompletionModeLabel}\n🧵 API并发: 主API=${AppState.processing.mainApiConcurrency || 1} | 导演API=${AppState.processing.directorApiConcurrency || 1}\n🔧 API模式: ${AppState.settings.useTavernApi ? '酒馆API' : '自定义API (' + AppState.settings.customApiProvider + ')'}\n📌 强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n💬 消息链: ${chainSummary}\n🏷️ 启用分类: ${enabledCatNames}\n${'='.repeat(50)}\n`);
         debugLog('调试模式已开启 - 将记录每步耗时');
 
         const effectiveStartIndex = AppState.memory.userSelectedIndex !== null ? AppState.memory.userSelectedIndex : AppState.memory.startIndex;
 
         if (effectiveStartIndex === 0) {
-            const hasProcessedMemories = AppState.memory.queue.some((memory, index) => {
-                ensureChapterRuntime(memory, index);
-                return memory.worldbookStatus === 'done' && memory.result;
-            });
+            const hasProcessedMemories = AppState.memory.queue.some(m => m.processed && !m.failed && m.result);
             if (!hasProcessedMemories) {
                 AppState.worldbook.volumes = [];
                 AppState.worldbook.currentVolumeIndex = 0;
@@ -2644,20 +2496,13 @@ ${'='.repeat(50)}
 
         if (AppState.processing.volumeMode) updateVolumeIndicator();
         updateStartButtonState(true);
-        const directorRunner = runDirectorPipeline(effectiveStartIndex, runId).catch((error) => {
-            if (error?.message !== 'ABORTED') {
-                updateStreamContent(`⚠️ 导演流水线提前结束: ${compactErrorMessage(error)}\n`);
-            }
-            return null;
-        });
 
         try {
             if (AppState.config.parallel.enabled) {
                 if (AppState.config.parallel.mode === 'independent') {
                     const { tokenLimitIndices } = await processMemoryChunksParallel(effectiveStartIndex, AppState.memory.queue.length);
                     if (AppState.processing.isStopped) {
-                        await Promise.allSettled([directorRunner]);
-                        const processedCount = getWorldbookProcessedCount();
+                        const processedCount = AppState.memory.queue.filter(m => m.processed).length;
                         updateProgress((processedCount / AppState.memory.queue.length) * 100, '⏸️ 已暂停');
                         await flushStateSave(processedCount);
                         updateStartButtonState(false);
@@ -2670,8 +2515,7 @@ ${'='.repeat(50)}
                         updateMemoryQueueUI();
                         for (let i = 0; i < AppState.memory.queue.length; i++) {
                             if (AppState.processing.isStopped) break;
-                            ensureChapterRuntime(AppState.memory.queue[i], i);
-                            if (AppState.memory.queue[i].worldbookStatus !== 'done') {
+                            if (!AppState.memory.queue[i].processed || AppState.memory.queue[i].failed) {
                                 await processMemoryChunk(i, 0, { runId });
                             }
                         }
@@ -2685,8 +2529,7 @@ ${'='.repeat(50)}
                         if (AppState.processing.isStopped) break;
                         for (const idx of tokenLimitIndices.sort((a, b) => b - a)) splitMemoryIntoTwo(idx);
                         for (let j = i; j < batchEnd && j < AppState.memory.queue.length && !AppState.processing.isStopped; j++) {
-                            ensureChapterRuntime(AppState.memory.queue[j], j);
-                            if (AppState.memory.queue[j].worldbookStatus !== 'done') await processMemoryChunk(j, 0, { runId });
+                            if (!AppState.memory.queue[j].processed || AppState.memory.queue[j].failed) await processMemoryChunk(j, 0, { runId });
                         }
                         i = batchEnd;
                         queueStateSave(i);
@@ -2696,14 +2539,12 @@ ${'='.repeat(50)}
                 let i = effectiveStartIndex;
                 while (i < AppState.memory.queue.length) {
                     if (AppState.processing.isStopped) {
-                        await Promise.allSettled([directorRunner]);
                         updateProgress((i / AppState.memory.queue.length) * 100, '⏸️ 已暂停');
                         await flushStateSave(i);
                         updateStartButtonState(false);
                         return;
                     }
-                    ensureChapterRuntime(AppState.memory.queue[i], i);
-                    if (AppState.memory.queue[i].worldbookStatus === 'done') { i++; continue; }
+                    if (AppState.memory.queue[i].processed && !AppState.memory.queue[i].failed) { i++; continue; }
                     const currentLen = AppState.memory.queue.length;
                     await processMemoryChunk(i, 0, { runId });
                     if (AppState.memory.queue.length > currentLen) i += (AppState.memory.queue.length - currentLen);
@@ -2712,10 +2553,8 @@ ${'='.repeat(50)}
                 }
             }
 
-            await Promise.allSettled([directorRunner]);
-
             if (AppState.processing.isStopped) {
-                const processedCount = getWorldbookProcessedCount();
+                const processedCount = AppState.memory.queue.filter(m => m.processed).length;
                 updateProgress((processedCount / AppState.memory.queue.length) * 100, '⏸️ 已暂停');
                 await flushStateSave(processedCount);
                 updateStartButtonState(false);
@@ -2726,22 +2565,15 @@ ${'='.repeat(50)}
                 AppState.worldbook.volumes.push({ volumeIndex: AppState.worldbook.currentVolumeIndex, worldbook: JSON.parse(JSON.stringify(AppState.worldbook.generated)), timestamp: Date.now() });
             }
 
-            const failedCount = AppState.memory.queue.filter((memory, index) => {
-                ensureChapterRuntime(memory, index);
-                return memory.worldbookStatus === 'failed';
-            }).length;
-            const directorFailedCount = AppState.memory.queue.filter((m, index) => {
-                ensureChapterRuntime(m, index);
-                return m.directorStatus === 'failed';
-            }).length;
-            if (failedCount > 0) {
-                updateProgress(100, `⚠️ 主流程完成，但有 ${failedCount} 个世界书失败`);
-            } else {
-                updateProgress(100, '✅ 世界书流水线全部完成！');
+            if (resolveChapterCompletionMode() === 'throughput') {
+                await flushBackgroundChapterAssets(runId);
             }
 
-            if (directorFailedCount > 0) {
-                updateStreamContent(`⚠️ 导演流水线有 ${directorFailedCount} 章失败，可在章节概览页重roll。\n`);
+            const failedCount = AppState.memory.queue.filter(m => m.failed).length;
+            if (failedCount > 0) {
+                updateProgress(100, `⚠️ 完成，但有 ${failedCount} 个失败`);
+            } else {
+                updateProgress(100, '✅ 全部完成！');
             }
 
             showResultSection(true);
@@ -2749,14 +2581,12 @@ ${'='.repeat(50)}
             updateStreamContent(`\n${'='.repeat(50)}\n✅ 处理完成！\n`);
 
             await flushStateSave(AppState.memory.queue.length);
-            await MemoryHistoryDB.clearState();
             transitionTo('idle');
             updateStartButtonState(false);
 
         } catch (error) {
             if (error?.message === 'ABORTED') {
-                await Promise.allSettled([directorRunner]);
-                const processedCount = getWorldbookProcessedCount();
+                const processedCount = AppState.memory.queue.filter(m => m.processed).length;
                 const progress = AppState.memory.queue.length > 0
                     ? (processedCount / AppState.memory.queue.length) * 100
                     : 0;
@@ -2785,10 +2615,7 @@ ${'='.repeat(50)}
     }
 
     async function handleRepairFailedMemories() {
-        const failedMemories = AppState.memory.queue.filter((memory, index) => {
-            ensureChapterRuntime(memory, index);
-            return memory.worldbookStatus === 'failed';
-        });
+        const failedMemories = AppState.memory.queue.filter(m => m.failed);
         if (failedMemories.length === 0) { ErrorHandler.showUserError('没有需要修复的记忆'); return; }
 
         transitionTo('repairing');
@@ -2808,12 +2635,7 @@ ${'='.repeat(50)}
             await handleRepairMemoryWithSplit(memoryIndex, stats);
         }
 
-        AppState.memory.failedQueue = AppState.memory.failedQueue.filter((item) => {
-            const memory = AppState.memory.queue[item.index];
-            if (!memory) return false;
-            ensureChapterRuntime(memory, item.index);
-            return memory.worldbookStatus === 'failed';
-        });
+        AppState.memory.failedQueue = AppState.memory.failedQueue.filter(item => AppState.memory.queue[item.index]?.failed);
         updateProgress(100, `修复完成: 成功 ${stats.successCount}, 仍失败 ${stats.stillFailedCount}`);
         await flushStateSave(AppState.memory.queue.length);
         if (currentStatus() !== 'stopped') transitionTo('idle');
@@ -2832,7 +2654,7 @@ ${'='.repeat(50)}
             maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
         });
 
-        const processedCount = getWorldbookProcessedCount();
+        const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
         await flushStateSave(processedCount);
         return result;
     }
