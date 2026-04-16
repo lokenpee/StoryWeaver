@@ -350,16 +350,34 @@ export function createDirectorService(deps = {}) {
         return pickLatestFromChat(realChat, isAssistantChatItem);
     }
 
-    function buildDirectionContext({ beats, currentBeatIdx, isNewBeat = false, latestAssistantMessage = '', latestUserMessage = '' }) {
+    function buildDirectionContext({
+        beats,
+        currentBeatIdx,
+        isNewBeat = false,
+        latestAssistantMessage = '',
+        latestUserMessage = '',
+        isLargeBeatJump = false,
+        beatJumpDistance = 0,
+    }) {
         const maxIdx = Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
         const safeIdx = Math.max(0, Math.min(currentBeatIdx || 0, maxIdx));
         const currentBeat = Array.isArray(beats) ? (beats[safeIdx] || beats[0] || null) : null;
         const entryEvent = toShortText(currentBeat?.entryEvent || '', 120);
         const recentAssistant = toTailText(latestAssistantMessage || '', 200);
         const recentUser = toShortText(latestUserMessage || '', 220);
+        const jumpDistance = Math.max(0, Number.isFinite(Number(beatJumpDistance)) ? Number(beatJumpDistance) : 0);
+        const hasLargeBeatJump = isLargeBeatJump === true || jumpDistance >= 2;
 
         let startAnchor = '';
-        if (recentAssistant) {
+        if (hasLargeBeatJump) {
+            if (entryEvent) {
+                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），本回合以“${entryEvent}”作为新起点，不承接最近AI输出末尾。`;
+            } else if (recentUser) {
+                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），以用户当前互动“${recentUser}”作为新起点，不承接最近AI输出末尾。`;
+            } else {
+                startAnchor = '检测到跨节拍跳转，本回合从当前节拍可见起点直接开场，不承接最近AI输出末尾。';
+            }
+        } else if (recentAssistant) {
             if (isNewBeat && entryEvent) {
                 startAnchor = `先承接最近AI输出末尾“${recentAssistant}”角色行为或话语，再以“${entryEvent}”触发入场事件。`;
             } else {
@@ -392,6 +410,8 @@ export function createDirectorService(deps = {}) {
             entry_event: entryEvent || '',
             recent_assistant: recentAssistant || '',
             recent_user: recentUser || '',
+            is_large_beat_jump: hasLargeBeatJump,
+            beat_jump_distance: jumpDistance,
         };
     }
 
@@ -960,19 +980,71 @@ export function createDirectorService(deps = {}) {
         const switchCommand = detectExplicitBeatSwitchCommand(latestUserMessage);
         const switchControl = resolveBeatSwitchControl(currentBeatIdx, beats, switchCommand);
         const lockedBeatIdx = switchControl.lockedBeatIdx;
-        const previousBeatIdx = Number.isInteger(AppState.experience?.lastBeatIdx)
-            ? Math.max(0, Math.min(AppState.experience.lastBeatIdx, beats.length - 1))
-            : -1;
-        const isNewBeat = previousBeatIdx !== lockedBeatIdx;
+        const chapterQueue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+        const chapterMaxIdx = Math.max(0, chapterQueue.length - 1);
+        const previousChapterIdx = Number.isInteger(AppState.experience?.lastChapterIdx)
+            ? Math.max(0, Math.min(AppState.experience.lastChapterIdx, chapterMaxIdx))
+            : chapterIndex;
+        const chapterChanged = previousChapterIdx !== chapterIndex;
+
+        const beatCountCache = new Map();
+        beatCountCache.set(chapterIndex, beats.length);
+
+        function getChapterBeatCount(idx) {
+            if (!Number.isInteger(idx) || idx < 0 || idx > chapterMaxIdx) return 0;
+            if (beatCountCache.has(idx)) return beatCountCache.get(idx);
+            const chapterMemory = chapterQueue[idx];
+            const chapterBeats = ensureChapterBeats(chapterMemory);
+            const count = Array.isArray(chapterBeats) ? chapterBeats.length : 0;
+            beatCountCache.set(idx, Math.max(0, count));
+            return beatCountCache.get(idx);
+        }
+
+        function clampBeatIdxByChapter(idx, beatIdx) {
+            if (!Number.isInteger(beatIdx)) return -1;
+            const beatCount = getChapterBeatCount(idx);
+            if (beatCount <= 0) return -1;
+            return Math.max(0, Math.min(beatIdx, beatCount - 1));
+        }
+
+        function toGlobalBeatOrdinal(idx, beatIdx) {
+            if (!Number.isInteger(idx) || idx < 0 || idx > chapterMaxIdx) return null;
+            const safeBeatIdx = clampBeatIdxByChapter(idx, beatIdx);
+            if (safeBeatIdx < 0) return null;
+            let offset = 0;
+            for (let i = 0; i < idx; i++) {
+                offset += getChapterBeatCount(i);
+            }
+            return offset + safeBeatIdx;
+        }
+
+        const previousBeatIdx = clampBeatIdxByChapter(
+            previousChapterIdx,
+            Number.isInteger(AppState.experience?.lastBeatIdx) ? AppState.experience.lastBeatIdx : -1
+        );
+        const currentGlobalBeatOrdinal = toGlobalBeatOrdinal(chapterIndex, lockedBeatIdx);
+        const previousGlobalBeatOrdinal = previousBeatIdx >= 0
+            ? toGlobalBeatOrdinal(previousChapterIdx, previousBeatIdx)
+            : null;
+        const beatJumpDistance = (Number.isInteger(currentGlobalBeatOrdinal) && Number.isInteger(previousGlobalBeatOrdinal))
+            ? Math.abs(currentGlobalBeatOrdinal - previousGlobalBeatOrdinal)
+            : 0;
+        const isLargeBeatJump = beatJumpDistance >= 2;
+        const isNewBeat = (Number.isInteger(currentGlobalBeatOrdinal) && Number.isInteger(previousGlobalBeatOrdinal))
+            ? currentGlobalBeatOrdinal !== previousGlobalBeatOrdinal
+            : (chapterChanged || previousBeatIdx !== lockedBeatIdx);
         const directionContext = buildDirectionContext({
             beats,
             currentBeatIdx: lockedBeatIdx,
             isNewBeat,
             latestAssistantMessage,
             latestUserMessage,
+            isLargeBeatJump,
+            beatJumpDistance,
         });
         directorDebug(`switch-command=${switchCommand.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
         directorDebug(`switch-control=${switchControl.reason}, lockedBeat=${lockedBeatIdx + 1}/${beats.length}`);
+        directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}`);
         directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
 
         const prompt = buildDirectorPrompt({
@@ -1022,6 +1094,8 @@ export function createDirectorService(deps = {}) {
         decision.switch_signal = switchControl.signal;
         decision.switch_gate = switchControl.reason;
         decision.is_new_beat = isNewBeat;
+        decision.is_large_beat_jump = isLargeBeatJump;
+        decision.beat_jump_distance = beatJumpDistance;
         decision.direction_context = directionContext;
         decision.latest_assistant_message = toTailText(latestAssistantMessage || '', 200);
         decision.latest_user_message = toShortText(latestUserMessage || '', 220);
@@ -1070,6 +1144,7 @@ export function createDirectorService(deps = {}) {
         };
         AppState.experience.currentBeatIndex = decision.stage_idx;
         AppState.experience.lastBeatIdx = lockedBeatIdx;
+        AppState.experience.lastChapterIdx = chapterIndex;
         AppState.experience.directorLastDecision = { ...memory.directorDecision };
         AppState.experience.directorLastDecisionAt = Date.now();
 

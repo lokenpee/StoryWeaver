@@ -108,6 +108,10 @@ export function createApiService(deps = {}) {
 
             debugLog(`${logPrefix} 收到响应, 长度=${result.length}字符`);
             updateStreamContent(`📥 ${logPrefix} 收到响应 (${result.length}字符)\n`);
+            const thinkFromText = extractThinkBlocksFromText(result);
+            if (thinkFromText) {
+                logReasoningToProgress(logPrefix, thinkFromText, 'sillytavern-think-tag');
+            }
             return result;
         } catch (error) {
             const message = String(error?.message || '').toLowerCase();
@@ -260,6 +264,172 @@ export function createApiService(deps = {}) {
         return data.choices?.[0]?.message?.content || '';
     }
 
+    function pickTextLike(value, depth = 0) {
+        if (depth > 4 || value === null || value === undefined) return '';
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => pickTextLike(item, depth + 1))
+                .filter(Boolean)
+                .join('');
+        }
+        if (typeof value === 'object') {
+            if (typeof value.text === 'string') return value.text;
+            if (typeof value.content === 'string') return value.content;
+            if (typeof value.reasoning_content === 'string') return value.reasoning_content;
+            if (typeof value.reasoning === 'string') return value.reasoning;
+            if (typeof value.thinking === 'string') return value.thinking;
+            if (typeof value.output_text === 'string') return value.output_text;
+            if (Array.isArray(value.parts)) {
+                return value.parts
+                    .map((part) => pickTextLike(part, depth + 1))
+                    .filter(Boolean)
+                    .join('');
+            }
+        }
+        return '';
+    }
+
+    function normalizeReasoningText(text, maxLen = 6000) {
+        const normalized = String(text || '')
+            .replace(/\r/g, '')
+            .replace(/\u0000/g, '')
+            .trim();
+        if (!normalized) return '';
+        if (normalized.length <= maxLen) return normalized;
+        return `${normalized.slice(0, maxLen)}\n...[思维链已截断]`;
+    }
+
+    function mergeIncrementalText(current, next) {
+        const prev = String(current || '');
+        const incoming = String(next || '');
+        if (!incoming) return prev;
+        if (!prev) return incoming;
+        if (incoming.startsWith(prev)) return incoming;
+        if (prev.endsWith(incoming)) return prev;
+
+        const maxOverlap = Math.min(prev.length, incoming.length, 240);
+        for (let overlap = maxOverlap; overlap > 0; overlap--) {
+            if (prev.slice(-overlap) === incoming.slice(0, overlap)) {
+                return prev + incoming.slice(overlap);
+            }
+        }
+        return prev + incoming;
+    }
+
+    function extractReasoningFromOpenAIChoice(choice) {
+        const source = choice && typeof choice === 'object' ? choice : {};
+        const delta = source.delta && typeof source.delta === 'object' ? source.delta : {};
+        const message = source.message && typeof source.message === 'object' ? source.message : {};
+
+        const pieces = [
+            pickTextLike(delta.reasoning_content),
+            pickTextLike(delta.reasoning),
+            pickTextLike(delta.thinking),
+            pickTextLike(delta.reasoning_text),
+            pickTextLike(message.reasoning_content),
+            pickTextLike(message.reasoning),
+            pickTextLike(message.thinking),
+            pickTextLike(source.reasoning),
+            pickTextLike(source.reasoning_content),
+        ].filter(Boolean);
+
+        const messageContent = message.content;
+        if (Array.isArray(messageContent)) {
+            for (const item of messageContent) {
+                const type = String(item?.type || '').toLowerCase();
+                if (type.includes('reason') || type.includes('think')) {
+                    const text = pickTextLike(item?.text) || pickTextLike(item?.content);
+                    if (text) pieces.push(text);
+                }
+            }
+        }
+
+        return normalizeReasoningText(pieces.join('\n').trim());
+    }
+
+    function extractReasoningFromGeminiData(data) {
+        const candidate = data?.candidates?.[0] || {};
+        const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+        const pieces = [];
+
+        for (const part of parts) {
+            const thoughtMark = part?.thought === true || String(part?.type || '').toLowerCase().includes('thought');
+            const text = pickTextLike(part?.text) || pickTextLike(part?.content) || pickTextLike(part?.thought);
+            if (thoughtMark && text) {
+                pieces.push(text);
+            }
+        }
+
+        const fallback = pickTextLike(candidate?.reasoning) || pickTextLike(data?.reasoning);
+        if (fallback) pieces.push(fallback);
+
+        return normalizeReasoningText(pieces.join('\n').trim());
+    }
+
+    function extractReasoningFromAnthropicData(data) {
+        const blocks = Array.isArray(data?.content) ? data.content : [];
+        const pieces = [];
+        for (const block of blocks) {
+            const type = String(block?.type || '').toLowerCase();
+            if (type.includes('thinking') || type.includes('reason')) {
+                const text = pickTextLike(block?.thinking) || pickTextLike(block?.text) || pickTextLike(block?.content);
+                if (text) pieces.push(text);
+            }
+        }
+        return normalizeReasoningText(pieces.join('\n').trim());
+    }
+
+    function extractReasoningFromCustomApiResponse(provider, data) {
+        if (!data || typeof data !== 'object') return '';
+        if (provider === 'gemini') return extractReasoningFromGeminiData(data);
+        if (provider === 'anthropic') return extractReasoningFromAnthropicData(data);
+
+        const choices = Array.isArray(data?.choices) ? data.choices : [];
+        const joined = choices
+            .map((choice) => extractReasoningFromOpenAIChoice(choice))
+            .filter(Boolean)
+            .join('\n');
+        return normalizeReasoningText(joined);
+    }
+
+    function extractReasoningFromStreamPayload(parsed) {
+        if (!parsed || typeof parsed !== 'object') return '';
+        const openaiReasoning = extractReasoningFromOpenAIChoice(parsed?.choices?.[0] || {});
+        if (openaiReasoning) return openaiReasoning;
+
+        const anthropicReasoning = pickTextLike(parsed?.delta?.thinking)
+            || pickTextLike(parsed?.delta?.reasoning)
+            || pickTextLike(parsed?.content_block?.thinking)
+            || pickTextLike(parsed?.content_block?.reasoning);
+        if (anthropicReasoning) return normalizeReasoningText(anthropicReasoning);
+
+        const geminiReasoning = pickTextLike(parsed?.thought)
+            || pickTextLike(parsed?.reasoning)
+            || pickTextLike(parsed?.candidate?.reasoning);
+        return normalizeReasoningText(geminiReasoning);
+    }
+
+    function extractThinkBlocksFromText(text) {
+        const source = String(text || '');
+        if (!source) return '';
+        const blocks = [];
+        const regex = /<think[^>]*>([\s\S]*?)<\/think>/gi;
+        let match;
+        while ((match = regex.exec(source)) !== null) {
+            const chunk = String(match[1] || '').trim();
+            if (chunk) blocks.push(chunk);
+        }
+        return normalizeReasoningText(blocks.join('\n'));
+    }
+
+    function logReasoningToProgress(logPrefix, reasoningText, source = 'api') {
+        const normalized = normalizeReasoningText(reasoningText);
+        if (!normalized) return;
+        updateStreamContent(`🧠 ${logPrefix} 思维链(${source})：\n${normalized}\n`);
+    }
+
     async function callCustomAPI(messages, target = 'main', taskId = null) {
         const maxRetries = 3;
         const baseTimeout = AppState.settings.apiTimeout || 120000;
@@ -302,10 +472,16 @@ export function createApiService(deps = {}) {
                 debugLog(`${logPrefix} 请求目标: ${requestConfig.requestUrl.substring(0, 80)}..., 尝试=${attemptNo}`);
 
                 if (requestConfig.isStreamRequest) {
+                    let streamReasoningBuffer = '';
                     const tryStreamRequest = async (config) => APICaller.requestStream(config.requestUrl, {
                         ...config.requestOptions,
                         timeout,
                         inactivityTimeout: Math.min(timeout, 120000),
+                        onChunk: (_delta, _fullText, parsed) => {
+                            const reasoningDelta = extractReasoningFromStreamPayload(parsed);
+                            if (!reasoningDelta) return;
+                            streamReasoningBuffer = mergeIncrementalText(streamReasoningBuffer, reasoningDelta);
+                        },
                     });
 
                     let result;
@@ -332,10 +508,17 @@ export function createApiService(deps = {}) {
                             timeout,
                         });
                         result = extractCustomApiText(fallbackConfig.provider, fallbackData);
+                        const fallbackReasoning = extractReasoningFromCustomApiResponse(fallbackConfig.provider, fallbackData);
+                        if (fallbackReasoning) {
+                            logReasoningToProgress(logPrefix, fallbackReasoning, 'json-fallback');
+                        }
                     }
 
                     debugLog(`${logPrefix} 流式读取完成, 结果长度=${result.length}字符`);
                     updateStreamContent(`📥 ${logPrefix} 收到流式响应 (${result.length}字符)\n`);
+                    if (streamReasoningBuffer) {
+                        logReasoningToProgress(logPrefix, streamReasoningBuffer, 'stream');
+                    }
                     if (!String(result || '').trim()) {
                         updateStreamContent(`⚠️ ${logPrefix} 响应为空文本，可能是流式格式不兼容\n`);
                     }
@@ -348,8 +531,12 @@ export function createApiService(deps = {}) {
                 });
                 debugLog(`${logPrefix} JSON解析完成, 开始提取内容`);
                 const result = extractCustomApiText(requestConfig.provider, data);
+                const reasoningText = extractReasoningFromCustomApiResponse(requestConfig.provider, data);
                 debugLog(`${logPrefix} 提取完成, 结果长度=${result.length}字符`);
                 updateStreamContent(`📥 ${logPrefix} 收到响应 (${result.length}字符)\n`);
+                if (reasoningText) {
+                    logReasoningToProgress(logPrefix, reasoningText, 'json');
+                }
                 if (!String(result || '').trim()) {
                     updateStreamContent(`⚠️ ${logPrefix} JSON响应可解析但正文为空\n`);
                 }
