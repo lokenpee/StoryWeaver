@@ -545,16 +545,16 @@ export function createChapterExperienceView(deps = {}) {
         <textarea rows="2" class="ttw-editor-textarea" data-field="event_summary">${escapeHtml(beat.event_summary || '')}</textarea>
     </label>
     <label class="ttw-editor-field">
-        <span class="ttw-editor-field-label">节拍原文</span>
-        <textarea rows="5" class="ttw-editor-textarea" data-field="original_text">${escapeHtml(beat.original_text || '')}</textarea>
-    </label>
-    <label class="ttw-editor-field">
         <span class="ttw-editor-field-label">入场事件</span>
         <textarea rows="2" class="ttw-editor-textarea" data-field="entryEvent">${escapeHtml(beat.entryEvent || '')}</textarea>
     </label>
     <label class="ttw-editor-field">
         <span class="ttw-editor-field-label">退出条件</span>
         <textarea rows="2" class="ttw-editor-textarea" data-field="exitCondition">${escapeHtml(beat.exitCondition || '')}</textarea>
+    </label>
+    <label class="ttw-editor-field">
+        <span class="ttw-editor-field-label">节拍原文</span>
+        <textarea rows="5" class="ttw-editor-textarea" data-field="original_text">${escapeHtml(beat.original_text || '')}</textarea>
     </label>
 </div>`;
     }
@@ -914,10 +914,10 @@ export function createChapterExperienceView(deps = {}) {
         <span class="ttw-beat-id">${escapeHtml(beat.id || `b${idx + 1}`)}</span>
         ${isActive ? '<span class="ttw-beat-active">当前阶段</span>' : ''}
     </div>
-    <div class="ttw-beat-line">📖 事件摘要：${escapeHtml(beat.event_summary || beat.summary || '')}</div>
+    <div class="ttw-beat-line ttw-beat-summary-line">📖 事件摘要：${escapeHtml(beat.event_summary || beat.summary || '')}</div>
+    <div class="ttw-beat-line ttw-beat-entry-line">🚪 入场事件：${escapeHtml(entryEvent || '从上一节拍结果自然衔接进入当前事件。')}</div>
+    <div class="ttw-beat-line ttw-beat-exit-line">🎯 退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
     <div class="ttw-beat-original">📝 原文：${escapeHtml(originalText || '暂无该节拍原文（旧数据或生成异常）。')}</div>
-    <div class="ttw-beat-line">🚪 入场事件：${escapeHtml(entryEvent || '从上一节拍结果自然衔接进入当前事件。')}</div>
-    <div class="ttw-beat-line">🎯 退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
 </div>`;
             }).join('')
             : '<div class="ttw-script-empty">暂无轻节拍，默认按摘要推进。</div>';

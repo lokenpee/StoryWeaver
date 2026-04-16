@@ -960,15 +960,69 @@ export function ensureModalStyles() {
             color: var(--ttw-accent-blue);
         }
 
+        .ttw-beat-item {
+            border: 1px solid var(--ttw-border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.02);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .ttw-beat-item.is-active {
+            border-color: rgba(10, 132, 255, 0.6);
+            background: rgba(10, 132, 255, 0.08);
+            box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.2);
+        }
+
+        .ttw-beat-item-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2px;
+        }
+
+        .ttw-beat-line {
+            font-size: 12px;
+            color: var(--ttw-text-primary);
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .ttw-beat-summary-line {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--ttw-text-primary);
+            line-height: 1.6;
+        }
+
+        .ttw-beat-entry-line {
+            font-size: 12px;
+            color: var(--ttw-text-secondary);
+            line-height: 1.5;
+        }
+
+        .ttw-beat-exit-line {
+            font-size: 12px;
+            color: var(--ttw-text-muted);
+            line-height: 1.5;
+        }
+
         .ttw-beat-original {
             font-size: 12px;
-            line-height: 1.6;
+            line-height: 1.7;
             color: var(--ttw-text-primary);
             white-space: pre-wrap;
             word-break: break-word;
             max-height: 220px;
             overflow-y: auto;
-            padding-right: 4px;
+            padding: 8px 10px;
+            margin-top: 4px;
+            background: rgba(0, 0, 0, 0.18);
+            border-radius: 6px;
+            border-left: 3px solid var(--ttw-border-color);
         }
 
         .ttw-chapter-editor-modal {
