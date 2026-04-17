@@ -1098,13 +1098,11 @@
         const list = Array.isArray(segments) ? segments : [];
         const points = Array.isArray(splitPoints) ? splitPoints : [];
         const lastIdx = list.length - 1;
+        const splitPointAlignMode = decideSplitPointAlignMode(list, points);
         return list.map((seg, idx) => {
             const summary = toShortOutline(seg, 200) || `第${chapterIndex}章节拍${idx + 1}`;
             const tags = idx === 0 ? ['开场'] : (idx === lastIdx ? ['收束'] : ['推进']);
-            // split_points are boundaries between beats, so beat-1 has no preceding split point.
-            const pointIndex = (points.length > 0 && idx > 0)
-                ? Math.min(points.length - 1, idx - 1)
-                : -1;
+            const pointIndex = resolveSplitPointIndexForBeat(idx, points.length, splitPointAlignMode);
             const point = pointIndex >= 0 ? points[pointIndex] : null;
             const pointWarnings = pointIndex >= 0 && Array.isArray(splitWarnings[pointIndex])
                 ? splitWarnings[pointIndex]
@@ -1135,6 +1133,98 @@
                 self_review: normalizeSelfCheck(point?.self_check || point?.selfCheck || point?.reflection || null, pointWarnings),
             }, idx, summary);
         });
+    }
+
+    function getSplitPointNarrativeText(point) {
+        const source = point && typeof point === 'object' ? point : {};
+        return [
+            source.event_summary,
+            source.eventSummary,
+            source.summary,
+            source.event,
+            source.description,
+            source.entry_event,
+            source.entryEvent,
+            source.opening_event,
+            source.openingEvent,
+            source.exit_condition,
+            source.exitCondition,
+            source.exist_condition,
+            source.existCondition,
+            source.split_reason,
+            source.splitReason,
+        ]
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+            .join('；');
+    }
+
+    function scoreSplitPointAgainstSegment(point, segmentText) {
+        const segment = String(segmentText || '');
+        if (!segment.trim()) return 0;
+
+        const narrative = getSplitPointNarrativeText(point);
+        if (!narrative) return 0;
+
+        const narrative2 = buildNGramSet(narrative, 2);
+        const segment2 = buildNGramSet(segment, 2);
+        let score = jaccardSimilarity(narrative2, segment2);
+
+        if (score <= 0) {
+            score = jaccardSimilarity(buildNGramSet(narrative, 1), buildNGramSet(segment, 1)) * 0.7;
+        }
+
+        const anchor = String(point?.anchor || point?.anchor_text || point?.anchorText || '').trim();
+        if (anchor) {
+            const normAnchor = normalizeForFuzzyMatch(anchor);
+            const normSegment = normalizeForFuzzyMatch(segment);
+            if (normAnchor && normSegment.includes(normAnchor)) {
+                score += 0.2;
+            }
+        }
+
+        return score;
+    }
+
+    function decideSplitPointAlignMode(segments, splitPoints) {
+        const list = Array.isArray(segments) ? segments : [];
+        const points = Array.isArray(splitPoints) ? splitPoints : [];
+        if (list.length === 0 || points.length === 0) return 'next';
+
+        let sameScore = 0;
+        let sameCount = 0;
+        const sameMax = Math.min(points.length, list.length);
+        for (let i = 0; i < sameMax; i++) {
+            sameScore += scoreSplitPointAgainstSegment(points[i], list[i]);
+            sameCount++;
+        }
+
+        let nextScore = 0;
+        let nextCount = 0;
+        for (let beatIdx = 1; beatIdx < list.length; beatIdx++) {
+            const pointIdx = beatIdx - 1;
+            if (pointIdx < 0 || pointIdx >= points.length) continue;
+            nextScore += scoreSplitPointAgainstSegment(points[pointIdx], list[beatIdx]);
+            nextCount++;
+        }
+
+        const sameAvg = sameCount > 0 ? (sameScore / sameCount) : -1;
+        const nextAvg = nextCount > 0 ? (nextScore / nextCount) : -1;
+        return sameAvg >= nextAvg ? 'same' : 'next';
+    }
+
+    function resolveSplitPointIndexForBeat(beatIdx, pointCount, alignMode) {
+        const count = Number.isFinite(pointCount) ? Math.max(0, Math.floor(pointCount)) : 0;
+        if (count <= 0) return -1;
+
+        const idx = Number.isFinite(beatIdx) ? Math.max(0, Math.floor(beatIdx)) : 0;
+        if (alignMode === 'same') {
+            return idx < count ? idx : -1;
+        }
+
+        if (idx <= 0) return -1;
+        const pointIdx = idx - 1;
+        return pointIdx < count ? pointIdx : -1;
     }
 
     function normalizeForFuzzyMatch(text) {
