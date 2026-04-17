@@ -36,6 +36,7 @@ export function createModalEventBinder(deps) {
         handleFileSelect,
         handleClearFile,
         handleStartConversion,
+        handleStartDirectorConversion,
         handleStopProcessing,
         handleRepairFailedMemories,
         showStartFromSelector,
@@ -127,6 +128,7 @@ export function createModalEventBinder(deps) {
         bindActionEventsUI({
             AppState,
             handleStartConversion,
+            handleStartDirectorConversion,
             handleStopProcessing,
             handleRepairFailedMemories,
             showStartFromSelector,
