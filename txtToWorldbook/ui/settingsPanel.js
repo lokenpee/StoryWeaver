@@ -72,7 +72,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.7.4';
+const PLUGIN_VERSION = 'v3.7.6';
 
 function buildPluginUpdateHtml() {
     return '';
