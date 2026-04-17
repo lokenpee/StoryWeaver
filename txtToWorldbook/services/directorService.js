@@ -181,6 +181,119 @@ export function createDirectorService(deps = {}) {
         };
     }
 
+    function normalizeCompareText(text) {
+        return String(text || '')
+            .toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/[\u2000-\u206F\u2E00-\u2E7F'"`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?，。！？；：、“”‘’（）【】《》…—\n\r\t]+/g, '');
+    }
+
+    function scoreSummaryAgainstOriginal(summary, originalText) {
+        const s = normalizeCompareText(summary);
+        const t = normalizeCompareText(originalText);
+        if (!s || !t) return 0;
+
+        const probeLen = Math.min(12, s.length);
+        if (probeLen >= 6 && t.includes(s.slice(0, probeLen))) {
+            return 1;
+        }
+
+        let hit = 0;
+        const unique = new Set(s.split(''));
+        for (const ch of unique) {
+            if (t.includes(ch)) hit++;
+        }
+        return unique.size > 0 ? (hit / unique.size) * 0.5 : 0;
+    }
+
+    function isDefaultEntryEvent(text) {
+        const raw = String(text || '').trim();
+        return (
+            !raw
+            || raw === '从上一节拍结果自然衔接进入当前事件。'
+            || raw === '从上一节拍结果自然进入当前节拍。'
+            || raw === '从上一节拍结果自然衔接进入当前事件'
+            || raw === '从上一节拍结果自然进入当前节拍'
+        );
+    }
+
+    function isDefaultExitCondition(text) {
+        const raw = String(text || '').trim();
+        return (
+            !raw
+            || raw === '等待关键互动完成'
+            || raw === '等待用户行动或关键互动完成'
+            || raw === '等待关键互动完成。'
+            || raw === '等待用户行动或关键互动完成。'
+            || raw === '当本节拍核心目标完成或局势发生明显转折时。'
+        );
+    }
+
+    function maybeRepairShiftedBeatMetadata(rawBeats) {
+        const beats = Array.isArray(rawBeats)
+            ? rawBeats.map((beat, idx) => normalizeBeat(beat, idx))
+            : [];
+        if (beats.length < 3) return beats;
+
+        const first = beats[0] || {};
+        const firstLooksDefault = isDefaultEntryEvent(first.entryEvent) || isDefaultExitCondition(first.exitCondition);
+
+        let shiftedVotes = 0;
+        let totalVotes = 0;
+        for (let i = 1; i < beats.length; i++) {
+            const summary = String(beats[i]?.summary || '').trim();
+            if (!summary) continue;
+
+            const prevScore = scoreSummaryAgainstOriginal(summary, beats[i - 1]?.original_text || '');
+            const currentScore = scoreSummaryAgainstOriginal(summary, beats[i]?.original_text || '');
+            if (prevScore <= 0 && currentScore <= 0) continue;
+
+            totalVotes++;
+            if (prevScore > currentScore + 0.08) {
+                shiftedVotes++;
+            }
+        }
+
+        const shouldRepair = firstLooksDefault
+            && totalVotes >= 2
+            && shiftedVotes >= Math.max(2, Math.ceil(totalVotes * 0.6));
+
+        if (!shouldRepair) return beats;
+
+        const repaired = beats.map((beat) => ({
+            ...beat,
+            tags: Array.isArray(beat.tags) ? [...beat.tags] : [],
+            split_rule: normalizeSplitRule(beat.split_rule || {}),
+        }));
+
+        for (let i = 0; i < repaired.length - 1; i++) {
+            const source = beats[i + 1] || {};
+            repaired[i].summary = String(source.summary || '').trim() || repaired[i].summary;
+            repaired[i].event_summary = repaired[i].summary;
+            repaired[i].entryEvent = String(source.entryEvent || '').trim() || repaired[i].entryEvent;
+            repaired[i].exitCondition = String(source.exitCondition || '').trim() || repaired[i].exitCondition;
+            repaired[i].tags = Array.isArray(source.tags) ? [...source.tags] : repaired[i].tags;
+            repaired[i].split_rule = normalizeSplitRule(source.split_rule || repaired[i].split_rule || {});
+        }
+
+        const lastIdx = repaired.length - 1;
+        const last = repaired[lastIdx];
+        const lastSummary = toShortText(last?.original_text || '', 200)
+            || String(last?.summary || '').trim()
+            || `事件点${lastIdx + 1}`;
+        last.summary = lastSummary;
+        last.event_summary = lastSummary;
+        if (isDefaultEntryEvent(last.entryEvent)) {
+            last.entryEvent = `以“${toShortText(lastSummary, 60) || `事件点${lastIdx + 1}`}”为起点展开当前节拍动作。`;
+        }
+        if (isDefaultExitCondition(last.exitCondition)) {
+            last.exitCondition = '当本节拍核心目标完成或局势发生明显转折时。';
+        }
+
+        directorWarn('检测到历史节拍字段整体错位，已自动执行对齐修复');
+        return repaired;
+    }
+
     function splitBeatCandidates(text, limit = 6) {
         return String(text || '')
             .split(/[，,。；;、\n]/)
@@ -242,6 +355,7 @@ export function createDirectorService(deps = {}) {
                 memory.chapterScript.beats,
                 `${memory.chapterOutline || ''}`
             );
+            memory.chapterScript.beats = maybeRepairShiftedBeatMetadata(memory.chapterScript.beats);
             return memory.chapterScript.beats;
         }
 
@@ -253,6 +367,7 @@ export function createDirectorService(deps = {}) {
             keyNodes.map((node, idx) => normalizeBeat({ summary: node }, idx)),
             `${memory.chapterOutline || ''} ${keyNodes.join('，')}`
         );
+        memory.chapterScript.beats = maybeRepairShiftedBeatMetadata(memory.chapterScript.beats);
         return memory.chapterScript.beats;
     }
 

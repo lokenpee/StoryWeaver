@@ -1191,6 +1191,17 @@
         const points = Array.isArray(splitPoints) ? splitPoints : [];
         if (list.length === 0 || points.length === 0) return 'next';
 
+        // 对于当前章节资产契约：split_points 数量通常是 beat_count - 1。
+        // 这里强制使用 same 映射，避免第1节拍落空并导致后续整体错一拍。
+        if (points.length === list.length - 1) {
+            return 'same';
+        }
+
+        // 若点数与节拍数相等，优先按同索引映射。
+        if (points.length === list.length) {
+            return 'same';
+        }
+
         let sameScore = 0;
         let sameCount = 0;
         const sameMax = Math.min(points.length, list.length);
