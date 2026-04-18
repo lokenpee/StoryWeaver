@@ -35,12 +35,17 @@ export function ensureModalStyles() {
             left: 0;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
             background: rgba(0, 0, 0, 0.75);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 99999;
             padding: 20px;
+            padding-top: calc(20px + env(safe-area-inset-top));
+            padding-right: calc(20px + env(safe-area-inset-right));
+            padding-bottom: calc(20px + env(safe-area-inset-bottom));
+            padding-left: calc(20px + env(safe-area-inset-left));
             box-sizing: border-box;
         }
         
@@ -1751,6 +1756,39 @@ export function ensureModalStyles() {
         
         /* --- 响应式适配 --- */
         @media (max-width: 768px) {
+            .ttw-modal-container {
+                align-items: stretch;
+                padding: 8px;
+                padding-top: calc(8px + env(safe-area-inset-top));
+                padding-right: calc(8px + env(safe-area-inset-right));
+                padding-bottom: calc(8px + env(safe-area-inset-bottom));
+                padding-left: calc(8px + env(safe-area-inset-left));
+            }
+
+            .ttw-modal {
+                width: 100%;
+                max-width: none;
+                max-height: none;
+                height: calc(100vh - 16px);
+                height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+            }
+
+            .ttw-modal-footer {
+                position: sticky;
+                bottom: 0;
+                z-index: 2;
+                justify-content: stretch;
+                gap: 8px;
+                flex-wrap: wrap;
+                padding: 10px 12px;
+                padding-bottom: calc(10px + env(safe-area-inset-bottom));
+            }
+
+            .ttw-modal-footer .ttw-btn {
+                flex: 1 1 calc(50% - 4px);
+                min-height: 40px;
+            }
+
             .ttw-roll-history-container, .ttw-history-container {
                 flex-direction: column;
                 height: auto;
@@ -1798,12 +1836,9 @@ export function ensureModalStyles() {
                 flex-wrap: wrap !important;
             }
             
-            .ttw-modal {
-                max-width: 96vw;
-            }
-            
             .ttw-modal-body {
-                padding: 16px;
+                padding: 12px;
+                padding-bottom: 8px;
             }
 
             .ttw-view-nav {
@@ -1812,6 +1847,12 @@ export function ensureModalStyles() {
 
             .ttw-view-tab {
                 width: 100%;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .ttw-modal-footer .ttw-btn {
+                flex-basis: 100%;
             }
         }
     `;
