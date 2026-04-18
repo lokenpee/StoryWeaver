@@ -180,6 +180,8 @@ export function createTaskStateService(deps = {}) {
         return {
             currentChapterIndex: clampInt(source.currentChapterIndex, 0, maxIndex, 0),
             currentBeatIndex: Number.isInteger(source.currentBeatIndex) ? Math.max(0, source.currentBeatIndex) : 0,
+            lastChapterIdx: clampInt(source.lastChapterIdx, 0, maxIndex, 0),
+            lastBeatIdx: Number.isInteger(source.lastBeatIdx) ? Math.max(0, source.lastBeatIdx) : 0,
             directorLastDecision: source.directorLastDecision || null,
             directorLastDecisionAt: Number.isFinite(source.directorLastDecisionAt) ? source.directorLastDecisionAt : 0,
         };

@@ -50,6 +50,8 @@
         experience: {
             currentChapterIndex: 0,
             currentBeatIndex: 0,
+            lastChapterIdx: 0,
+            lastBeatIdx: 0,
             directorLastDecision: null,
             directorLastDecisionAt: 0,
         },

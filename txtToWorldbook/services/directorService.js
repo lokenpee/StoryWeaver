@@ -1105,13 +1105,14 @@ export function createDirectorService(deps = {}) {
         const previousGlobalBeatOrdinal = previousBeatIdx >= 0
             ? toGlobalBeatOrdinal(previousChapterIdx, previousBeatIdx)
             : null;
+        const hasReliableBeatHistory = Number.isInteger(currentGlobalBeatOrdinal) && Number.isInteger(previousGlobalBeatOrdinal);
         const beatJumpDistance = (Number.isInteger(currentGlobalBeatOrdinal) && Number.isInteger(previousGlobalBeatOrdinal))
             ? Math.abs(currentGlobalBeatOrdinal - previousGlobalBeatOrdinal)
             : 0;
         const isLargeBeatJump = beatJumpDistance >= 2;
-        const isNewBeat = (Number.isInteger(currentGlobalBeatOrdinal) && Number.isInteger(previousGlobalBeatOrdinal))
+        const isNewBeat = hasReliableBeatHistory
             ? currentGlobalBeatOrdinal !== previousGlobalBeatOrdinal
-            : (chapterChanged || previousBeatIdx !== lockedBeatIdx);
+            : (chapterChanged || switchControl.switched === true);
         const directionContext = buildDirectionContext({
             beats,
             currentBeatIdx: lockedBeatIdx,
@@ -1123,7 +1124,7 @@ export function createDirectorService(deps = {}) {
         });
         directorDebug(`switch-command=${switchCommand.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
         directorDebug(`switch-control=${switchControl.reason}, lockedBeat=${lockedBeatIdx + 1}/${beats.length}`);
-        directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}`);
+        directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}, history=${hasReliableBeatHistory ? 'reliable' : 'fallback'}`);
         directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
 
         const prompt = buildDirectorPrompt({
