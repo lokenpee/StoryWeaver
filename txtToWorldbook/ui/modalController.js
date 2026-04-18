@@ -18,6 +18,52 @@ export function createModalController(deps) {
     let exitPersistenceBound = false;
     let exitPersistenceHandler = null;
     const MODAL_SCROLL_STORAGE_KEY = 'westworldTxtToWorldbookModalScrollState';
+    const SCROLL_STATE_VERSION = 2;
+    const SCROLLABLE_SELECTORS = [
+        '.ttw-modal-body',
+        '#ttw-memory-queue',
+        '#ttw-result-preview',
+        '#ttw-stream-content',
+        '#ttw-default-entries-list',
+    ];
+    let scrollSyncBound = false;
+    let scrollSyncHandler = null;
+
+    function getClampedScrollTop(element, desiredTop) {
+        if (!element) return 0;
+        const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
+        const top = Number.isFinite(Number(desiredTop)) ? Number(desiredTop) : 0;
+        return Math.max(0, Math.min(top, maxTop));
+    }
+
+    function collectScrollableState(container) {
+        const root = container || getModalContainer();
+        const entries = {};
+        if (!root) return entries;
+
+        SCROLLABLE_SELECTORS.forEach((selector) => {
+            const node = root.querySelector(selector);
+            if (!node) return;
+            const top = Number(node.scrollTop || 0);
+            if (top > 0) {
+                entries[selector] = Math.round(top);
+            }
+        });
+
+        return entries;
+    }
+
+    function applyScrollableState(stateMap = {}) {
+        const container = getModalContainer();
+        if (!container || !stateMap || typeof stateMap !== 'object') return;
+
+        Object.entries(stateMap).forEach(([selector, top]) => {
+            if (!SCROLLABLE_SELECTORS.includes(selector)) return;
+            const node = container.querySelector(selector);
+            if (!node) return;
+            node.scrollTop = getClampedScrollTop(node, top);
+        });
+    }
 
     function getModalScrollContainer() {
         const container = getModalContainer();
@@ -41,18 +87,80 @@ export function createModalController(deps) {
         }
     }
 
+    function readSavedScrollState() {
+        if (AppState?.ui?.lastModalScrollState && typeof AppState.ui.lastModalScrollState === 'object') {
+            return { ...AppState.ui.lastModalScrollState };
+        }
+
+        try {
+            const raw = localStorage.getItem(MODAL_SCROLL_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.scrollBySelector === 'object') {
+                return { ...parsed.scrollBySelector };
+            }
+            return {};
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function syncScrollStateFromDom() {
+        const container = getModalContainer();
+        if (!container) return;
+
+        const scrollBySelector = collectScrollableState(container);
+        const modalBodyTop = Number(scrollBySelector['.ttw-modal-body'] || 0);
+
+        if (!AppState.ui || typeof AppState.ui !== 'object') {
+            AppState.ui = {};
+        }
+        AppState.ui.lastModalScrollTop = modalBodyTop;
+        AppState.ui.lastModalScrollState = { ...scrollBySelector };
+    }
+
+    function ensureScrollSyncBinding() {
+        if (scrollSyncBound) return;
+        const container = getModalContainer();
+        if (!container) return;
+
+        scrollSyncHandler = () => {
+            syncScrollStateFromDom();
+        };
+
+        container.addEventListener('scroll', scrollSyncHandler, { capture: true, passive: true });
+        scrollSyncBound = true;
+    }
+
+    function removeScrollSyncBinding() {
+        if (!scrollSyncBound) return;
+        const container = getModalContainer();
+        if (container && scrollSyncHandler) {
+            container.removeEventListener('scroll', scrollSyncHandler, { capture: true });
+        }
+        scrollSyncBound = false;
+        scrollSyncHandler = null;
+    }
+
     function saveModalScrollPosition() {
-        const scrollContainer = getModalScrollContainer();
-        const top = Math.max(0, Number(scrollContainer?.scrollTop || 0));
+        syncScrollStateFromDom();
+
+        const top = Math.max(0, Number(AppState?.ui?.lastModalScrollTop || 0));
+        const scrollBySelector = AppState?.ui?.lastModalScrollState && typeof AppState.ui.lastModalScrollState === 'object'
+            ? { ...AppState.ui.lastModalScrollState }
+            : {};
 
         if (!AppState.ui || typeof AppState.ui !== 'object') {
             AppState.ui = {};
         }
         AppState.ui.lastModalScrollTop = top;
+        AppState.ui.lastModalScrollState = { ...scrollBySelector };
 
         try {
             localStorage.setItem(MODAL_SCROLL_STORAGE_KEY, JSON.stringify({
+                v: SCROLL_STATE_VERSION,
                 top,
+                scrollBySelector,
                 at: Date.now(),
             }));
         } catch (_) {
@@ -62,19 +170,30 @@ export function createModalController(deps) {
 
     function restoreModalScrollPosition() {
         const savedTop = readSavedScrollTop();
-        if (!Number.isFinite(savedTop) || savedTop <= 0) return;
+        const savedState = readSavedScrollState();
+        const hasModalTop = Number.isFinite(savedTop) && savedTop > 0;
+        const hasState = savedState && Object.keys(savedState).length > 0;
+        if (!hasModalTop && !hasState) return;
 
         const apply = () => {
-            const scrollContainer = getModalScrollContainer();
-            if (!scrollContainer) return;
-            const maxTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
-            scrollContainer.scrollTop = Math.min(savedTop, maxTop);
+            if (hasState) {
+                applyScrollableState(savedState);
+            }
+
+            if (hasModalTop) {
+                const scrollContainer = getModalScrollContainer();
+                if (!scrollContainer) return;
+                scrollContainer.scrollTop = getClampedScrollTop(scrollContainer, savedTop);
+            }
         };
 
         // 重复应用以覆盖异步内容渲染导致的滚动重置。
         apply();
         requestAnimationFrame(apply);
         requestAnimationFrame(() => requestAnimationFrame(apply));
+        setTimeout(apply, 120);
+        setTimeout(apply, 320);
+        setTimeout(apply, 700);
     }
 
     function persistSnapshotOnExit() {
@@ -111,6 +230,7 @@ export function createModalController(deps) {
             await checkAndRestoreState({ autoRestore: true }).catch(onRestoreStateError);
         }
 
+        ensureScrollSyncBinding();
         restoreModalScrollPosition();
 
         ensureExitPersistenceBinding();
@@ -138,6 +258,7 @@ export function createModalController(deps) {
 
     function closeModal() {
         persistSnapshotOnExit();
+        removeScrollSyncBinding();
         setProcessingStatus('stopped');
 
         const globalSemaphore = getGlobalSemaphore();
