@@ -533,7 +533,8 @@
         const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
         const eventSummary = String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || fallbackSummary || '').trim();
         const summary = String(source.summary || eventSummary || fallbackSummary || '').trim();
-        const entryEvent = String(
+        // 优先使用AI返回的entry_event，没有再fallback到截取前40字
+        let entryEvent = String(
             source.entry_event
             || source.entryEvent
             || source.opening_event
@@ -542,6 +543,11 @@
             || source.enter_condition
             || ''
         ).trim();
+
+        // 如果AI没有返回entry_event，再fallback截取前40字
+        if (!entryEvent && typeof source.original_text === 'string' && source.original_text.trim()) {
+            entryEvent = source.original_text.trim().slice(0, 40);
+        }
         const exitCondition = String(
             source.exitCondition
             || source.exit_condition
@@ -579,6 +585,60 @@
             original_text: originalText,
             split_rule: splitRule,
         };
+    }
+
+    async function refineBeatsEntryEvents(beats, chapterIndex, runId) {
+        if (!Array.isArray(beats) || beats.length === 0) return beats;
+
+        const snippets = beats.map((beat, idx) => {
+            const text = String(beat.original_text || '').trim();
+            const snippet = text.slice(0, 40);
+            return `${idx + 1}. ${snippet}`;
+        }).join('\n');
+
+        const prompt = `${getLanguagePrefix()}你是酒馆国家的臣民，职业是入场事件识别助手AI，名字是:"秋青子"
+
+任务：根据以下每个节拍的原文前40字，识别出该节拍的"入场事件"（开场事件/触发条件）。
+
+【要求】
+- 每个入场事件必须写成"谁+在哪里+做了什么"的格式
+- 50字以内
+- 必须基于提供的原文前40字内容来识别
+- 如果前40字明显不足以判断，可以结合上下文合理推断，但仍需给出具体的人、地点、动作
+
+【输入】
+${snippets}
+
+输出JSON格式（只输出JSON，不要代码块，不要解释）：
+{
+  "entry_events": [
+    {"index": 0, "entry_event": "xxx"},
+    {"index": 1, "entry_event": "yyy"}
+  ]
+}`;
+
+        try {
+            updateStreamContent(`🎯 [第${chapterIndex}章] 发起入场事件精炼请求（${beats.length}个节拍）\n`);
+            const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, chapterIndex));
+            const parsed = extractJsonObject(response);
+            if (parsed?.entry_events && Array.isArray(parsed.entry_events)) {
+                parsed.entry_events.forEach((item) => {
+                    const idx = Number(item?.index);
+                    if (Number.isInteger(idx) && idx >= 0 && idx < beats.length) {
+                        const ev = String(item?.entry_event || '').trim();
+                        if (ev) {
+                            beats[idx].entryEvent = ev;
+                        }
+                    }
+                });
+                updateStreamContent(`✅ [第${chapterIndex}章] 入场事件精炼完成\n`);
+            }
+        } catch (error) {
+            updateStreamContent(`⚠️ [第${chapterIndex}章] 入场事件精炼失败，保留原始值: ${compactErrorMessage(error)}\n`);
+            // 不抛错，保留切分AI已生成的entry_event或fallback值
+        }
+
+        return beats;
     }
 
     function splitBeatCandidates(text, limit = 8) {
@@ -1860,7 +1920,7 @@
         return {
             anchor,
             event_summary: eventSummary || `节拍${idx + 1}`,
-            entry_event: entryEvent || '从上一节拍结果自然进入当前节拍。',
+            entry_event: entryEvent,
             exit_condition: normalizedExitCondition,
             split_reason: normalizedSplitReason,
             self_check: normalizeSelfCheck(selfCheck, compatibilityWarnings),
@@ -2171,6 +2231,12 @@
                 }
                 throwIfRunInactive(runId);
                 const assets = parseChapterAssetsResponse(response, memory, index);
+
+                // 新增：用AI从每个节拍前40字精炼入场事件
+                if (assets?.script?.beats?.length > 0) {
+                    await refineBeatsEntryEvents(assets.script.beats, index + 1, runId);
+                }
+
                 const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
                 const sourceTag = assets?.meta?.source || 'director-unknown';
                 updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);

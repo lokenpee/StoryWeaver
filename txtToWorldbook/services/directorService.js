@@ -1127,6 +1127,19 @@ export function createDirectorService(deps = {}) {
         directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}, history=${hasReliableBeatHistory ? 'reliable' : 'fallback'}`);
         directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
 
+        // 新增：输出导演回合判定开始日志
+        if (typeof updateStreamContent === 'function') {
+            const userMsgPreview = toShortText(latestUserMessage || '', 60) || '（无）';
+            const modeLabel = directionContext.mode === 'new_beat' ? '新入节拍' : '节拍中段续写';
+            updateStreamContent(`\n🎬 ${turnPrefix} ========== 导演回合判定开始 ==========\n`);
+            updateStreamContent(`   章节: ${memory.chapterTitle || `第${chapterIndex + 1}章`}\n`);
+            updateStreamContent(`   当前节拍: ${currentBeatIdx + 1}/${beats.length}\n`);
+            updateStreamContent(`   用户消息: ${userMsgPreview}\n`);
+            updateStreamContent(`   切拍指令: ${switchCommand.requested ? switchCommand.signal || '显式' : '无'}\n`);
+            updateStreamContent(`   锁定节拍: ${lockedBeatIdx + 1}/${beats.length}\n`);
+            updateStreamContent(`   判定模式: ${modeLabel}\n`);
+        }
+
         const prompt = buildDirectorPrompt({
             chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
             chapterOutline: toShortText(memory.chapterOutline || '', 200),
@@ -1136,6 +1149,11 @@ export function createDirectorService(deps = {}) {
             latestUserMessage,
             directionContext,
         });
+
+        // 新增：输出导演提示词构建完成日志
+        if (typeof updateStreamContent === 'function') {
+            updateStreamContent(`📝 ${turnPrefix} 导演提示词构建完成 (${prompt.length}字符)\n`);
+        }
 
         let decision = null;
         let decisionSource = 'model';
@@ -1157,6 +1175,29 @@ export function createDirectorService(deps = {}) {
                 decisionSource = 'fallback-parse';
             } else {
                 decision = normalizeDecision(parsed, lockedBeatIdx, beats, directionContext);
+            }
+
+            // 新增：输出导演决策详情日志
+            if (typeof updateStreamContent === 'function' && decision) {
+                const ds = decision.direction_script || {};
+                const steps = Array.isArray(ds.steps) ? ds.steps : [];
+                const actionChain = ds.action_chain || '';
+                updateStreamContent(`📋 ${turnPrefix} 导演决策详情:\n`);
+                updateStreamContent(`   来源: ${decisionSource}\n`);
+                updateStreamContent(`   锁定节拍: ${decision.stage_idx + 1}/${beats.length}\n`);
+                updateStreamContent(`   新节拍: ${decision.is_new_beat ? '是' : '否'}\n`);
+                updateStreamContent(`   大跳转: ${decision.is_large_beat_jump ? '是' : '否'}\n`);
+                updateStreamContent(`   起点: ${toShortText(ds.start || '', 100) || '（默认）'}\n`);
+                if (actionChain) {
+                    updateStreamContent(`   动作链: ${toShortText(actionChain, 120)}\n`);
+                }
+                if (steps.length > 0) {
+                    updateStreamContent(`   动作步骤:\n`);
+                    steps.slice(0, 4).forEach((step, i) => {
+                        updateStreamContent(`     ${i + 1}. ${toShortText(step, 100)}\n`);
+                    });
+                }
+                updateStreamContent(`   终点: ${toShortText(ds.end || '', 100) || '（默认）'}\n`);
             }
         } catch (error) {
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
@@ -1185,6 +1226,13 @@ export function createDirectorService(deps = {}) {
         const nextBeatEntryEvent = toShortText(nextBeat?.entryEvent || '', 140);
         const nextBeatPreview200 = toHeadText(nextBeat?.original_text || '', 200)
             || (nextBeatSummary ? `摘要：${nextBeatSummary}` : '');
+
+        // 新增：输出下一节拍信息
+        if (typeof updateStreamContent === 'function' && nextBeatSummary) {
+            updateStreamContent(`⏭️ ${turnPrefix} 下一节拍:\n`);
+            updateStreamContent(`   摘要: ${nextBeatSummary}\n`);
+            updateStreamContent(`   入场事件: ${nextBeatEntryEvent || '（无）'}\n`);
+        }
 
         decision.next_beat_summary = nextBeatSummary || '';
         decision.next_beat_entry_event = nextBeatEntryEvent || '';
