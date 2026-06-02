@@ -490,7 +490,8 @@ export function createDirectorService(deps = {}) {
         const maxIdx = Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
         const safeIdx = Math.max(0, Math.min(currentBeatIdx || 0, maxIdx));
         const currentBeat = Array.isArray(beats) ? (beats[safeIdx] || beats[0] || null) : null;
-        const entryEvent = toShortText(currentBeat?.entryEvent || '', 120);
+        const currentBeatOriginalHead50 = toHeadText(currentBeat?.original_text || '', 50);
+        const recentAssistantTail50 = toTailText(latestAssistantMessage || '', 50);
         const recentAssistant = toTailText(latestAssistantMessage || '', 200);
         const recentUser = toShortText(latestUserMessage || '', 220);
         const jumpDistance = Math.max(0, Number.isFinite(Number(beatJumpDistance)) ? Number(beatJumpDistance) : 0);
@@ -498,44 +499,58 @@ export function createDirectorService(deps = {}) {
 
         let startAnchor = '';
         if (hasLargeBeatJump) {
-            if (entryEvent) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），本回合以“${entryEvent}”作为新起点，不承接最近AI输出末尾。`;
-            } else if (recentUser) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），以用户当前互动“${recentUser}”作为新起点，不承接最近AI输出末尾。`;
+            // 跨节拍大跳转：以当前节拍原文前50字为起点
+            startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），以当前节拍原文开头作为新起点：”${currentBeatOriginalHead50}”，不承接最近AI输出末尾。`;
+        } else if (isNewBeat) {
+            // 用户点击下一节拍：给出两个参考点，让演员自行平滑过渡
+            if (recentAssistantTail50) {
+                startAnchor = `请从上一轮AI输出末尾”${recentAssistantTail50}”平滑过渡到当前节拍原文起点”${currentBeatOriginalHead50}”，由演员自行衔接两段之间的过渡，不可生硬拼接。`;
             } else {
-                startAnchor = '检测到跨节拍跳转，本回合从当前节拍可见起点直接开场，不承接最近AI输出末尾。';
+                startAnchor = `以当前节拍原文开头”${currentBeatOriginalHead50}”作为入场起点。`;
             }
-        } else if (recentAssistant) {
-            if (isNewBeat && entryEvent) {
-                startAnchor = `先承接最近AI输出末尾“${recentAssistant}”角色行为或话语，再以“${entryEvent}”触发入场事件。`;
-            } else {
-                startAnchor = `优先承接最近AI输出末尾“${recentAssistant}”角色行为或话语。`;
-            }   
-        } else if (entryEvent) {
-            startAnchor = `以“${entryEvent}”作为入场触发继续推进，并与用户当前互动保持连续。`;
-        } else if (recentUser) {
-            startAnchor = `以用户刚给出的互动“${recentUser}”作为当前起点继续推进，不补写超出输入边界的动作。`;
         } else {
-            startAnchor = '从当前可见动作直接续写，保持连续，不补写超出用户输入边界的剧情。';
+            // 节拍中段续写：衔接上次AI输出末尾
+            if (recentAssistantTail50) {
+                startAnchor = `优先承接最近AI输出末尾”${recentAssistantTail50}”，继续在当前节拍内推进。`;
+            } else if (recentUser) {
+                startAnchor = `以用户刚给出的互动”${recentUser}”作为当前起点继续推进，不补写超出输入边界的动作。`;
+            } else {
+                startAnchor = '从当前可见动作直接续写，保持连续，不补写超出用户输入边界的剧情。';
+            }
         }
-         // ===== end_guideline 新增逻辑 =====
+         // ===== end_guideline =====
 
         const freePlayKeywords = /自由推进|随意推进|自由发挥|随意发挥|自由演绎|随意演绎|你继续|你推进|自由写|随便写|随意写|自由发挥剧情|随意发挥剧情/;
         const isFreePlay = freePlayKeywords.test(recentUser);
 
         let endGuideline = '';
-        if (isFreePlay) {
-            endGuideline = '本回合只需收束到可中断的临时节点（小结果、可追问钩子或局势变化），不要求完成整个节拍；';
-        } else if (recentUser) {
-            endGuideline = `以用户本轮输入末尾的可见状态为收束锚点，不得越界续写用户未给出的后续动作或结果。`;
+        let contextModeInstruction = '';
+        if (isNewBeat) {
+            contextModeInstruction = '当前为新入节拍，请基于起笔锚点触发入场场景，action_chain 从节拍开头起步，沿原文顺序推进。';
+            if (isFreePlay) {
+                endGuideline = '本回合只需收束到可中断的临时节点（小结果、可追问钩子或局势变化），不要求完成整个节拍；';
+            } else if (recentUser) {
+                endGuideline = `以用户本轮输入末尾的可见状态为收束锚点，不得越界续写用户未给出的后续动作或结果。`;
+            } else {
+                endGuideline = '本回合收束到可承接的临时节点，不要求完成整节拍。';
+            }
         } else {
-            endGuideline = '本回合收束到可承接的临时节点，不要求完成整节拍。';
+            // 节拍中段续写：跟随用户输入节奏，不预设逗留或推进
+            contextModeInstruction = '当前为节拍中段续写——action_chain 应跟随用户输入的节奏：若用户输入聚焦对话或场景细节，只推进1-2个当前场景内的小步骤；若用户输入有明显推进意图，可沿节拍原文方向推进2-3步，但不得透支整个节拍。以最近AI输出末尾为当前位置，不跨越到节拍原文的后续阶段（如跳过中间场景直达节拍末尾）。';
+            if (isFreePlay) {
+                endGuideline = '本回合收束到可中断的临时节点（小结果、可追问钩子或局势变化），不要求完成整个节拍；';
+            } else if (recentUser) {
+                endGuideline = '以用户本轮输入末尾的可见状态为收束锚点，跟随用户节奏推进，不越界续写用户未给出的后续动作。';
+            } else {
+                endGuideline = '本回合收束到可承接的临时节点，跟随用户节奏，不要求完成整节拍。';
+            }
         }
         return {
             mode: isNewBeat ? 'new_beat' : 'in_beat',
             start_anchor: toShortText(startAnchor, 180),
             end_guideline: toShortText(endGuideline, 180),
-            entry_event: entryEvent || '',
+            context_mode_instruction: contextModeInstruction,
+            entry_event: currentBeatOriginalHead50 || '',
             recent_assistant: recentAssistant || '',
             recent_user: recentUser || '',
             is_large_beat_jump: hasLargeBeatJump,
@@ -668,22 +683,31 @@ export function createDirectorService(deps = {}) {
         const contextEntryEvent = toShortText(context.entry_event || '', 120) || '无';
         const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || '无';
         const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
+        const contextModeInstruction = String(context.context_mode_instruction || '').trim()
+            || (contextMode === 'new_beat'
+                ? '当前为新入节拍，基于起笔锚点触发入场场景。'
+                : '当前为节拍中段续写，跟随用户输入节奏推进。');
         const endGuideline = toShortText(context.end_guideline || '', 180)
             || '本回合收束到可中断临时节点，不要求完成整节拍，且不得超出用户输入边界。';
         const currentOriginal = String(currentBeat?.original_text || '').trim();
         const currentOriginalForPrompt = currentOriginal || '无';
+        const currentOriginalTail200 = currentOriginal
+            ? toTailText(currentOriginal, 200)
+            : '无';
         const template = String(AppState?.settings?.customDirectorFrameworkPrompt || '').trim() || defaultDirectorFrameworkPrompt;
         const contextModeLabel = contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写';
-        const entryEventLine = contextMode === 'new_beat' ? `- 入场事件：${contextEntryEvent}` : '';
+        const entryEventLine = contextMode === 'new_beat' ? `- 节拍原文开头：${contextEntryEvent}` : '';
         const promptBody = renderPromptTemplate(template, {
             CHAPTER_TITLE: String(chapterTitle || ''),
             CHAPTER_OUTLINE: String(chapterOutline || ''),
             CURRENT_BEAT_INDEX: String(currentBeatIdx),
             LATEST_USER_MESSAGE: toShortText(latestUserMessage || '无', 320) || '无',
             CONTEXT_MODE_LABEL: contextModeLabel,
+            CONTEXT_MODE_INSTRUCTION: contextModeInstruction,
             RECENT_ASSISTANT: contextRecentAssistant,
             ENTRY_EVENT_LINE: entryEventLine,
             CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
+            CURRENT_BEAT_ORIGINAL_TAIL: currentOriginalTail200,
             RECENT_USER: contextRecentUser,
             START_ANCHOR: startAnchor,
             END_GUIDELINE: endGuideline,
@@ -702,19 +726,17 @@ export function createDirectorService(deps = {}) {
         const startAnchor = toShortText(context.start_anchor || '', 160);
         const recentAssistant = toTailText(context.recent_assistant || '', 160);
         const recentUser = toShortText(context.recent_user || '', 160);
-        const entryEvent = toShortText(context.entry_event || '', 100);
+        const currentBeatHead50 = toHeadText(currentBeat?.original_text || '', 50);
         const endGuideline = toShortText(context.end_guideline || '', 160)
             || '本回合收束到可承接的临时节点，不要求完成整节拍。';
 
         if (mode === 'new_beat') {
             const steps = [
-                entryEvent
-                    ? `先启动“${entryEvent}”对应的入场动作，不复述整段背景。`
-                    : '直接进入当前节拍的首个可见动作，不重铺背景。',
-                `围绕“${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
+                '直接进入当前节拍的首个可见动作，不重铺背景。',
+                `围绕”${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
             ];
             return {
-                start: startAnchor || `先以“${entryEvent || currentSummary}”触发当前节拍开场，再进入可见动作。`,
+                start: startAnchor || `以当前节拍原文开头”${currentBeatHead50}”触发开场，再进入可见动作。`,
                 action_chain: buildActionChain(steps),
                 steps,
                 end: endGuideline,

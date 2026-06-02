@@ -305,7 +305,7 @@ export const defaultConsolidatePrompt = `你是酒馆国家的臣民，职业是
 
 `;
 
-export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。你的职责是：基于已锁定的当前节拍，为演员AI生成可直接执行的演出步骤框架。
+export const defaultDirectorFrameworkPrompt = `你是”互动小说导演”。你的职责是：基于已锁定的当前节拍，为演员AI生成可直接执行的演出步骤框架。
 下面是关键资料：
 本章标题：{CHAPTER_TITLE}
 本章摘要：{CHAPTER_OUTLINE}
@@ -314,10 +314,14 @@ export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。
 
 起笔锚点上下文：
 - 场景模式：{CONTEXT_MODE_LABEL}
+- 模式指令：{CONTEXT_MODE_INSTRUCTION}
 - 最近AI输出末尾：{RECENT_ASSISTANT}
 {ENTRY_EVENT_LINE}
 当前节拍小说原文（优先依据）：
 {CURRENT_BEAT_ORIGINAL}
+
+⚠️ 当前节拍末尾原文（绝对不可越过的边界红线）：
+{CURRENT_BEAT_ORIGINAL_TAIL}
 - 最近用户动作：{RECENT_USER}
 
 - 起笔锚点：{START_ANCHOR}
@@ -327,32 +331,35 @@ export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。
 {COMPACT_BEATS_JSON}
 
 核心任务：
-1) 你要结合：当前节拍原文证据、最近AI输出、最近用户输入，输出可执行框架 direction_script（起点-过程-终点）。direction_script.action_chain 必须是单个字符串，包含2-4段递进动作并用"→"连接。格式示例：主角出门→遇到胖子→路上闲扯→到潘家园。
+1) 你要结合：当前节拍原文证据、最近AI输出、最近用户输入，输出可执行框架 direction_script（起点-过程-终点）。direction_script.action_chain 必须是单个字符串，包含2-4段递进动作并用”→”连接。格式示例：主角出门→遇到胖子→路上闲扯→到潘家园。
 2) 以用户本轮输入为绝对边界，未经用户明确输入，不得主动切换主角所在场景；若用户明确提出切拍/转场，按系统锁定节拍执行。
+3) 【节拍边界硬约束 - 最高优先级】direction_script 的全部内容（start、action_chain、end）必须严格限定在当前节拍原文范围内。action_chain 的最后一个动作必须在节拍原文中后段（约70%-90%位置）收束，绝不可触及或越过上述「节拍末尾原文」边界红线。
 
 direction_script（起点-过程-终点）编写核心原则：
 1) 当用户表明自由推进剧情时，整个direction_script框架应基于当前节拍原文剧情,保持中等节奏推进，节奏不拖沓、不空转，亦不得在一轮回合内透支整个节拍剧情。
 2) 当用户输入为角色台词时：仅创作世界与在场角色的反应及下一状态，不预判用户反应，不描写用户沉默。
 3) 当用户输入为角色行动时：导演只能在用户输入范围内编写direction_script，不得越界续写关键动作或结果。
 4) 当用户输入为既有角色台词又有角色行动时：同时遵循台词与框架规则，既不越界创作剧情，也不代劳主角心理。
-5) direction_script.start 需要参考“起笔锚点”指示，且内容长度在15字到50字之间；direction_script.end 需要参考“临时收束”目标指导，且内容长度在15字到50字之间。
+5) direction_script.start 需要参考”起笔锚点”指示，且内容长度在15字到50字之间；direction_script.end 需要参考”临时收束”目标指导，且内容长度在15字到50字之间。
 6) 当用户输入与原味剧情相近时，导演可以适当参考原文，在不违背用户输入的前提下，尽可能多的参考原文内容。
 7) 当用户输入与原文剧情冲突时：优先保障用户输入的权威性，并可适当参考原文细节，但不得违背用户输入的事实设定和情节走向。
+8) 【防越界】导演框架终点（end）必须落在当前节拍原文的中后段，宁可本轮推进保守，也绝不可越界触及下一节拍内容。若action_chain最后一步疑似超出节拍末尾原文边界，则必须回退一步，在节拍内安全收束。
+9) 【节拍中段续写 - 跟随用户节奏】当模式指令指示"节拍中段续写"时，用户未主动切拍，但这不等于用户在逗留。action_chain 应跟随用户实际输入的节奏：用户聚焦对话/细节→只推进1-2个当前场景内的小步骤；用户输入有明确推进意图→可沿节拍原文方向推进2-3步。无论哪种情况，都不得透支整个节拍，不得跨越到节拍原文的后续阶段（如跳过中间场景直达节拍末尾）。
 
 
 要求：每个步骤为短动宾结构，步骤间有明确的因果或时间递进关系。
 输出硬规则：
 1) 只输出 JSON，不要代码块，不要解释文字。
-2) direction_script.action_chain 必须是单行字符串，包含3-6段递进动作并用"→"连接，例如：动作A→动作B→动作C→...→动作N。禁止输出 direction_script.steps 数组。
+2) direction_script.action_chain 必须是单行字符串，包含3-6段递进动作并用”→”连接，例如：动作A→动作B→动作C→...→动作N。禁止输出 direction_script.steps 数组。
 3) stage_idx 必须固定为 {FIXED_STAGE_IDX}（系统已完成切拍控制）。
 
 输出 JSON 模板：
 {
-    "stage_idx": {FIXED_STAGE_IDX},
-    "direction_script": {
-        "action_chain": "将月儿背入闺房→褪去湿衣换上狐裘→脱去鞋袜查看伤势→....→....",
-        "start": "我们就这样，朝着家的方向，一步一步走着",
-        "end": "我手捧着月儿红肿的脚踝，轻声安慰着她"
+    “stage_idx”: {FIXED_STAGE_IDX},
+    “direction_script”: {
+        “action_chain”: “将月儿背入闺房→褪去湿衣换上狐裘→脱去鞋袜查看伤势→....→....”,
+        “start”: “我们就这样，朝着家的方向，一步一步走着”,
+        “end”: “我手捧着月儿红肿的脚踝，轻声安慰着她”
     }
 }`;
 
@@ -373,6 +380,12 @@ export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行�
 {DIRECTION_PROCESS_LINES}
 - 终点: {DIRECTION_END}
 {STAGE_EXECUTION_REQUIREMENT}
+
+⚠️ 【节拍边界硬约束 - 不可违抗】:
+- 你的全部输出必须严格限定在当前节拍原文的剧情范围内，绝对不得越界。
+- 当前节拍的退出事件「{CURRENT_EXIT_CONDITION}」是绝对红线——你的输出绝不可触发、接近或暗示该退出事件。
+- 即使导演框架的终点看起来接近节拍末尾，你也只能在节拍中后段安全收束，不可写到节拍末尾。
+- 如果发现导演框架疑似越界，以节拍原文和退出事件为准——宁可提前收束，绝不越界半步。
 
 ## 3) 下一节拍预览（仅参考，禁止提前展开）
 - 当前节拍退出事件: {CURRENT_EXIT_CONDITION}
