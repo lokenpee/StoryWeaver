@@ -894,6 +894,8 @@ export function createDirectorService(deps = {}) {
 
         return {
             stage_idx: stageIdx,
+            beat_complete: rawDecision?.beat_complete === true,
+            beat_complete_reason: String(rawDecision?.beat_complete_reason || '').trim(),
             direction_script: directionScript,
         };
     }
@@ -905,6 +907,8 @@ export function createDirectorService(deps = {}) {
         const directionScript = buildDefaultDirectionScript(currentBeat, nextBeat, directionContext);
         return {
             stage_idx: safeIdx,
+            beat_complete: false,
+            beat_complete_reason: '',
             direction_script: directionScript,
             reason,
         };
@@ -1176,6 +1180,7 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`   锁定节拍: ${decision.stage_idx + 1}/${beats.length}\n`);
                 updateStreamContent(`   新节拍: ${decision.is_new_beat ? '是' : '否'}\n`);
                 updateStreamContent(`   大跳转: ${decision.is_large_beat_jump ? '是' : '否'}\n`);
+                updateStreamContent(`   节拍完成: ${decision.beat_complete ? '✅ 是' : '否'}${decision.beat_complete_reason ? ` (${toShortText(decision.beat_complete_reason, 60)})` : ''}\n`);
                 updateStreamContent(`   起点: ${toShortText(ds.start || '', 100) || '（默认）'}\n`);
                 if (actionChain) {
                     updateStreamContent(`   动作链: ${toShortText(actionChain, 120)}\n`);
@@ -1247,20 +1252,38 @@ export function createDirectorService(deps = {}) {
 
         decision.previous_stage_idx = currentBeatIdx;
 
-        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}`);
+        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}${decision.beat_complete ? ', beatComplete=true' : ''}`);
         if (typeof updateStreamContent === 'function') {
             updateStreamContent(`✅ ${turnPrefix} 判定完成：source=${decisionSource}, 锁定节拍=${decision.stage_idx + 1}/${beats.length}, switch=${decision.switch_direction || 'none'}\n`);
+
+            if (decision.beat_complete) {
+                const completeReason = decision.beat_complete_reason || '退出条件已满足';
+                const nextBeatForNotify = beats[decision.stage_idx + 1];
+                const nextSummary = nextBeatForNotify?.summary || '';
+                updateStreamContent(`\n`);
+                updateStreamContent(`╔══════════════════════════════════════╗\n`);
+                updateStreamContent(`║  🎯 导演判定：当前节拍已完成！       ║\n`);
+                updateStreamContent(`║  原因: ${completeReason}\n`);
+                if (nextSummary) {
+                    updateStreamContent(`║  下一节拍: ${toShortText(nextSummary, 40)}\n`);
+                }
+                updateStreamContent(`║  💡 建议点击「下一节拍」切换         ║\n`);
+                updateStreamContent(`╚══════════════════════════════════════╝\n`);
+                updateStreamContent(`\n`);
+            }
         }
 
         memory.chapterCurrentBeatIndex = decision.stage_idx;
         memory.directorDecision = {
             ...decision,
+            beat_complete: decision.beat_complete || false,
+            beat_complete_reason: decision.beat_complete_reason || '',
             at: Date.now(),
         };
         AppState.experience.currentBeatIndex = decision.stage_idx;
         AppState.experience.lastBeatIdx = lockedBeatIdx;
         AppState.experience.lastChapterIdx = chapterIndex;
-        AppState.experience.directorLastDecision = { ...memory.directorDecision };
+        AppState.experience.directorLastDecision = { ...memory.directorDecision, beat_complete: decision.beat_complete || false };
         AppState.experience.directorLastDecisionAt = Date.now();
 
         const injection = buildInjection(decision, beats);

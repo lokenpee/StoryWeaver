@@ -45,8 +45,8 @@ function buildCustomApiSectionHtml() {
         <input type="text" id="ttw-api-model-${target}" value="gemini-2.5-flash" placeholder="模型名称">
     </div>
     <div class="ttw-setting-item" id="ttw-max-tokens-container-${target}">
-        <label>Max Tokens <span style="opacity:0.6;font-size:11px;">(OpenAI兼容建议 1024-4096)</span></label>
-        <input type="number" id="ttw-api-max-tokens-${target}" value="2048" min="1" max="8192" class="ttw-input" placeholder="输出token上限">
+        <label>Max Tokens <span style="opacity:0.6;font-size:11px;">(输出上限，建议≥65536)</span></label>
+        <input type="number" id="ttw-api-max-tokens-${target}" value="65536" min="1" max="200000" class="ttw-input" placeholder="输出token上限">
     </div>
     <div class="ttw-setting-item" id="ttw-model-select-container-${target}" style="display:none;">
         <label>模型</label>
@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.11.0';
+const PLUGIN_VERSION = 'v3.13.0';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -833,7 +833,7 @@ export function hydrateSettingsFromState(deps = {}) {
         apiKey: '',
         endpoint: mainApi.endpoint || '',
         model: mainApi.model || 'gemini-2.5-flash',
-        maxTokens: mainApi.maxTokens || 2048,
+        maxTokens: mainApi.maxTokens || 65536,
     };
 
     const apiProviderMainEl = document.getElementById('ttw-api-provider-main');
@@ -849,7 +849,7 @@ export function hydrateSettingsFromState(deps = {}) {
     if (apiModelMainEl) apiModelMainEl.value = mainApi.model || 'gemini-2.5-flash';
 
     const apiMaxTokensMainEl = document.getElementById('ttw-api-max-tokens-main');
-    if (apiMaxTokensMainEl) apiMaxTokensMainEl.value = mainApi.maxTokens || 2048;
+    if (apiMaxTokensMainEl) apiMaxTokensMainEl.value = mainApi.maxTokens || 65536;
 
     const apiProviderDirectorEl = document.getElementById('ttw-api-provider-director');
     if (apiProviderDirectorEl) apiProviderDirectorEl.value = directorApi.provider || 'openai-compatible';
@@ -864,7 +864,7 @@ export function hydrateSettingsFromState(deps = {}) {
     if (apiModelDirectorEl) apiModelDirectorEl.value = directorApi.model || 'gemini-2.5-flash';
 
     const apiMaxTokensDirectorEl = document.getElementById('ttw-api-max-tokens-director');
-    if (apiMaxTokensDirectorEl) apiMaxTokensDirectorEl.value = directorApi.maxTokens || 2048;
+    if (apiMaxTokensDirectorEl) apiMaxTokensDirectorEl.value = directorApi.maxTokens || 65536;
 
     const directorEnabledEl = document.getElementById('ttw-director-enabled');
     if (directorEnabledEl) directorEnabledEl.checked = AppState.settings.directorEnabled !== false;

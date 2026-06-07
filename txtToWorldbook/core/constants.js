@@ -338,7 +338,7 @@ direction_script（起点-过程-终点）编写核心原则：
 5) direction_script.start 需要参考“起笔锚点”指示，且内容长度在15字到50字之间；direction_script.end 需要参考“临时收束”目标指导，且内容长度在15字到50字之间。
 6) 当用户输入与原味剧情相近时，导演可以适当参考原文，在不违背用户输入的前提下，尽可能多的参考原文内容。
 7) 当用户输入与原文剧情冲突时：优先保障用户输入的权威性，并可适当参考原文细节，但不得违背用户输入的事实设定和情节走向。
-
+8) 节拍完成判定：对比当前节拍的退出条件(exit_condition)与最近AI输出末尾(RECENT_ASSISTANT)。如果最近的AI输出已经写到了满足退出条件的位置（如角色已离开场景、关键对话已结束、目标动作已完成），则 beat_complete 设为 true，并在 beat_complete_reason 简要说明。注意：必须在最新AI输出中看到明确的退出信号才能判定完成，不要在未满足时提前判定。
 
 要求：每个步骤为短动宾结构，步骤间有明确的因果或时间递进关系。
 输出硬规则：
@@ -349,6 +349,8 @@ direction_script（起点-过程-终点）编写核心原则：
 输出 JSON 模板：
 {
     "stage_idx": {FIXED_STAGE_IDX},
+    "beat_complete": false,
+    "beat_complete_reason": "",
     "direction_script": {
         "action_chain": "将月儿背入闺房→褪去湿衣换上狐裘→脱去鞋袜查看伤势→....→....",
         "start": "我们就这样，朝着家的方向，一步一步走着",
@@ -414,20 +416,20 @@ export const defaultSettings = {
     customApiKey: '',
     customApiEndpoint: '',
     customApiModel: 'gemini-2.5-flash',
-    customApiMaxTokens: 2048,
+    customApiMaxTokens: 65536,
     mainApi: {
         provider: 'openai-compatible',
         apiKey: '',
         endpoint: '',
         model: 'gemini-2.5-flash',
-        maxTokens: 2048,
+        maxTokens: 65536,
     },
     directorApi: {
         provider: 'openai-compatible',
         apiKey: '',
         endpoint: '',
         model: 'gemini-2.5-flash',
-        maxTokens: 2048,
+        maxTokens: 65536,
     },
     directorEnabled: true,
     directorAutoFallbackToMain: true,
