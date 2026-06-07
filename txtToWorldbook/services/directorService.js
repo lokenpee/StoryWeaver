@@ -154,16 +154,7 @@ export function createDirectorService(deps = {}) {
         return {
             id: String(source.id || `b${idx + 1}`),
             summary: toShortText(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${idx + 1}`, 200),
-            entryEvent: toShortText(
-                source.entryEvent
-                || source.entry_event
-                || source.opening_event
-                || source.openingEvent
-                || source.entry_condition
-                || source.enter_condition
-                || '从上一节拍结果自然衔接进入当前事件。',
-                120
-            ),
+            entryEvent: toShortText(source.entryEvent || source.entry_event || '', 120),
             exitCondition: toShortText(
                 source.exitCondition
                 || source.exit_condition
@@ -490,33 +481,42 @@ export function createDirectorService(deps = {}) {
         const maxIdx = Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
         const safeIdx = Math.max(0, Math.min(currentBeatIdx || 0, maxIdx));
         const currentBeat = Array.isArray(beats) ? (beats[safeIdx] || beats[0] || null) : null;
-        const entryEvent = toShortText(currentBeat?.entryEvent || '', 120);
-        const recentAssistant = toTailText(latestAssistantMessage || '', 200);
+
+        // 提取纯文本片段（不含省略号，用于起点锚定）
+        const beatText = String(currentBeat?.original_text || '').replace(/\s+/g, ' ').trim();
+        const beatHead50 = beatText.slice(0, 50);
+        const assistantPlain = String(latestAssistantMessage || '').replace(/\s+/g, ' ').trim();
+        const assistantTail50 = assistantPlain.slice(Math.max(0, assistantPlain.length - 50));
         const recentUser = toShortText(latestUserMessage || '', 220);
         const jumpDistance = Math.max(0, Number.isFinite(Number(beatJumpDistance)) ? Number(beatJumpDistance) : 0);
         const hasLargeBeatJump = isLargeBeatJump === true || jumpDistance >= 2;
 
+        // 三种起点锚定模式，startAnchor 为实际文本（演员AI须融合此文本起笔）
         let startAnchor = '';
+        let startMode = 'fallback';
         if (hasLargeBeatJump) {
-            if (entryEvent) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），本回合以“${entryEvent}”作为新起点，不承接最近AI输出末尾。`;
-            } else if (recentUser) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），以用户当前互动“${recentUser}”作为新起点，不承接最近AI输出末尾。`;
+            // 模式3: 跳节拍（≥2拍或跨章）→ 仅用新节拍前50字，不承接上文
+            startAnchor = beatHead50 || '';
+            startMode = 'jump';
+        } else if (assistantTail50) {
+            if (isNewBeat) {
+                // 模式1: 自然进入新节拍 → AI尾50字 + 节拍头50字，融合衔接
+                startAnchor = beatHead50 ? `${assistantTail50}${beatHead50}` : assistantTail50;
+                startMode = 'transition';
             } else {
-                startAnchor = '检测到跨节拍跳转，本回合从当前节拍可见起点直接开场，不承接最近AI输出末尾。';
+                // 模式2: 节拍中段续写 → 仅AI尾50字
+                startAnchor = assistantTail50;
+                startMode = 'continue';
             }
-        } else if (recentAssistant) {
-            if (isNewBeat && entryEvent) {
-                startAnchor = `先承接最近AI输出末尾“${recentAssistant}”角色行为或话语，再以“${entryEvent}”触发入场事件。`;
-            } else {
-                startAnchor = `优先承接最近AI输出末尾“${recentAssistant}”角色行为或话语。`;
-            }   
-        } else if (entryEvent) {
-            startAnchor = `以“${entryEvent}”作为入场触发继续推进，并与用户当前互动保持连续。`;
+        } else if (beatHead50) {
+            startAnchor = beatHead50;
+            startMode = 'beat-head';
         } else if (recentUser) {
-            startAnchor = `以用户刚给出的互动“${recentUser}”作为当前起点继续推进，不补写超出输入边界的动作。`;
+            startAnchor = toShortText(recentUser, 100);
+            startMode = 'user';
         } else {
-            startAnchor = '从当前可见动作直接续写，保持连续，不补写超出用户输入边界的剧情。';
+            startAnchor = '';
+            startMode = 'empty';
         }
          // ===== end_guideline 新增逻辑 =====
 
@@ -533,10 +533,10 @@ export function createDirectorService(deps = {}) {
         }
         return {
             mode: isNewBeat ? 'new_beat' : 'in_beat',
-            start_anchor: toShortText(startAnchor, 180),
+            start_anchor: startAnchor,
+            start_mode: startMode,
             end_guideline: toShortText(endGuideline, 180),
-            entry_event: entryEvent || '',
-            recent_assistant: recentAssistant || '',
+            recent_assistant: toTailText(latestAssistantMessage || '', 200),
             recent_user: recentUser || '',
             is_large_beat_jump: hasLargeBeatJump,
             beat_jump_distance: jumpDistance,
@@ -655,7 +655,6 @@ export function createDirectorService(deps = {}) {
             idx,
             id: beat.id,
             summary: beat.summary,
-            entryEvent: beat.entryEvent,
             exitCondition: beat.exitCondition,
         }));
         const currentBeat = beats[currentBeatIdx] || beats[0] || null;
@@ -665,7 +664,6 @@ export function createDirectorService(deps = {}) {
             || (contextMode === 'new_beat'
                 ? '先触发当前节拍入场动作，再进入可见互动。'
                 : '承接最近AI输出，再接入用户动作继续推进。');
-        const contextEntryEvent = toShortText(context.entry_event || '', 120) || '无';
         const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || '无';
         const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
         const endGuideline = toShortText(context.end_guideline || '', 180)
@@ -674,7 +672,6 @@ export function createDirectorService(deps = {}) {
         const currentOriginalForPrompt = currentOriginal || '无';
         const template = String(AppState?.settings?.customDirectorFrameworkPrompt || '').trim() || defaultDirectorFrameworkPrompt;
         const contextModeLabel = contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写';
-        const entryEventLine = contextMode === 'new_beat' ? `- 入场事件：${contextEntryEvent}` : '';
         const promptBody = renderPromptTemplate(template, {
             CHAPTER_TITLE: String(chapterTitle || ''),
             CHAPTER_OUTLINE: String(chapterOutline || ''),
@@ -682,7 +679,7 @@ export function createDirectorService(deps = {}) {
             LATEST_USER_MESSAGE: toShortText(latestUserMessage || '无', 320) || '无',
             CONTEXT_MODE_LABEL: contextModeLabel,
             RECENT_ASSISTANT: contextRecentAssistant,
-            ENTRY_EVENT_LINE: entryEventLine,
+            ENTRY_EVENT_LINE: '',
             CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
             RECENT_USER: contextRecentUser,
             START_ANCHOR: startAnchor,
@@ -699,40 +696,37 @@ export function createDirectorService(deps = {}) {
         const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 200) || '下一节拍';
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const mode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
-        const startAnchor = toShortText(context.start_anchor || '', 160);
+        const startAnchor = context.start_anchor || '';
         const recentAssistant = toTailText(context.recent_assistant || '', 160);
         const recentUser = toShortText(context.recent_user || '', 160);
-        const entryEvent = toShortText(context.entry_event || '', 100);
         const endGuideline = toShortText(context.end_guideline || '', 160)
             || '本回合收束到可承接的临时节点，不要求完成整节拍。';
 
+        // start 优先使用从 buildDirectionContext 提取的实际文本片段（50字锚点）
+        const startText = startAnchor
+            || (recentAssistant
+                ? toTailText(recentAssistant, 50)
+                : '');
+
         if (mode === 'new_beat') {
             const steps = [
-                entryEvent
-                    ? `先启动“${entryEvent}”对应的入场动作，不复述整段背景。`
-                    : '直接进入当前节拍的首个可见动作，不重铺背景。',
-                `围绕“${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
+                '直接进入当前节拍的首个可见动作，不重铺背景。',
+                `围绕”${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
             ];
             return {
-                start: startAnchor || `先以“${entryEvent || currentSummary}”触发当前节拍开场，再进入可见动作。`,
+                start: startText || `先以”${currentSummary}”触发当前节拍开场，再进入可见动作。`,
                 action_chain: buildActionChain(steps),
                 steps,
                 end: endGuideline,
             };
         }
 
-        const inBeatStart = startAnchor
-            || (recentAssistant
-                ? `优先承接最近AI输出“${recentAssistant}”，再接入用户动作继续推进。`
-                : (recentUser
-                    ? `承接最近用户动作“${recentUser}”继续推进，不重铺背景。`
-                    : `从“${currentSummary}”已进行中的局面继续推进，不复述背景。`));
         const steps = [
-            `围绕“${currentSummary}”推进1-2个具体互动动作，不空转。`,
-            `让互动产生一个清晰变化（信息、关系或局势其一），必要时为“${nextSummary}”保留可追问钩子。`,
+            `围绕”${currentSummary}”推进1-2个具体互动动作，不空转。`,
+            `让互动产生一个清晰变化（信息、关系或局势其一），必要时为”${nextSummary}”保留可追问钩子。`,
         ];
         return {
-            start: inBeatStart,
+            start: startText || `从”${currentSummary}”已进行中的局面继续推进，不复述背景。`,
             action_chain: buildActionChain(steps),
             steps,
             end: endGuideline,
@@ -952,12 +946,7 @@ export function createDirectorService(deps = {}) {
             || '',
             120
         ) || '（当前已是最后节拍）';
-        const nextBeatEntryEvent = toShortText(
-            decision?.next_beat_entry_event
-            || nextBeat?.entryEvent
-            || '',
-            140
-        ) || '（无）';
+        const nextBeatEntryEvent = '';
         const nextBeatPreview200 = toHeadText(
             decision?.next_beat_preview_200
             || nextBeat?.original_text
@@ -1223,24 +1212,22 @@ export function createDirectorService(deps = {}) {
 
         const nextBeat = beats[lockedBeatIdx + 1] || null;
         const nextBeatSummary = toShortText(nextBeat?.summary || '', 200);
-        const nextBeatEntryEvent = toShortText(nextBeat?.entryEvent || '', 140);
         const nextBeatPreview200 = toHeadText(nextBeat?.original_text || '', 200)
             || (nextBeatSummary ? `摘要：${nextBeatSummary}` : '');
 
-        // 新增：输出下一节拍信息
+        // 输出下一节拍信息
         if (typeof updateStreamContent === 'function' && nextBeatSummary) {
             updateStreamContent(`⏭️ ${turnPrefix} 下一节拍:\n`);
             updateStreamContent(`   摘要: ${nextBeatSummary}\n`);
-            updateStreamContent(`   入场事件: ${nextBeatEntryEvent || '（无）'}\n`);
         }
 
         decision.next_beat_summary = nextBeatSummary || '';
-        decision.next_beat_entry_event = nextBeatEntryEvent || '';
+        decision.next_beat_entry_event = '';
         decision.next_beat_preview_200 = nextBeatPreview200 || '';
         decision.direction_context = {
             ...decision.direction_context,
             next_beat_summary: nextBeatSummary || '',
-            next_beat_entry_event: nextBeatEntryEvent || '',
+            next_beat_entry_event: '',
         };
 
         const decisionActionChainSteps = splitActionChain(decision?.direction_script?.action_chain || '', 4);

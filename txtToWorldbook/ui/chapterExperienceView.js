@@ -334,14 +334,9 @@ export function createChapterExperienceView(deps = {}) {
             source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${idx + 1}`,
             200
         );
+        // 兼容旧版数据：读取已废弃的entry_event字段
         const entryEvent = toShortText(
-            source.entryEvent
-            || source.entry_event
-            || source.opening_event
-            || source.openingEvent
-            || source.entry_condition
-            || source.enter_condition
-            || '从上一节拍结果自然衔接进入当前事件。',
+            source.entryEvent || source.entry_event || '',
             120
         );
         const exitCondition = toShortText(
@@ -450,7 +445,7 @@ export function createChapterExperienceView(deps = {}) {
             id: `b${index + 1}`,
             event_summary: `事件点${index + 1}`,
             original_text: '',
-            entryEvent: '从上一节拍结果自然衔接进入当前事件。',
+            entryEvent: '',
             exitCondition: '等待用户行动或关键互动完成',
             split_reason: '用于保持叙事单元完整。',
             self_check: '未提供自检说明。',
@@ -480,15 +475,7 @@ export function createChapterExperienceView(deps = {}) {
             original_text: typeof source.original_text === 'string'
                 ? source.original_text
                 : (typeof source.originalText === 'string' ? source.originalText : ''),
-            entryEvent: String(
-                source.entryEvent
-                || source.entry_event
-                || source.opening_event
-                || source.openingEvent
-                || source.entry_condition
-                || source.enter_condition
-                || '从上一节拍结果自然衔接进入当前事件。'
-            ).trim() || '从上一节拍结果自然衔接进入当前事件。',
+            entryEvent: String(source.entryEvent || source.entry_event || '').trim(),
             exitCondition: String(
                 source.exitCondition
                 || source.exit_condition
@@ -573,10 +560,6 @@ export function createChapterExperienceView(deps = {}) {
         <textarea rows="2" class="ttw-editor-textarea" data-field="event_summary">${escapeHtml(beat.event_summary || '')}</textarea>
     </label>
     <label class="ttw-editor-field">
-        <span class="ttw-editor-field-label">入场事件</span>
-        <textarea rows="2" class="ttw-editor-textarea" data-field="entryEvent">${escapeHtml(beat.entryEvent || '')}</textarea>
-    </label>
-    <label class="ttw-editor-field">
         <span class="ttw-editor-field-label">退出条件</span>
         <textarea rows="2" class="ttw-editor-textarea" data-field="exitCondition">${escapeHtml(beat.exitCondition || '')}</textarea>
     </label>
@@ -616,7 +599,7 @@ export function createChapterExperienceView(deps = {}) {
                 id: `b${idx + 1}`,
                 event_summary: eventSummary,
                 original_text: String(card.querySelector('[data-field="original_text"]')?.value || ''),
-                entryEvent: String(card.querySelector('[data-field="entryEvent"]')?.value || '').trim() || '从上一节拍结果自然衔接进入当前事件。',
+                entryEvent: '',
                 exitCondition: String(card.querySelector('[data-field="exitCondition"]')?.value || '').trim() || '等待用户行动或关键互动完成',
                 split_reason: String(previous.split_reason || previous.splitReason || '用于保持叙事单元完整。').trim() || '用于保持叙事单元完整。',
                 self_check: normalizeSelfCheck(previous.self_check || previous.selfCheck || ''),
@@ -809,7 +792,7 @@ export function createChapterExperienceView(deps = {}) {
                 id: `b${idx + 1}`,
                 event_summary: node,
                 summary: node,
-                entry_event: '从上一节拍结果自然衔接进入当前事件。',
+                entry_event: '',
                 exit_condition: '当本节拍核心事件完成或局势发生明显转折时。',
                 split_reason: '默认切分：用于给章节建立可推进的小剧情单元。',
                 self_check: '默认降级节拍，无完整切分诊断。',
@@ -844,7 +827,7 @@ export function createChapterExperienceView(deps = {}) {
             id: `b${idx + 1}`,
             event_summary: summary,
             summary,
-            entry_event: '从上一节拍结果自然衔接进入当前事件。',
+            entry_event: '',
             exitCondition: '当本节拍目标完成或局势发生明显转折时。',
             split_reason: '默认切分：用于给章节建立可推进的小剧情单元。',
             self_check: '默认降级节拍，无完整切分诊断。',
@@ -932,21 +915,12 @@ export function createChapterExperienceView(deps = {}) {
             ? beats.map((beat, idx) => {
                 const isActive = idx === currentBeatIndex;
                 const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
-                const entryEvent = String(
-                    beat.entryEvent
-                    || beat.entry_event
-                    || beat.opening_event
-                    || beat.openingEvent
-                    || beat.entry_condition
-                    || '从上一节拍结果自然衔接进入当前事件。'
-                ).trim();
                 return `<div class="ttw-beat-item ${isActive ? 'is-active' : ''}">
     <div class="ttw-beat-item-head">
         <span class="ttw-beat-id">${escapeHtml(beat.id || `b${idx + 1}`)}</span>
         ${isActive ? '<span class="ttw-beat-active">当前阶段</span>' : ''}
     </div>
     <div class="ttw-beat-line ttw-beat-summary-line">📖 事件摘要：${escapeHtml(beat.event_summary || beat.summary || '')}</div>
-    <div class="ttw-beat-line ttw-beat-entry-line">🚪 入场事件：${escapeHtml(entryEvent || '从上一节拍结果自然衔接进入当前事件。')}</div>
     <div class="ttw-beat-line ttw-beat-exit-line">🎯 退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
     <div class="ttw-beat-original">📝 原文：${escapeHtml(originalText || '暂无该节拍原文（旧数据或生成异常）。')}</div>
 </div>`;

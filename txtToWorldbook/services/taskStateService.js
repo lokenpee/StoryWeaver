@@ -100,15 +100,7 @@ export function createTaskStateService(deps = {}) {
             id: String(source.id || `b${index + 1}`).trim() || `b${index + 1}`,
             summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
             event_summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
-            entryEvent: String(
-                source.entryEvent
-                || source.entry_event
-                || source.opening_event
-                || source.openingEvent
-                || source.entry_condition
-                || source.enter_condition
-                || '从上一节拍结果自然衔接进入当前事件。'
-            ).trim() || '从上一节拍结果自然衔接进入当前事件。',
+            entryEvent: String(source.entryEvent || source.entry_event || '').trim(),
             exitCondition: String(
                 source.exitCondition
                 || source.exit_condition

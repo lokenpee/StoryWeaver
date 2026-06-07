@@ -533,21 +533,12 @@
         const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
         const eventSummary = String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || fallbackSummary || '').trim();
         const summary = String(source.summary || eventSummary || fallbackSummary || '').trim();
-        // 优先使用AI返回的entry_event，没有再fallback到截取前40字
-        let entryEvent = String(
+        // 兼容旧版数据：读取已废弃的entry_event字段（不再生成，仅保留旧值）
+        const entryEvent = String(
             source.entry_event
             || source.entryEvent
-            || source.opening_event
-            || source.openingEvent
-            || source.entry_condition
-            || source.enter_condition
             || ''
         ).trim();
-
-        // 如果AI没有返回entry_event，再fallback截取前40字
-        if (!entryEvent && typeof source.original_text === 'string' && source.original_text.trim()) {
-            entryEvent = source.original_text.trim().slice(0, 40);
-        }
         const exitCondition = String(
             source.exitCondition
             || source.exit_condition
@@ -585,60 +576,6 @@
             original_text: originalText,
             split_rule: splitRule,
         };
-    }
-
-    async function refineBeatsEntryEvents(beats, chapterIndex, runId) {
-        if (!Array.isArray(beats) || beats.length === 0) return beats;
-
-        const snippets = beats.map((beat, idx) => {
-            const text = String(beat.original_text || '').trim();
-            const snippet = text.slice(0, 40);
-            return `${idx + 1}. ${snippet}`;
-        }).join('\n');
-
-        const prompt = `${getLanguagePrefix()}你是酒馆国家的臣民，职业是入场事件识别助手AI，名字是:"秋青子"
-
-任务：根据以下每个节拍的原文前40字，识别出该节拍的"入场事件"（开场事件/触发条件）。
-
-【要求】
-- 每个入场事件必须写成"谁+在哪里+做了什么"的格式
-- 50字以内
-- 必须基于提供的原文前40字内容来识别
-- 如果前40字明显不足以判断，可以结合上下文合理推断，但仍需给出具体的人、地点、动作
-
-【输入】
-${snippets}
-
-输出JSON格式（只输出JSON，不要代码块，不要解释）：
-{
-  "entry_events": [
-    {"index": 0, "entry_event": "xxx"},
-    {"index": 1, "entry_event": "yyy"}
-  ]
-}`;
-
-        try {
-            updateStreamContent(`🎯 [第${chapterIndex}章] 发起入场事件精炼请求（${beats.length}个节拍）\n`);
-            const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, chapterIndex));
-            const parsed = extractJsonObject(response);
-            if (parsed?.entry_events && Array.isArray(parsed.entry_events)) {
-                parsed.entry_events.forEach((item) => {
-                    const idx = Number(item?.index);
-                    if (Number.isInteger(idx) && idx >= 0 && idx < beats.length) {
-                        const ev = String(item?.entry_event || '').trim();
-                        if (ev) {
-                            beats[idx].entryEvent = ev;
-                        }
-                    }
-                });
-                updateStreamContent(`✅ [第${chapterIndex}章] 入场事件精炼完成\n`);
-            }
-        } catch (error) {
-            updateStreamContent(`⚠️ [第${chapterIndex}章] 入场事件精炼失败，保留原始值: ${compactErrorMessage(error)}\n`);
-            // 不抛错，保留切分AI已生成的entry_event或fallback值
-        }
-
-        return beats;
     }
 
     function splitBeatCandidates(text, limit = 8) {
@@ -1173,12 +1110,7 @@ ${snippets}
                 id: `b${idx + 1}`,
                 summary,
                 event_summary: point?.event_summary || summary,
-                entry_event: point?.entry_event
-                    || point?.entryEvent
-                    || point?.opening_event
-                    || point?.openingEvent
-                    || point?.entry_condition
-                    || '',
+                entry_event: point?.entry_event || point?.entryEvent || '',
                 exit_condition: point?.exit_condition
                     || point?.exitCondition
                     || point?.exist_condition
@@ -1203,10 +1135,6 @@ ${snippets}
             source.summary,
             source.event,
             source.description,
-            source.entry_event,
-            source.entryEvent,
-            source.opening_event,
-            source.openingEvent,
             source.exit_condition,
             source.exitCondition,
             source.exist_condition,
@@ -1840,13 +1768,10 @@ ${snippets}
         const eventSummary = String(
             source.event_summary || source.eventSummary || source.summary || source.event || source.description || ''
         ).trim();
+        // 兼容旧版数据：读取已废弃的entry_event字段
         const entryEvent = String(
             source.entry_event
             || source.entryEvent
-            || source.opening_event
-            || source.openingEvent
-            || source.entry_condition
-            || source.enter_condition
             || ''
         ).trim();
         const exitCondition = String(
@@ -2125,9 +2050,8 @@ ${snippets}
         
         【字段含义】\n
             - anchor: 原文切分点前的一段话作为章节分割器分割锚点（10-50字，句尾，不在引号内）\n
-            - event_summary: 这个节拍的核心事件总结（30-100字）。必须写成“谁+在哪里+做了什么+产生什么结果/变化”。要有明确的人物（或势力）主体，要有具体动作，不要只写情绪或环境描写。\n              示例：主角在城门口被守卫拦下，出示令牌后获准进城。\n              反例：❌ "主角很焦虑"（只有情绪，没有动作和地点）；❌ "关于城门的描写"（没有人，没有事）。\n
-            - entry_event: 该节拍如何进入（开场事件/触发条件，50字以内）。必须写成“谁+在哪里+做了什么”，写清楚上一节拍结束后，发生了什么事导致这个节拍开始。要包含一个具体的外部动作或他人反应，不能是空洞的过渡句。\n              示例：守卫在城门口见主角衣衫褴褛，横枪拦住去路，喝问来意。\n              反例：❌ "从上一节拍结果自然衔接进入当前事件"（没写人、没写事、没写地点）；❌ "主角决定继续走"（这是心理，不是触发条件）。\n
-            - exit_condition: 该节拍结束的具体条件（50字以内）。必须写成“当谁+在哪里+做了什么/达成什么状态时”，用“当……时”或“在……之后”的句式，写出一个可观察、可判断的客观结果，不要写模糊的感受或心理变化。\n              示例：当主角正式踏入城门、守卫收回长枪、周围行人恢复正常流动时。\n              反例：❌ "当主角心情平复时"（不可观察）；❌ "等待关键互动完成"（过于笼统，没有人和地点）。\n
+            - event_summary: 这个节拍的核心事件总结（30-100字）。必须写成”谁+在哪里+做了什么+产生什么结果/变化”。要有明确的人物（或势力）主体，要有具体动作，不要只写情绪或环境描写。\n              示例：主角在城门口被守卫拦下，出示令牌后获准进城。\n              反例：❌ “主角很焦虑”（只有情绪，没有动作和地点）；❌ “关于城门的描写”（没有人，没有事）。\n
+            - exit_condition: 该节拍结束的具体条件（50字以内）。必须写成”当谁+在哪里+做了什么/达成什么状态时”，用”当……时”或”在……之后”的句式，写出一个可观察、可判断的客观结果，不要写模糊的感受或心理变化。\n              示例：当主角正式踏入城门、守卫收回长枪、周围行人恢复正常流动时。\n              反例：❌ “当主角心情平复时”（不可观察）；❌ “等待关键互动完成”（过于笼统，没有人和地点）。\n
             - split_rule.primary: 4种切分类型之一：scene_change(场景切换)/time_jump(时间跳转)/goal_shift(目标改变)/conflict_closed(冲突闭环)\n
         强约束：\n
         1) 只输出 JSON，不要代码块，不要解释。\n
@@ -2142,7 +2066,6 @@ ${snippets}
             {\n
               "anchor": "",\n
               "event_summary": "",\n
-              "entry_event": "",\n
               "exit_condition": "",\n
               "split_rule": {\n
                 "primary": "conflict_closed"\n
@@ -2231,11 +2154,6 @@ ${snippets}
                 }
                 throwIfRunInactive(runId);
                 const assets = parseChapterAssetsResponse(response, memory, index);
-
-                // 新增：用AI从每个节拍前40字精炼入场事件
-                if (assets?.script?.beats?.length > 0) {
-                    await refineBeatsEntryEvents(assets.script.beats, index + 1, runId);
-                }
 
                 const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
                 const sourceTag = assets?.meta?.source || 'director-unknown';

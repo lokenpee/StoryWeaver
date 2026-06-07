@@ -377,7 +377,6 @@ export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行�
 ## 3) 下一节拍预览（仅参考，禁止提前展开）
 - 当前节拍退出事件: {CURRENT_EXIT_CONDITION}
 - 下一节拍摘要: {NEXT_BEAT_SUMMARY}
-- 下一节拍入场事件: {NEXT_BEAT_ENTRY_EVENT}
 - 下一节拍原文前200字: {NEXT_BEAT_PREVIEW_200}
 - 结尾软要求: 先对照“导演给出的终点”和“当前节拍退出事件”。仅当两者完全吻合或高度吻合时，最后1-2句才可做趋势性引出，承接下一节拍。
 - 结尾限制: 若终点与退出事件不吻合，禁止引出下一节拍，继续在当前节拍内收束。
