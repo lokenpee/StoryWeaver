@@ -42,7 +42,7 @@ export function createSettingsPersistenceService(deps) {
                 || (suffix === 'main' ? document.getElementById('ttw-api-max-tokens')?.value : ''),
             10
         );
-        const maxTokens = Number.isFinite(maxTokensRaw) ? Math.max(1, Math.min(8192, maxTokensRaw)) : 2048;
+        const maxTokens = Number.isFinite(maxTokensRaw) ? Math.max(1, Math.min(200000, maxTokensRaw)) : 65536;
 
         return { provider, apiKey, endpoint, model, maxTokens };
     }
@@ -53,12 +53,12 @@ export function createSettingsPersistenceService(deps) {
             apiKey: '',
             endpoint: '',
             model: 'gemini-2.5-flash',
-            maxTokens: 2048,
+            maxTokens: 65536,
             ...fallback,
             ...(raw || {}),
         };
         const parsedMax = parseInt(base.maxTokens, 10);
-        base.maxTokens = Number.isFinite(parsedMax) ? Math.max(1, Math.min(8192, parsedMax)) : 2048;
+        base.maxTokens = Number.isFinite(parsedMax) ? Math.max(1, Math.min(200000, parsedMax)) : 65536;
         return base;
     }
 
@@ -156,7 +156,7 @@ export function createSettingsPersistenceService(deps) {
                         apiKey: parsed.customApiKey || defaultSettings.mainApi?.apiKey || '',
                         endpoint: parsed.customApiEndpoint || defaultSettings.mainApi?.endpoint || '',
                         model: parsed.customApiModel || defaultSettings.mainApi?.model || 'gemini-2.5-flash',
-                        maxTokens: parsed.customApiMaxTokens || defaultSettings.mainApi?.maxTokens || 2048,
+                        maxTokens: parsed.customApiMaxTokens || defaultSettings.mainApi?.maxTokens || 65536,
                     }
                 );
                 const migratedDirectorApi = normalizeApiConfig(
@@ -201,8 +201,8 @@ export function createSettingsPersistenceService(deps) {
                 }
                 const maxTokens = parseInt(AppState.settings.customApiMaxTokens, 10);
                 AppState.settings.customApiMaxTokens = Number.isFinite(maxTokens)
-                    ? Math.max(1, Math.min(8192, maxTokens))
-                    : 2048;
+                    ? Math.max(1, Math.min(200000, maxTokens))
+                    : 65536;
 
                 if (AppState.settings.chapterRegexPattern) {
                     AppState.settings.chapterRegexPattern = migrateLegacyChapterPattern(AppState.settings.chapterRegexPattern);

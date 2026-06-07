@@ -18,7 +18,7 @@ export function createApiService(deps = {}) {
                 apiKey: fromSettings.apiKey || '',
                 endpoint: fromSettings.endpoint || '',
                 model: fromSettings.model || 'gemini-2.5-flash',
-                maxTokens: normalizeMaxTokens(fromSettings.maxTokens, 2048),
+                maxTokens: normalizeMaxTokens(fromSettings.maxTokens, 65536),
             };
         }
 
@@ -30,15 +30,15 @@ export function createApiService(deps = {}) {
             model: fromSettings.model || AppState.settings.customApiModel || 'gemini-2.5-flash',
             maxTokens: normalizeMaxTokens(
                 fromSettings.maxTokens ?? AppState.settings.customApiMaxTokens,
-                2048
+                65536
             ),
         };
     }
 
-    function normalizeMaxTokens(value, fallback = 2048) {
+    function normalizeMaxTokens(value, fallback = 65536) {
         const parsed = parseInt(value, 10);
         if (!Number.isFinite(parsed)) return fallback;
-        return Math.max(1, Math.min(8192, parsed));
+        return Math.max(1, Math.min(200000, parsed));
     }
 
     function buildApiLogPrefix(target = 'main', taskId = null) {
@@ -142,7 +142,7 @@ export function createApiService(deps = {}) {
         const apiKey = config.apiKey;
         const endpoint = config.endpoint;
         const model = config.model;
-        const customApiMaxTokens = normalizeMaxTokens(config.maxTokens, 2048);
+        const customApiMaxTokens = normalizeMaxTokens(config.maxTokens, 65536);
         const openaiMessages = messages.map((m) => ({ role: m.role, content: m.content }));
         let requestUrl = '';
         let requestOptions = {};
