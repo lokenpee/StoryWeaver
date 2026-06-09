@@ -166,7 +166,7 @@ export function createDirectorService(deps = {}) {
             case 'hard_conflict':
                 return '不得把用户字面越界结果写成既成事实；只保留其核心意图，将其改写为一个邻近、可成立、且不破坏当前或后续关键剧情前提的版本。';
             default:
-                return '照着当前节拍正常推进，严格承接用户输入，不额外制造偏轨。';
+                return '按用户当前方向推进，充分演完用户场景，不催促跳转，尾部留自然钩子。';
         }
     }
 
@@ -188,7 +188,7 @@ export function createDirectorService(deps = {}) {
             case 'hard_conflict':
                 return '保留用户核心意图，通过打断、延迟或介入把字面结果改写成不破坏剧情的邻近版本。';
             default:
-                return '按当前节拍正常推进，并吸收用户输入中的可用动作与细节。';
+                return '按用户当前方向推进，吸收动作与细节，尾部留钩子指向后续可能。';
         }
     }
 
