@@ -930,12 +930,17 @@ export function createChapterExperienceView(deps = {}) {
     function formatDirectorDebugEntry(entry) {
         if (!entry) return '';
         const ds = entry.directionScript || entry.decision?.direction_script || {};
+        const conflictLevel = entry.conflictLevel || entry.decision?.conflict_level || entry.decision?.conflictLevel || 'normal';
+        const conflictReason = entry.conflictReason || entry.decision?.conflict_reason || entry.decision?.conflictReason || '';
+        const conflictStrategy = entry.conflictStrategy || entry.decision?.conflict_strategy || entry.decision?.conflictStrategy || '';
         return [
             `时间: ${new Date(Number(entry.at) || Date.now()).toLocaleString('zh-CN')}`,
             `章节: 第${(entry.chapterIndex ?? 0) + 1}章 ${entry.chapterTitle || ''}`,
             `节拍: 当前 ${Number(entry.currentBeatIndex ?? 0) + 1} -> 锁定 ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`,
             `判定来源: ${entry.decisionSource || 'unknown'}`,
             `切拍: ${entry.switchControl?.direction || 'none'} (${entry.switchControl?.reason || '无'})`,
+            `冲突级别: ${conflictLevel} ${conflictReason || ''}`,
+            `冲突处理: ${conflictStrategy || '无'}`,
             `节拍完成: ${entry.beatComplete ? '是' : '否'}`,
             `上一轮耗尽: ${entry.willCompleteThisLastTurn ? '是' : '否'}`,
             `本轮耗尽: ${entry.willCompleteThisTurn ? '是' : '否'} ${entry.beatCompleteReason || ''}`,
@@ -981,6 +986,10 @@ export function createChapterExperienceView(deps = {}) {
         const beatText = `${Number(entry.currentBeatIndex ?? 0) + 1} -> ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`;
         const completeClass = entry.beatComplete ? 'is-complete' : '';
         const willCompleteClass = entry.willCompleteThisTurn ? 'is-complete' : '';
+        const conflictLevel = entry.conflictLevel || entry.decision?.conflict_level || entry.decision?.conflictLevel || 'normal';
+        const conflictReason = entry.conflictReason || entry.decision?.conflict_reason || entry.decision?.conflictReason || '';
+        const conflictStrategy = entry.conflictStrategy || entry.decision?.conflict_strategy || entry.decision?.conflictStrategy || '';
+        const conflictText = `${conflictLevel}${conflictReason ? ` / ${conflictReason}` : ''}`;
 
         return `
 <div class="ttw-director-debug-summary">
@@ -1009,6 +1018,8 @@ export function createChapterExperienceView(deps = {}) {
 <div class="ttw-director-debug-block">
     <div class="ttw-current-block-title">切拍与完成判定</div>
     <div class="ttw-current-block-content">切拍：${escapeHtml(switchText)}
+冲突：${escapeHtml(conflictText)}
+处理：${escapeHtml(conflictStrategy || '无')}
 上一轮耗尽：${entry.willCompleteThisLastTurn ? '是' : '否'}
 本轮耗尽：${entry.willCompleteThisTurn ? '是' : '否'}
 耗尽原因：${escapeHtml(entry.beatCompleteReason || '未判定耗尽')}

@@ -15,6 +15,8 @@ export function createDirectorService(deps = {}) {
 
     const BEAT_COMPLETION_NOTICE_TEXT = '🎯 当前节拍剧情已推进到结尾，建议切换到下一节拍。';
     const BEAT_COMPLETION_NOTICE_TTL_MS = 15 * 60 * 1000;
+    const ACTION_CHAIN_MIN_STEPS = 3;
+    const ACTION_CHAIN_MAX_STEPS = 6;
 
     function directorDebug(msg) {
         if (typeof debugLog === 'function') {
@@ -120,6 +122,116 @@ export function createDirectorService(deps = {}) {
         return false;
     }
 
+    function normalizeConflictLevel(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return 'normal';
+
+        const aliasMap = {
+            normal: 'normal',
+            none: 'normal',
+            ok: 'normal',
+            soft: 'soft_conflict',
+            'soft-conflict': 'soft_conflict',
+            soft_conflict: 'soft_conflict',
+            minor_conflict: 'soft_conflict',
+            hard: 'hard_conflict',
+            'hard-conflict': 'hard_conflict',
+            hard_conflict: 'hard_conflict',
+            major_conflict: 'hard_conflict',
+            '正常': 'normal',
+            '轻度冲突': 'soft_conflict',
+            '软冲突': 'soft_conflict',
+            '严重冲突': 'hard_conflict',
+            '硬冲突': 'hard_conflict',
+        };
+
+        return aliasMap[raw] || 'normal';
+    }
+
+    function getConflictLevelLabel(conflictLevel) {
+        switch (normalizeConflictLevel(conflictLevel)) {
+            case 'soft_conflict':
+                return 'soft_conflict（可扶回）';
+            case 'hard_conflict':
+                return 'hard_conflict（需改写）';
+            default:
+                return 'normal（照常推进）';
+        }
+    }
+
+    function buildConflictRequirement(conflictLevel) {
+        switch (normalizeConflictLevel(conflictLevel)) {
+            case 'soft_conflict':
+                return '必须接住用户这回合动作与意图，但不得把超出当前节拍边界的结果写成既成事实；若用户口头快进，只能截断到当前节拍内可成立的位置，并为下一回合保留自然扶回原剧情的轨道。';
+            case 'hard_conflict':
+                return '不得把用户字面越界结果写成既成事实；只保留其核心意图，将其改写为一个邻近、可成立、且不破坏当前或后续关键剧情前提的版本。';
+            default:
+                return '照着当前节拍正常推进，严格承接用户输入，不额外制造偏轨。';
+        }
+    }
+
+    function buildDefaultConflictReason(conflictLevel) {
+        switch (normalizeConflictLevel(conflictLevel)) {
+            case 'soft_conflict':
+                return '用户输入有偏移，但仍可压回当前节拍边界内处理。';
+            case 'hard_conflict':
+                return '用户字面结果会破坏当前或后续关键剧情前提。';
+            default:
+                return '用户输入仍在当前节拍轨道内。';
+        }
+    }
+
+    function buildDefaultConflictStrategy(conflictLevel) {
+        switch (normalizeConflictLevel(conflictLevel)) {
+            case 'soft_conflict':
+                return '接住用户本回合动作，把越界结果截断在当前节拍内，并给下一回合保留自然接回原剧情的接口。';
+            case 'hard_conflict':
+                return '保留用户核心意图，通过打断、延迟或介入把字面结果改写成不破坏剧情的邻近版本。';
+            default:
+                return '按当前节拍正常推进，并吸收用户输入中的可用动作与细节。';
+        }
+    }
+
+    function ensureDirectorInjectionTemplateCompatibility(template) {
+        const base = String(template || '').trim() || defaultDirectorInjectionPrompt;
+        const supplements = [];
+
+        const hasConflictBlock = (
+            base.includes('{CONFLICT_LEVEL}')
+            && base.includes('{CONFLICT_REASON}')
+            && base.includes('{CONFLICT_STRATEGY}')
+            && base.includes('{CONFLICT_REQUIREMENT}')
+        );
+        if (!hasConflictBlock) {
+            supplements.push(`## 系统补充：冲突控制
+- 当前冲突级别: {CONFLICT_LEVEL}
+- 冲突原因: {CONFLICT_REASON}
+- 冲突处理策略: {CONFLICT_STRATEGY}
+- 冲突执行要求: {CONFLICT_REQUIREMENT}
+- 执行优先级: 冲突执行要求/冲突处理策略 > 起点/动作链/终点 > 当前节拍原文 > 下一节拍预览。`);
+        }
+
+        if (!base.includes('{DIRECTION_PROCESS_LINES}')) {
+            supplements.push(`## 系统补充：过程动作
+{DIRECTION_PROCESS_LINES}`);
+        }
+
+        if (!base.includes('{START_RECAP}')) {
+            supplements.push(`【起笔复述】第一句必须参考【起点】：{START_RECAP}`);
+        }
+
+        if (!base.includes('不得代写用户未声明')) {
+            supplements.push(`## 系统补充：主角权限
+- 不得代写用户未声明的下一句台词、下一步动作、内心独白、沉默反应或最终决定。
+- soft_conflict 时接住用户动作，但只能把结果落在当前节拍内可成立的位置。
+- hard_conflict 时不得直接驳回用户，要把意图改写为受阻、被打断、被延迟或被旁人介入后的邻近版本。`);
+        }
+
+        return supplements.length > 0
+            ? `${base}\n\n${supplements.join('\n\n')}`
+            : base;
+    }
+
     function ensureExperienceState() {
         if (!AppState.experience || typeof AppState.experience !== 'object') {
             AppState.experience = {};
@@ -178,7 +290,7 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function normalizeActionSegment(text, maxLen = 120) {
+    function normalizeActionSegment(text, maxLen = 180) {
         const plain = String(text || '')
             .replace(/[“”"']/g, '')
             .replace(/[「」]/g, '')
@@ -187,7 +299,7 @@ export function createDirectorService(deps = {}) {
         return toShortText(plain, maxLen);
     }
 
-    function splitActionChain(actionChain, limit = 4) {
+    function splitActionChain(actionChain, limit = ACTION_CHAIN_MAX_STEPS) {
         const normalized = String(actionChain || '')
             .replace(/[\r\n]+/g, '→')
             .replace(/\s*→\s*/g, '→')
@@ -195,17 +307,17 @@ export function createDirectorService(deps = {}) {
         if (!normalized) return [];
         return normalized
             .split('→')
-            .map((segment) => normalizeActionSegment(segment, 120))
+            .map((segment) => normalizeActionSegment(segment, 180))
             .filter(Boolean)
             .slice(0, limit);
     }
 
-    function buildActionChain(steps, maxLen = 420) {
+    function buildActionChain(steps, maxLen = 720) {
         const normalizedSteps = Array.isArray(steps)
             ? steps
-                .map((step) => normalizeActionSegment(step, 120))
+                .map((step) => normalizeActionSegment(step, 180))
                 .filter(Boolean)
-                .slice(0, 4)
+                .slice(0, ACTION_CHAIN_MAX_STEPS)
             : [];
         return toShortText(normalizedSteps.join('→'), maxLen);
     }
@@ -825,7 +937,8 @@ export function createDirectorService(deps = {}) {
         if (mode === 'new_beat') {
             const steps = [
                 '直接进入当前节拍的首个可见动作，不重铺背景。',
-                `围绕”${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
+                `围绕”${currentSummary}”先落下一处明确动作，让人物站位和现场局面稳定下来。`,
+                '顺着这处动作推进一轮具体回应或信息变化，把本回合带到可承接的临时节点。',
             ];
             return {
                 start: startText || `先以”${currentSummary}”触发当前节拍开场，再进入可见动作。`,
@@ -836,8 +949,9 @@ export function createDirectorService(deps = {}) {
         }
 
         const steps = [
-            `围绕”${currentSummary}”推进1-2个具体互动动作，不空转。`,
-            `让互动产生一个清晰变化（信息、关系或局势其一），必要时为”${nextSummary}”保留可追问钩子。`,
+            `紧接当前局面推进一处看得见的小动作，持续压在”${currentSummary}”轨道内。`,
+            '让在场人物给出对应反应，形成一处具体的信息、关系或局势变化。',
+            `把变化收束到可承接的位置，必要时只为”${nextSummary}”保留趋势，不提前展开下一拍。`,
         ];
         return {
             start: startText || `从”${currentSummary}”已进行中的局面继续推进，不复述背景。`,
@@ -872,25 +986,25 @@ export function createDirectorService(deps = {}) {
 
         const sourceChainText = source.action_chain || source.actionChain || source.chain
             || (typeof source.process === 'string' ? source.process : '');
-        const sourceChainSteps = splitActionChain(sourceChainText, 4);
+        const sourceChainSteps = splitActionChain(sourceChainText, ACTION_CHAIN_MAX_STEPS);
         const fallbackChainText = fallback.action_chain || fallback.actionChain || fallback.chain || '';
-        const fallbackChainSteps = splitActionChain(fallbackChainText, 4);
+        const fallbackChainSteps = splitActionChain(fallbackChainText, ACTION_CHAIN_MAX_STEPS);
         const fallbackSteps = [
             ...(Array.isArray(fallback.steps) ? fallback.steps : []),
             ...fallbackChainSteps,
         ]
-            .map((step) => normalizeActionSegment(step, 120))
+            .map((step) => normalizeActionSegment(step, 180))
             .filter(Boolean)
-            .slice(0, 4);
+            .slice(0, ACTION_CHAIN_MAX_STEPS);
 
         const steps = (stepCandidates.length > 0 ? stepCandidates : sourceChainSteps)
-            .map((step) => normalizeActionSegment(step, 120))
+            .map((step) => normalizeActionSegment(step, 180))
             .filter(Boolean)
-            .slice(0, 4);
+            .slice(0, ACTION_CHAIN_MAX_STEPS);
 
-        while (steps.length < 2) {
+        while (steps.length < ACTION_CHAIN_MIN_STEPS) {
             const nextFallback = fallbackSteps[steps.length] || '沿当前目标继续推进，并确保动作可见。';
-            const normalized = normalizeActionSegment(nextFallback, 120);
+            const normalized = normalizeActionSegment(nextFallback, 180);
             if (!normalized) break;
             steps.push(normalized);
         }
@@ -1009,6 +1123,22 @@ export function createDirectorService(deps = {}) {
         return {
             stage_idx: stageIdx,
             beat_complete: normalizeBooleanFlag(rawDecision?.beat_complete ?? rawDecision?.beatComplete),
+            conflict_level: normalizeConflictLevel(rawDecision?.conflict_level ?? rawDecision?.conflictLevel),
+            conflict_reason: String(
+                rawDecision?.conflict_reason
+                || rawDecision?.conflictReason
+                || rawDecision?.deviation_reason
+                || rawDecision?.deviationReason
+                || ''
+            ).trim(),
+            conflict_strategy: String(
+                rawDecision?.conflict_strategy
+                || rawDecision?.conflictStrategy
+                || rawDecision?.deviation_strategy
+                || rawDecision?.deviationStrategy
+                || rawDecision?.strategy
+                || ''
+            ).trim(),
             will_complete_this_last_turn: normalizeBooleanFlag(
                 rawDecision?.will_complete_this_last_turn ?? rawDecision?.willCompleteThisLastTurn
             ),
@@ -1034,6 +1164,9 @@ export function createDirectorService(deps = {}) {
         return {
             stage_idx: safeIdx,
             beat_complete: false,
+            conflict_level: 'normal',
+            conflict_reason: buildDefaultConflictReason('normal'),
+            conflict_strategy: buildDefaultConflictStrategy('normal'),
             will_complete_this_last_turn: false,
             will_complete_this_turn: false,
             beat_complete_reason: '',
@@ -1215,16 +1348,27 @@ export function createDirectorService(deps = {}) {
             decision.direction_script,
             buildDefaultDirectionScript(currentBeat, nextBeat, directionContext)
         );
-        const actionChainSteps = splitActionChain(directionScript.action_chain || '', 4);
+        const conflictLevel = normalizeConflictLevel(decision?.conflict_level);
+        const conflictReason = toShortText(decision?.conflict_reason || '', 180) || buildDefaultConflictReason(conflictLevel);
+        const conflictStrategy = toShortText(decision?.conflict_strategy || '', 180) || buildDefaultConflictStrategy(conflictLevel);
+        const conflictRequirement = buildConflictRequirement(conflictLevel);
+        const actionChainSteps = splitActionChain(directionScript.action_chain || '', ACTION_CHAIN_MAX_STEPS);
         const steps = actionChainSteps.length > 0
             ? actionChainSteps
             : (Array.isArray(directionScript.steps) && directionScript.steps.length > 0
                 ? directionScript.steps
-                : ['围绕当前节拍推进一个可见动作。', '在可承接位置收束本轮输出。']);
-        const actionChain = buildActionChain(steps);
+                : ['围绕当前节拍推进一个可见动作。', '让在场角色或局势产生一处具体变化。', '在可承接位置收束本轮输出。']);
+        const normalizedSteps = steps.slice(0, ACTION_CHAIN_MAX_STEPS);
+        while (normalizedSteps.length < ACTION_CHAIN_MIN_STEPS) {
+            normalizedSteps.push(
+                normalizedSteps.length === 1
+                    ? '让人物关系、信息或局势出现一处具体变化。'
+                    : '在可承接位置收束本轮输出。'
+            );
+        }
+        const actionChain = buildActionChain(normalizedSteps);
 
-        const processLines = steps
-            .slice(0, 4)
+        const processLines = normalizedSteps
             .map((step, idx) => `  ${idx + 1}. ${step}`)
             .join('\n');
 
@@ -1232,14 +1376,20 @@ export function createDirectorService(deps = {}) {
             ? '- 执行要求: 本回合发生切拍时，先用1-2句完成过渡/回接，再进入动作链；终点只做临时收束，不等于继续切拍。'
             : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
 
-        const template = String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt;
+        const template = ensureDirectorInjectionTemplateCompatibility(
+            String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt
+        );
         return renderPromptTemplate(template, {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
+            CONFLICT_LEVEL: getConflictLevelLabel(conflictLevel),
+            CONFLICT_REASON: conflictReason,
+            CONFLICT_STRATEGY: conflictStrategy,
+            CONFLICT_REQUIREMENT: conflictRequirement,
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
             DIRECTION_START: String(directionScript.start || '从当前局面直接接续。'),
             DIRECTION_ACTION_CHAIN: String(actionChain || '围绕当前节拍推进可见动作并收束。'),
-            DIRECTION_PROCESS_LINES: processLines || '  1. 围绕当前节拍推进一个可见动作。\n  2. 在可承接位置收束本轮输出。',
+            DIRECTION_PROCESS_LINES: processLines || '  1. 围绕当前节拍推进一个可见动作。\n  2. 让在场角色或局势产生一处具体变化。\n  3. 在可承接位置收束本轮输出。',
             DIRECTION_END: String(directionScript.end || '本回合收束到可承接的临时节点。'),
             STAGE_EXECUTION_REQUIREMENT: stageExecutionRequirement,
             CURRENT_EXIT_CONDITION: currentExitCondition,
@@ -1464,6 +1614,8 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`   锁定节拍: ${decision.stage_idx + 1}/${beats.length}\n`);
                 updateStreamContent(`   新节拍: ${decision.is_new_beat ? '是' : '否'}\n`);
                 updateStreamContent(`   大跳转: ${decision.is_large_beat_jump ? '是' : '否'}\n`);
+                updateStreamContent(`   冲突级别: ${getConflictLevelLabel(decision.conflict_level)}${decision.conflict_reason ? ` (${toShortText(decision.conflict_reason, 70)})` : ''}\n`);
+                updateStreamContent(`   处理策略: ${toShortText(decision.conflict_strategy || buildDefaultConflictStrategy(decision.conflict_level), 90)}\n`);
                 updateStreamContent(`   节拍完成: ${decision.beat_complete ? '✅ 是' : '否'}\n`);
                 updateStreamContent(`   起点: ${toShortText(ds.start || '', 100) || '（默认）'}\n`);
                 if (actionChain) {
@@ -1471,7 +1623,7 @@ export function createDirectorService(deps = {}) {
                 }
                 if (steps.length > 0) {
                     updateStreamContent(`   动作步骤:\n`);
-                    steps.slice(0, 4).forEach((step, i) => {
+                    steps.slice(0, ACTION_CHAIN_MAX_STEPS).forEach((step, i) => {
                         updateStreamContent(`     ${i + 1}. ${toShortText(step, 100)}\n`);
                     });
                 }
@@ -1488,6 +1640,17 @@ export function createDirectorService(deps = {}) {
         }
 
         // 节拍切换由流程层决定，导演输出仅负责“怎么演”。
+        decision.conflict_level = normalizeConflictLevel(decision.conflict_level);
+        decision.conflict_reason = String(decision.conflict_reason || '').trim();
+        if (decision.conflict_level === 'soft_conflict' && !decision.conflict_reason) {
+            decision.conflict_reason = '用户输入有偏移，但仍可压回当前节拍边界内处理。';
+        } else if (decision.conflict_level === 'hard_conflict' && !decision.conflict_reason) {
+            decision.conflict_reason = '用户字面结果会破坏当前或后续关键剧情前提，需改写实现方式。';
+        }
+        if (!decision.conflict_reason) {
+            decision.conflict_reason = buildDefaultConflictReason(decision.conflict_level);
+        }
+        decision.conflict_strategy = String(decision.conflict_strategy || '').trim() || buildDefaultConflictStrategy(decision.conflict_level);
         decision.will_complete_this_last_turn = willCompleteThisLastTurn;
         decision.will_complete_this_turn = willCompleteThisLastTurn || decision.will_complete_this_turn === true;
         if (decision.will_complete_this_turn && !String(decision.beat_complete_reason || '').trim()) {
@@ -1524,9 +1687,9 @@ export function createDirectorService(deps = {}) {
             next_beat_entry_event: '',
         };
 
-        const decisionActionChainSteps = splitActionChain(decision?.direction_script?.action_chain || '', 4);
-        const hasValidActionChain = decisionActionChainSteps.length >= 2;
-        const hasValidSteps = Array.isArray(decision?.direction_script?.steps) && decision.direction_script.steps.length >= 2;
+        const decisionActionChainSteps = splitActionChain(decision?.direction_script?.action_chain || '', ACTION_CHAIN_MAX_STEPS);
+        const hasValidActionChain = decisionActionChainSteps.length >= ACTION_CHAIN_MIN_STEPS;
+        const hasValidSteps = Array.isArray(decision?.direction_script?.steps) && decision.direction_script.steps.length >= ACTION_CHAIN_MIN_STEPS;
         if (!decision?.direction_script || (!hasValidActionChain && !hasValidSteps)) {
             directorDebug('invalid-direction-script fallback applied');
             decision.direction_script = normalizeDirectionScript(
@@ -1548,9 +1711,11 @@ export function createDirectorService(deps = {}) {
             latestAssistantMessage,
         });
 
-        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}${decision.beat_complete ? ', beatComplete=true' : ''}${decision.will_complete_this_turn ? ', willCompleteThisTurn=true' : ''}`);
+        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}, conflict=${decision.conflict_level}${decision.beat_complete ? ', beatComplete=true' : ''}${decision.will_complete_this_turn ? ', willCompleteThisTurn=true' : ''}`);
         if (typeof updateStreamContent === 'function') {
             updateStreamContent(`✅ ${turnPrefix} 判定完成：source=${decisionSource}, 锁定节拍=${decision.stage_idx + 1}/${beats.length}, switch=${decision.switch_direction || 'none'}\n`);
+            updateStreamContent(`   冲突级别: ${getConflictLevelLabel(decision.conflict_level)}${decision.conflict_reason ? ` (${toShortText(decision.conflict_reason, 70)})` : ''}\n`);
+            updateStreamContent(`   处理策略: ${toShortText(decision.conflict_strategy || buildDefaultConflictStrategy(decision.conflict_level), 90)}\n`);
             updateStreamContent(`   上轮耗尽: ${decision.will_complete_this_last_turn ? '是' : '否'}，本轮耗尽: ${decision.will_complete_this_turn ? '是' : '否'}${decision.beat_complete_reason ? ` (${toShortText(decision.beat_complete_reason, 60)})` : ''}\n`);
 
             if (decision.beat_complete) {
@@ -1621,6 +1786,9 @@ export function createDirectorService(deps = {}) {
             decisionSource,
             decision: safeClone(decision, {}),
             directionScript: safeClone(decision?.direction_script || {}, {}),
+            conflictLevel: String(decision.conflict_level || 'normal'),
+            conflictReason: String(decision.conflict_reason || ''),
+            conflictStrategy: String(decision.conflict_strategy || ''),
             beatComplete: decision.beat_complete === true,
             beatCompleteReason: String(decision.beat_complete_reason || ''),
             willCompleteThisLastTurn: decision.will_complete_this_last_turn === true,

@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.16.0';
+const PLUGIN_VERSION = 'v3.17.0';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -362,10 +362,10 @@ function buildDirectorInjectionPromptSectionHtml() {
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div id="ttw-director-injection-content" class="ttw-prompt-content" style="display:block;">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留节拍与动作链占位符。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留冲突控制、起点、动作链和过程占位符；旧模板若缺少冲突占位符，系统会自动补兼容块。</div>
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
-                <code>{CURRENT_BEAT_SUMMARY}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
+                <code>{CURRENT_BEAT_SUMMARY}</code> <code>{CONFLICT_LEVEL}</code> <code>{CONFLICT_REASON}</code> <code>{CONFLICT_STRATEGY}</code> <code>{CONFLICT_REQUIREMENT}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
             </div>
             <textarea id="ttw-director-injection-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
