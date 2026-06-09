@@ -54,6 +54,7 @@
             lastBeatIdx: 0,
             directorLastDecision: null,
             directorLastDecisionAt: 0,
+            pendingBeatCompletionNotice: null,
         },
         ui: {
             isMultiSelectMode: false,

@@ -1372,6 +1372,7 @@ open = shellRuntimeBindings.open;
         setCategoryDefaultConfig,
         MemoryHistoryDB,
     }));
+    publicApi.handleDirectorAfterGeneration = (...args) => directorService.handleDirectorAfterGeneration(...args);
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
     publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
     window[WESTWORLD_TTW_API_KEY] = publicApi;

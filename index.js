@@ -23,6 +23,7 @@ let txtToWorldbookInitPromise = null;
 let directorPromptReadyHandler = null;
 let directorMessageSentHandler = null;
 let directorGenerationStartedHandler = null;
+let directorAfterGenerationHandler = null;
 const directorPromptGate = {
     pendingUserSend: false,
     lastUserSendAt: 0,
@@ -295,6 +296,16 @@ function getDirectorSkipReason(eventData) {
     return null;
 }
 
+function getDirectorAfterGenerationEvents() {
+    const candidates = [
+        event_types?.MESSAGE_RECEIVED,
+        event_types?.GENERATION_ENDED,
+        event_types?.GENERATION_STOPPED,
+        event_types?.CHARACTER_MESSAGE_RENDERED,
+    ].filter(Boolean);
+    return [...new Set(candidates)];
+}
+
 function registerDirectorPromptHook() {
     if (!eventSource || !event_types?.CHAT_COMPLETION_PROMPT_READY) {
         directorTrace('eventSource or CHAT_COMPLETION_PROMPT_READY missing, skip register');
@@ -361,6 +372,22 @@ function registerDirectorPromptHook() {
         };
     }
 
+    if (!directorAfterGenerationHandler) {
+        directorAfterGenerationHandler = async (eventData) => {
+            try {
+                await delay(120);
+                const api = getTxtToWorldbookApiSafe();
+                if (!api || typeof api.handleDirectorAfterGeneration !== 'function') {
+                    directorTrace('skip: txtToWorldbook api not ready or missing handleDirectorAfterGeneration');
+                    return;
+                }
+                await api.handleDirectorAfterGeneration(eventData);
+            } catch (error) {
+                console.warn('[WestWorld] director beat completion notice failed:', error?.message || error);
+            }
+        };
+    }
+
     if (event_types?.MESSAGE_SENT && directorMessageSentHandler) {
         eventSource.off?.(event_types.MESSAGE_SENT, directorMessageSentHandler);
         eventSource.on(event_types.MESSAGE_SENT, directorMessageSentHandler);
@@ -371,9 +398,15 @@ function registerDirectorPromptHook() {
         eventSource.on(event_types.GENERATION_STARTED, directorGenerationStartedHandler);
     }
 
+    const afterGenerationEvents = getDirectorAfterGenerationEvents();
+    for (const eventName of afterGenerationEvents) {
+        eventSource.off?.(eventName, directorAfterGenerationHandler);
+        eventSource.on(eventName, directorAfterGenerationHandler);
+    }
+
     eventSource.off?.(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
-    directorTrace('director prompt hook registered');
+    directorTrace(`director prompt hook registered; after-generation events=${afterGenerationEvents.join(',') || 'none'}`);
 }
 
 function ensureSettings() {

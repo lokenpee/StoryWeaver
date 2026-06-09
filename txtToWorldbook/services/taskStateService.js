@@ -176,6 +176,7 @@ export function createTaskStateService(deps = {}) {
             lastBeatIdx: Number.isInteger(source.lastBeatIdx) ? Math.max(0, source.lastBeatIdx) : 0,
             directorLastDecision: source.directorLastDecision || null,
             directorLastDecisionAt: Number.isFinite(source.directorLastDecisionAt) ? source.directorLastDecisionAt : 0,
+            pendingBeatCompletionNotice: null,
         };
     }
 

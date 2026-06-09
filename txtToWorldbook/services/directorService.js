@@ -13,6 +13,9 @@ export function createDirectorService(deps = {}) {
         updateStreamContent,
     } = deps;
 
+    const BEAT_COMPLETION_NOTICE_TEXT = '🎯 当前节拍剧情已推进到结尾，建议切换到下一节拍。';
+    const BEAT_COMPLETION_NOTICE_TTL_MS = 15 * 60 * 1000;
+
     function directorDebug(msg) {
         if (typeof debugLog === 'function') {
             debugLog(`[Director] ${msg}`);
@@ -104,6 +107,75 @@ export function createDirectorService(deps = {}) {
             output = output.split(`{${key}}`).join(value == null ? '' : String(value));
         }
         return output;
+    }
+
+    function normalizeBooleanFlag(value) {
+        if (value === true) return true;
+        if (value === false || value === null || value === undefined) return false;
+        if (typeof value === 'number') return value === 1;
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y';
+        }
+        return false;
+    }
+
+    function ensureExperienceState() {
+        if (!AppState.experience || typeof AppState.experience !== 'object') {
+            AppState.experience = {};
+        }
+        if (!Object.prototype.hasOwnProperty.call(AppState.experience, 'pendingBeatCompletionNotice')) {
+            AppState.experience.pendingBeatCompletionNotice = null;
+        }
+        return AppState.experience;
+    }
+
+    function getDecisionBeatIndex(decision) {
+        if (Number.isInteger(decision?.stage_idx)) return decision.stage_idx;
+        if (Number.isInteger(decision?.stageIdx)) return decision.stageIdx;
+        if (Number.isInteger(decision?.lockedBeatIndex)) return decision.lockedBeatIndex;
+        return -1;
+    }
+
+    function getDecisionChapterIndex(decision) {
+        if (Number.isInteger(decision?.chapterIndex)) return decision.chapterIndex;
+        if (Number.isInteger(decision?.chapter_idx)) return decision.chapter_idx;
+        return -1;
+    }
+
+    function isSameBeatDecision(decision, chapterIndex, beatIndex, allowMissingChapter = false) {
+        if (!decision || typeof decision !== 'object') return false;
+        if (getDecisionBeatIndex(decision) !== beatIndex) return false;
+        const decisionChapter = getDecisionChapterIndex(decision);
+        return decisionChapter === chapterIndex || (allowMissingChapter && decisionChapter < 0);
+    }
+
+    function resolvePreviousBeatCompletionState({ chapterIndex, beatIndex, memory }) {
+        const experience = ensureExperienceState();
+        const candidates = [
+            {
+                decision: experience.directorLastDecision,
+                allowMissingChapter: experience.lastChapterIdx === chapterIndex && experience.lastBeatIdx === beatIndex,
+            },
+            {
+                decision: memory?.directorDecision,
+                allowMissingChapter: true,
+            },
+        ];
+
+        for (const candidate of candidates) {
+            const decision = candidate.decision;
+            if (!isSameBeatDecision(decision, chapterIndex, beatIndex, candidate.allowMissingChapter)) continue;
+            return {
+                willCompleteThisLastTurn: normalizeBooleanFlag(decision?.will_complete_this_turn ?? decision?.willCompleteThisTurn),
+                beatCompleteReason: String(decision?.beat_complete_reason || decision?.beatCompleteReason || '').trim(),
+            };
+        }
+
+        return {
+            willCompleteThisLastTurn: false,
+            beatCompleteReason: '',
+        };
     }
 
     function normalizeActionSegment(text, maxLen = 120) {
@@ -468,6 +540,7 @@ export function createDirectorService(deps = {}) {
         if (resolveChatItemRole(item) !== 'assistant') return false;
         if (item?.is_system === true) return false;
         if (item?.is_westworld_director === true || item?.is_storyweaver_director === true) return false;
+        if (item?._westworld_beat_completion_notice === true || item?._storyweaver_beat_completion_notice === true) return false;
         if (item?.prefix === true) return false;
         return true;
     }
@@ -690,7 +763,7 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, directionContext }) {
+    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, directionContext, willCompleteThisLastTurn = false }) {
         const compactBeats = beats.map((beat, idx) => ({
             idx,
             id: beat.id,
@@ -717,6 +790,7 @@ export function createDirectorService(deps = {}) {
             CHAPTER_OUTLINE: String(chapterOutline || ''),
             CURRENT_BEAT_INDEX: String(currentBeatIdx),
             LATEST_USER_MESSAGE: toShortText(latestUserMessage || '无', 320) || '无',
+            WILL_COMPLETE_THIS_LAST_TURN: willCompleteThisLastTurn ? 'true' : 'false',
             CONTEXT_MODE_LABEL: contextModeLabel,
             RECENT_ASSISTANT: contextRecentAssistant,
             ENTRY_EVENT_LINE: '',
@@ -934,8 +1008,20 @@ export function createDirectorService(deps = {}) {
 
         return {
             stage_idx: stageIdx,
-            beat_complete: rawDecision?.beat_complete === true,
-            beat_complete_reason: String(rawDecision?.beat_complete_reason || '').trim(),
+            beat_complete: normalizeBooleanFlag(rawDecision?.beat_complete ?? rawDecision?.beatComplete),
+            will_complete_this_last_turn: normalizeBooleanFlag(
+                rawDecision?.will_complete_this_last_turn ?? rawDecision?.willCompleteThisLastTurn
+            ),
+            will_complete_this_turn: normalizeBooleanFlag(
+                rawDecision?.will_complete_this_turn ?? rawDecision?.willCompleteThisTurn
+            ),
+            beat_complete_reason: String(
+                rawDecision?.beat_complete_reason
+                || rawDecision?.beatCompleteReason
+                || rawDecision?.completion_reason
+                || rawDecision?.completionReason
+                || ''
+            ).trim(),
             direction_script: directionScript,
         };
     }
@@ -948,10 +1034,128 @@ export function createDirectorService(deps = {}) {
         return {
             stage_idx: safeIdx,
             beat_complete: false,
+            will_complete_this_last_turn: false,
+            will_complete_this_turn: false,
             beat_complete_reason: '',
             direction_script: directionScript,
             reason,
         };
+    }
+
+    function createBeatCompletionNotice({ chapterIndex, beatIndex, decision, latestAssistantMessage }) {
+        return {
+            noticeId: `beat-complete-${chapterIndex}-${beatIndex}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            chapterIndex,
+            beatIndex,
+            will_complete_this_turn: true,
+            beat_complete_reason: String(decision?.beat_complete_reason || '').trim(),
+            latestAssistantTailBeforeGeneration: toTailText(latestAssistantMessage || '', 500),
+            at: Date.now(),
+            consumed: false,
+            sending: false,
+        };
+    }
+
+    function updatePendingBeatCompletionNotice({ chapterIndex, beatIndex, beats, decision, latestAssistantMessage }) {
+        const experience = ensureExperienceState();
+        const hasNextBeat = beatIndex < Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
+
+        if (decision?.will_complete_this_turn === true && hasNextBeat) {
+            experience.pendingBeatCompletionNotice = createBeatCompletionNotice({
+                chapterIndex,
+                beatIndex,
+                decision,
+                latestAssistantMessage,
+            });
+            return;
+        }
+
+        const pending = experience.pendingBeatCompletionNotice;
+        if (pending?.chapterIndex === chapterIndex && pending?.beatIndex === beatIndex) {
+            experience.pendingBeatCompletionNotice = null;
+        }
+    }
+
+    function isCurrentPendingNotice(notice) {
+        if (!notice || typeof notice !== 'object') return false;
+        if (notice.consumed === true || notice.sending === true) return false;
+        if (Date.now() - Number(notice.at || 0) > BEAT_COMPLETION_NOTICE_TTL_MS) return false;
+
+        const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
+            ? AppState.experience.currentChapterIndex
+            : 0;
+        if (notice.chapterIndex !== chapterIndex) return false;
+
+        const memory = AppState.memory?.queue?.[chapterIndex];
+        const beats = ensureChapterBeats(memory);
+        const maxBeatIndex = Math.max(0, (Array.isArray(beats) ? beats.length : 0) - 1);
+        const currentBeatIndex = Number.isInteger(memory?.chapterCurrentBeatIndex)
+            ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, maxBeatIndex))
+            : 0;
+        return notice.beatIndex === currentBeatIndex;
+    }
+
+    function clearPendingBeatCompletionNotice(notice) {
+        if (AppState.experience?.pendingBeatCompletionNotice === notice) {
+            AppState.experience.pendingBeatCompletionNotice = null;
+        }
+    }
+
+    function chatAlreadyHasBeatCompletionNotice(chat, notice) {
+        if (!Array.isArray(chat)) return false;
+        const recent = chat.slice(Math.max(0, chat.length - 8));
+        return recent.some((item) => {
+            if (!item || typeof item !== 'object') return false;
+            if (item._westworld_notice_id && item._westworld_notice_id === notice.noticeId) return true;
+            if (item._westworld_beat_completion_notice === true || item._storyweaver_beat_completion_notice === true) {
+                return item._westworld_chapter === notice.chapterIndex + 1
+                    && item._westworld_beat === notice.beatIndex + 1;
+            }
+            return false;
+        });
+    }
+
+    async function pushBeatCompletionNoticeMessage(notice) {
+        const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
+        if (!st || typeof st.getContext !== 'function') {
+            throw new Error('SillyTavern context is unavailable');
+        }
+
+        const context = st.getContext();
+        if (!context || !Array.isArray(context.chat)) {
+            throw new Error('SillyTavern chat is unavailable');
+        }
+
+        if (chatAlreadyHasBeatCompletionNotice(context.chat, notice)) {
+            return;
+        }
+
+        const noticeMessage = {
+            is_user: false,
+            mes: BEAT_COMPLETION_NOTICE_TEXT,
+            _westworld_beat_completion_notice: true,
+            _westworld_notice_id: notice.noticeId,
+            _westworld_chapter: notice.chapterIndex + 1,
+            _westworld_beat: notice.beatIndex + 1,
+            _storyweaver_beat_completion_notice: true,
+            _storyweaver_notice_id: notice.noticeId,
+            _generatedAt: Date.now(),
+        };
+
+        if (typeof context.addOneMessage === 'function') {
+            await context.addOneMessage(noticeMessage);
+            return;
+        }
+
+        context.chat.push(noticeMessage);
+        if (typeof context.saveChat === 'function') {
+            await context.saveChat();
+        }
+        if (typeof context.reloadCurrentChat === 'function') {
+            await context.reloadCurrentChat();
+        } else if (typeof context.renderChat === 'function') {
+            context.renderChat();
+        }
     }
 
     function stripExistingDirectorInjection(chat) {
@@ -1046,6 +1250,39 @@ export function createDirectorService(deps = {}) {
         });
     }
 
+    async function handleDirectorAfterGeneration(eventData = {}) {
+        void eventData;
+        const experience = ensureExperienceState();
+        const notice = experience.pendingBeatCompletionNotice;
+        if (!notice) return false;
+
+        if (!isCurrentPendingNotice(notice)) {
+            if (notice.sending !== true) {
+                clearPendingBeatCompletionNotice(notice);
+            }
+            return false;
+        }
+
+        const latestAssistantTail = toTailText(getLatestAssistantMessage({}) || '', 500);
+        if (!latestAssistantTail || latestAssistantTail === notice.latestAssistantTailBeforeGeneration) {
+            directorDebug('skip beat completion notice: assistant output has not advanced yet');
+            return false;
+        }
+
+        notice.sending = true;
+        try {
+            await pushBeatCompletionNoticeMessage(notice);
+            notice.consumed = true;
+            clearPendingBeatCompletionNotice(notice);
+            directorInfo(`beat completion notice sent chapter=${notice.chapterIndex + 1}, beat=${notice.beatIndex + 1}`);
+            return true;
+        } catch (error) {
+            notice.sending = false;
+            directorWarn('failed to send beat completion notice', error?.message || String(error));
+            return false;
+        }
+    }
+
     async function runDirectorBeforeGeneration(eventData) {
         if (AppState.settings.directorEnabled === false) {
             directorDebug('skip: directorEnabled=false');
@@ -1092,6 +1329,12 @@ export function createDirectorService(deps = {}) {
         const switchCommand = detectExplicitBeatSwitchCommand(latestUserMessage);
         const switchControl = resolveBeatSwitchControl(currentBeatIdx, beats, switchCommand);
         const lockedBeatIdx = switchControl.lockedBeatIdx;
+        const previousBeatCompletionState = resolvePreviousBeatCompletionState({
+            chapterIndex,
+            beatIndex: lockedBeatIdx,
+            memory,
+        });
+        const willCompleteThisLastTurn = previousBeatCompletionState.willCompleteThisLastTurn === true;
         const chapterQueue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
         const chapterMaxIdx = Math.max(0, chapterQueue.length - 1);
         const previousChapterIdx = Number.isInteger(AppState.experience?.lastChapterIdx)
@@ -1181,6 +1424,7 @@ export function createDirectorService(deps = {}) {
             latestDialogue,
             latestUserMessage,
             directionContext,
+            willCompleteThisLastTurn,
         });
 
         // 新增：输出导演提示词构建完成日志
@@ -1220,7 +1464,7 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`   锁定节拍: ${decision.stage_idx + 1}/${beats.length}\n`);
                 updateStreamContent(`   新节拍: ${decision.is_new_beat ? '是' : '否'}\n`);
                 updateStreamContent(`   大跳转: ${decision.is_large_beat_jump ? '是' : '否'}\n`);
-                updateStreamContent(`   节拍完成: ${decision.beat_complete ? '✅ 是' : '否'}${decision.beat_complete_reason ? ` (${toShortText(decision.beat_complete_reason, 60)})` : ''}\n`);
+                updateStreamContent(`   节拍完成: ${decision.beat_complete ? '✅ 是' : '否'}\n`);
                 updateStreamContent(`   起点: ${toShortText(ds.start || '', 100) || '（默认）'}\n`);
                 if (actionChain) {
                     updateStreamContent(`   动作链: ${toShortText(actionChain, 120)}\n`);
@@ -1244,6 +1488,11 @@ export function createDirectorService(deps = {}) {
         }
 
         // 节拍切换由流程层决定，导演输出仅负责“怎么演”。
+        decision.will_complete_this_last_turn = willCompleteThisLastTurn;
+        decision.will_complete_this_turn = willCompleteThisLastTurn || decision.will_complete_this_turn === true;
+        if (decision.will_complete_this_turn && !String(decision.beat_complete_reason || '').trim()) {
+            decision.beat_complete_reason = previousBeatCompletionState.beatCompleteReason || '当前节拍将在本回合推进到结尾';
+        }
         decision.stage_idx = lockedBeatIdx;
         decision.switch_direction = switchControl.direction;
         decision.switch_signal = switchControl.signal;
@@ -1291,10 +1540,18 @@ export function createDirectorService(deps = {}) {
         }
 
         decision.previous_stage_idx = currentBeatIdx;
+        updatePendingBeatCompletionNotice({
+            chapterIndex,
+            beatIndex: lockedBeatIdx,
+            beats,
+            decision,
+            latestAssistantMessage,
+        });
 
-        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}${decision.beat_complete ? ', beatComplete=true' : ''}`);
+        directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}${decision.beat_complete ? ', beatComplete=true' : ''}${decision.will_complete_this_turn ? ', willCompleteThisTurn=true' : ''}`);
         if (typeof updateStreamContent === 'function') {
             updateStreamContent(`✅ ${turnPrefix} 判定完成：source=${decisionSource}, 锁定节拍=${decision.stage_idx + 1}/${beats.length}, switch=${decision.switch_direction || 'none'}\n`);
+            updateStreamContent(`   上轮耗尽: ${decision.will_complete_this_last_turn ? '是' : '否'}，本轮耗尽: ${decision.will_complete_this_turn ? '是' : '否'}${decision.beat_complete_reason ? ` (${toShortText(decision.beat_complete_reason, 60)})` : ''}\n`);
 
             if (decision.beat_complete) {
                 const completeReason = decision.beat_complete_reason || '退出条件已满足';
@@ -1316,14 +1573,23 @@ export function createDirectorService(deps = {}) {
         memory.chapterCurrentBeatIndex = decision.stage_idx;
         memory.directorDecision = {
             ...decision,
+            chapterIndex,
+            lockedBeatIndex: lockedBeatIdx,
             beat_complete: decision.beat_complete || false,
+            will_complete_this_last_turn: decision.will_complete_this_last_turn === true,
+            will_complete_this_turn: decision.will_complete_this_turn === true,
             beat_complete_reason: decision.beat_complete_reason || '',
             at: Date.now(),
         };
         AppState.experience.currentBeatIndex = decision.stage_idx;
         AppState.experience.lastBeatIdx = lockedBeatIdx;
         AppState.experience.lastChapterIdx = chapterIndex;
-        AppState.experience.directorLastDecision = { ...memory.directorDecision, beat_complete: decision.beat_complete || false };
+        AppState.experience.directorLastDecision = {
+            ...memory.directorDecision,
+            beat_complete: decision.beat_complete || false,
+            will_complete_this_last_turn: decision.will_complete_this_last_turn === true,
+            will_complete_this_turn: decision.will_complete_this_turn === true,
+        };
         AppState.experience.directorLastDecisionAt = Date.now();
 
         const injection = buildInjection(decision, beats);
@@ -1341,8 +1607,8 @@ export function createDirectorService(deps = {}) {
         publishDirectorDebugEntry({
             chapterIndex,
             chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
-            currentBeatIndex,
-            lockedBeatIndex,
+            currentBeatIndex: currentBeatIdx,
+            lockedBeatIndex: lockedBeatIdx,
             beatCount: beats.length,
             previousChapterIdx,
             previousBeatIdx,
@@ -1357,6 +1623,8 @@ export function createDirectorService(deps = {}) {
             directionScript: safeClone(decision?.direction_script || {}, {}),
             beatComplete: decision.beat_complete === true,
             beatCompleteReason: String(decision.beat_complete_reason || ''),
+            willCompleteThisLastTurn: decision.will_complete_this_last_turn === true,
+            willCompleteThisTurn: decision.will_complete_this_turn === true,
             nextBeatSummary: nextBeatSummary || '',
             nextBeatPreview200: nextBeatPreview200 || '',
             injection,
@@ -1371,6 +1639,7 @@ export function createDirectorService(deps = {}) {
     }
 
     return {
+        handleDirectorAfterGeneration,
         runDirectorBeforeGeneration,
     };
 }

@@ -936,7 +936,9 @@ export function createChapterExperienceView(deps = {}) {
             `节拍: 当前 ${Number(entry.currentBeatIndex ?? 0) + 1} -> 锁定 ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`,
             `判定来源: ${entry.decisionSource || 'unknown'}`,
             `切拍: ${entry.switchControl?.direction || 'none'} (${entry.switchControl?.reason || '无'})`,
-            `节拍完成: ${entry.beatComplete ? '是' : '否'} ${entry.beatCompleteReason || ''}`,
+            `节拍完成: ${entry.beatComplete ? '是' : '否'}`,
+            `上一轮耗尽: ${entry.willCompleteThisLastTurn ? '是' : '否'}`,
+            `本轮耗尽: ${entry.willCompleteThisTurn ? '是' : '否'} ${entry.beatCompleteReason || ''}`,
             '',
             '用户输入:',
             stringifyDebugValue(entry.latestUserMessage),
@@ -978,6 +980,7 @@ export function createChapterExperienceView(deps = {}) {
         const switchText = `${entry.switchControl?.direction || 'none'} / ${entry.switchControl?.reason || '无'}`;
         const beatText = `${Number(entry.currentBeatIndex ?? 0) + 1} -> ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`;
         const completeClass = entry.beatComplete ? 'is-complete' : '';
+        const willCompleteClass = entry.willCompleteThisTurn ? 'is-complete' : '';
 
         return `
 <div class="ttw-director-debug-summary">
@@ -985,6 +988,7 @@ export function createChapterExperienceView(deps = {}) {
     <div class="ttw-director-debug-metric"><span>节拍</span><strong>${escapeHtml(beatText)}</strong></div>
     <div class="ttw-director-debug-metric"><span>来源</span><strong>${escapeHtml(entry.decisionSource || 'unknown')}</strong></div>
     <div class="ttw-director-debug-metric ${completeClass}"><span>完成</span><strong>${entry.beatComplete ? '是' : '否'}</strong></div>
+    <div class="ttw-director-debug-metric ${willCompleteClass}"><span>本轮耗尽</span><strong>${entry.willCompleteThisTurn ? '是' : '否'}</strong></div>
 </div>
 <div class="ttw-director-debug-block">
     <div class="ttw-current-block-title">用户输入</div>
@@ -1005,7 +1009,9 @@ export function createChapterExperienceView(deps = {}) {
 <div class="ttw-director-debug-block">
     <div class="ttw-current-block-title">切拍与完成判定</div>
     <div class="ttw-current-block-content">切拍：${escapeHtml(switchText)}
-完成原因：${escapeHtml(entry.beatCompleteReason || '未判定完成')}
+上一轮耗尽：${entry.willCompleteThisLastTurn ? '是' : '否'}
+本轮耗尽：${entry.willCompleteThisTurn ? '是' : '否'}
+耗尽原因：${escapeHtml(entry.beatCompleteReason || '未判定耗尽')}
 下一节拍：${escapeHtml(entry.nextBeatSummary || '无')}</div>
 </div>
 ${buildDebugPreBlock('最近AI输出尾部', entry.latestAssistantMessage, { compact: true })}
