@@ -32,8 +32,15 @@ export function createChapterExperienceView(deps = {}) {
         progressSection: 'ttw-progress-section',
         promptEditorSection: 'ttw-prompt-editor-section',
         settingsSection: 'ttw-settings-section',
+        directorDebugSection: 'ttw-director-debug-section',
+        directorDebugList: 'ttw-director-debug-list',
+        directorDebugDetail: 'ttw-director-debug-detail',
+        directorDebugRefreshButton: 'ttw-director-debug-refresh',
+        directorDebugCopyButton: 'ttw-director-debug-copy',
+        directorDebugClearButton: 'ttw-director-debug-clear',
         promptEditorModeButton: 'ttw-view-mode-prompt-editor',
         settingsModeButton: 'ttw-view-mode-settings',
+        directorDebugModeButton: 'ttw-view-mode-director-debug',
         txtModeClass: 'ttw-mode-txt',
     };
 
@@ -73,8 +80,9 @@ export function createChapterExperienceView(deps = {}) {
         { value: 'conflict_closed', label: 'conflict_closed（完整冲突闭环结束）' },
     ];
     let activeEditorModal = null;
+    let directorDebugWindowEventBound = false;
     const LAST_MODAL_VIEW_STORAGE_KEY = 'westworldTxtToWorldbookLastModalView';
-    const SUPPORTED_VIEW_MODES = new Set(['txt', 'outline', 'current', 'progress', 'settings', 'prompt-editor']);
+    const SUPPORTED_VIEW_MODES = new Set(['txt', 'outline', 'current', 'progress', 'settings', 'prompt-editor', 'director-debug']);
 
     function normalizeViewMode(mode) {
         const normalized = String(mode || '').trim().toLowerCase();
@@ -176,6 +184,7 @@ export function createChapterExperienceView(deps = {}) {
             progress: selectors.progressModeButton,
             outline: selectors.outlineModeButton,
             current: selectors.currentModeButton,
+            'director-debug': selectors.directorDebugModeButton,
             'prompt-editor': selectors.promptEditorModeButton,
             settings: selectors.settingsModeButton,
         };
@@ -215,7 +224,7 @@ export function createChapterExperienceView(deps = {}) {
             return;
         }
 
-        if (mode === 'outline' || mode === 'current') {
+        if (mode === 'outline' || mode === 'current' || mode === 'director-debug') {
             restoreResultFromForcedHide(resultSection);
             if (typeof showResultSection === 'function') {
                 showResultSection(true);
@@ -856,17 +865,226 @@ export function createChapterExperienceView(deps = {}) {
             .replace(/'/g, '&#39;');
     }
 
-    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false, showSettings = false, showPromptEditor = false }) {
+    function setSectionVisibility({ showOutline = false, showCurrent = false, showProgress = false, showSettings = false, showPromptEditor = false, showDirectorDebug = false }) {
         const outlineSection = document.getElementById(selectors.outlineSection);
         const currentSection = document.getElementById(selectors.currentSection);
         const progressSection = document.getElementById(selectors.progressSection);
         const promptEditorSection = document.getElementById(selectors.promptEditorSection);
         const settingsSection = document.getElementById(selectors.settingsSection);
+        const directorDebugSection = document.getElementById(selectors.directorDebugSection);
         if (outlineSection) outlineSection.style.display = showOutline ? 'block' : 'none';
         if (currentSection) currentSection.style.display = showCurrent ? 'block' : 'none';
         if (progressSection) progressSection.style.display = showProgress ? 'block' : 'none';
         if (promptEditorSection) promptEditorSection.style.display = showPromptEditor ? 'block' : 'none';
         if (settingsSection) settingsSection.style.display = showSettings ? 'block' : 'none';
+        if (directorDebugSection) directorDebugSection.style.display = showDirectorDebug ? 'block' : 'none';
+    }
+
+    function getDirectorDebugEntries() {
+        if (!AppState.ui || typeof AppState.ui !== 'object') {
+            AppState.ui = {};
+        }
+        if (!Array.isArray(AppState.ui.directorDebugEntries)) {
+            AppState.ui.directorDebugEntries = [];
+        }
+        return AppState.ui.directorDebugEntries;
+    }
+
+    function formatDebugTime(timestamp) {
+        const date = new Date(Number(timestamp) || Date.now());
+        return date.toLocaleTimeString('zh-CN', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        });
+    }
+
+    function stringifyDebugValue(value) {
+        if (value === null || value === undefined || value === '') return '无';
+        if (typeof value === 'string') return value;
+        try {
+            return JSON.stringify(value, null, 2);
+        } catch (_) {
+            return String(value);
+        }
+    }
+
+    function buildDebugPreBlock(title, value, options = {}) {
+        const { open = false, compact = false } = options;
+        const className = compact ? 'ttw-director-debug-pre is-compact' : 'ttw-director-debug-pre';
+        return `
+<details class="ttw-director-debug-fold" ${open ? 'open' : ''}>
+    <summary>${escapeHtml(title)}</summary>
+    <pre class="${className}">${escapeHtml(stringifyDebugValue(value))}</pre>
+</details>`;
+    }
+
+    function getSelectedDirectorDebugEntry() {
+        const entries = getDirectorDebugEntries();
+        if (entries.length === 0) return null;
+        const selectedId = AppState.ui.directorDebugSelectedId;
+        return entries.find((entry) => entry.id === selectedId) || entries[0];
+    }
+
+    function formatDirectorDebugEntry(entry) {
+        if (!entry) return '';
+        const ds = entry.directionScript || entry.decision?.direction_script || {};
+        return [
+            `时间: ${new Date(Number(entry.at) || Date.now()).toLocaleString('zh-CN')}`,
+            `章节: 第${(entry.chapterIndex ?? 0) + 1}章 ${entry.chapterTitle || ''}`,
+            `节拍: 当前 ${Number(entry.currentBeatIndex ?? 0) + 1} -> 锁定 ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`,
+            `判定来源: ${entry.decisionSource || 'unknown'}`,
+            `切拍: ${entry.switchControl?.direction || 'none'} (${entry.switchControl?.reason || '无'})`,
+            `节拍完成: ${entry.beatComplete ? '是' : '否'} ${entry.beatCompleteReason || ''}`,
+            '',
+            '用户输入:',
+            stringifyDebugValue(entry.latestUserMessage),
+            '',
+            '最近AI尾部:',
+            stringifyDebugValue(entry.latestAssistantMessage),
+            '',
+            '起点:',
+            stringifyDebugValue(ds.start),
+            '',
+            '动作链:',
+            stringifyDebugValue(ds.action_chain || ds.actionChain || ds.steps),
+            '',
+            '终点:',
+            stringifyDebugValue(ds.end),
+            '',
+            '方向上下文:',
+            stringifyDebugValue(entry.directionContext),
+            '',
+            '导演判定JSON:',
+            stringifyDebugValue(entry.decision),
+            '',
+            '最终注入提示词:',
+            stringifyDebugValue(entry.injection),
+            '',
+            '导演请求提示词:',
+            stringifyDebugValue(entry.prompt),
+        ].join('\n');
+    }
+
+    function buildDirectorDebugDetailHtml(entry) {
+        if (!entry) {
+            return '<div class="ttw-director-debug-empty">暂无导演调试记录。发送一轮消息并触发导演后，这里会显示判定详情。</div>';
+        }
+
+        const directionScript = entry.directionScript || entry.decision?.direction_script || {};
+        const actionChain = directionScript.action_chain || directionScript.actionChain || '';
+        const steps = Array.isArray(directionScript.steps) ? directionScript.steps : [];
+        const switchText = `${entry.switchControl?.direction || 'none'} / ${entry.switchControl?.reason || '无'}`;
+        const beatText = `${Number(entry.currentBeatIndex ?? 0) + 1} -> ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`;
+        const completeClass = entry.beatComplete ? 'is-complete' : '';
+
+        return `
+<div class="ttw-director-debug-summary">
+    <div class="ttw-director-debug-metric"><span>章节</span><strong>${escapeHtml(entry.chapterTitle || `第${(entry.chapterIndex ?? 0) + 1}章`)}</strong></div>
+    <div class="ttw-director-debug-metric"><span>节拍</span><strong>${escapeHtml(beatText)}</strong></div>
+    <div class="ttw-director-debug-metric"><span>来源</span><strong>${escapeHtml(entry.decisionSource || 'unknown')}</strong></div>
+    <div class="ttw-director-debug-metric ${completeClass}"><span>完成</span><strong>${entry.beatComplete ? '是' : '否'}</strong></div>
+</div>
+<div class="ttw-director-debug-block">
+    <div class="ttw-current-block-title">用户输入</div>
+    <div class="ttw-current-block-content">${escapeHtml(entry.latestUserMessage || '无')}</div>
+</div>
+<div class="ttw-director-debug-block">
+    <div class="ttw-current-block-title">起点定位</div>
+    <div class="ttw-current-block-content">${escapeHtml(directionScript.start || entry.directionContext?.start_anchor || '无')}</div>
+</div>
+<div class="ttw-director-debug-block">
+    <div class="ttw-current-block-title">动作链</div>
+    <div class="ttw-current-block-content">${escapeHtml(actionChain || steps.join(' → ') || '无')}</div>
+</div>
+<div class="ttw-director-debug-block">
+    <div class="ttw-current-block-title">终点</div>
+    <div class="ttw-current-block-content">${escapeHtml(directionScript.end || entry.directionContext?.end_guideline || '无')}</div>
+</div>
+<div class="ttw-director-debug-block">
+    <div class="ttw-current-block-title">切拍与完成判定</div>
+    <div class="ttw-current-block-content">切拍：${escapeHtml(switchText)}
+完成原因：${escapeHtml(entry.beatCompleteReason || '未判定完成')}
+下一节拍：${escapeHtml(entry.nextBeatSummary || '无')}</div>
+</div>
+${buildDebugPreBlock('最近AI输出尾部', entry.latestAssistantMessage, { compact: true })}
+${buildDebugPreBlock('方向上下文', entry.directionContext, { compact: true })}
+${buildDebugPreBlock('最终注入提示词', entry.injection, { open: true })}
+${buildDebugPreBlock('导演判定 JSON', entry.decision)}
+${buildDebugPreBlock('导演请求提示词', entry.prompt)}
+${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: true })}`;
+    }
+
+    function renderDirectorDebugPanel() {
+        const listEl = document.getElementById(selectors.directorDebugList);
+        const detailEl = document.getElementById(selectors.directorDebugDetail);
+        if (!listEl || !detailEl) return;
+
+        const entries = getDirectorDebugEntries();
+        const selected = getSelectedDirectorDebugEntry();
+        const selectedId = selected?.id || '';
+
+        if (entries.length === 0) {
+            listEl.innerHTML = '<div class="ttw-director-debug-empty">暂无记录</div>';
+            detailEl.innerHTML = buildDirectorDebugDetailHtml(null);
+            return;
+        }
+
+        listEl.innerHTML = entries.map((entry) => {
+            const isSelected = entry.id === selectedId;
+            const chapter = `第${(entry.chapterIndex ?? 0) + 1}章`;
+            const beat = `${Number(entry.lockedBeatIndex ?? 0) + 1}/${entry.beatCount || 0}`;
+            const source = entry.decisionSource || 'unknown';
+            const userPreview = toShortText(entry.latestUserMessage || '无用户输入', 70);
+            return `
+<button type="button" class="ttw-director-debug-item ${isSelected ? 'is-active' : ''}" data-debug-id="${escapeHtml(entry.id)}">
+    <span class="ttw-director-debug-item-head">
+        <strong>${escapeHtml(formatDebugTime(entry.at))}</strong>
+        <em>${escapeHtml(source)}</em>
+    </span>
+    <span class="ttw-director-debug-item-meta">${escapeHtml(chapter)} · 节拍 ${escapeHtml(beat)}</span>
+    <span class="ttw-director-debug-item-preview">${escapeHtml(userPreview)}</span>
+</button>`;
+        }).join('');
+
+        detailEl.innerHTML = buildDirectorDebugDetailHtml(selected);
+    }
+
+    async function copyDirectorDebugEntry() {
+        const selected = getSelectedDirectorDebugEntry();
+        if (!selected) {
+            ErrorHandler.showUserError('暂无可复制的导演调试记录');
+            return;
+        }
+        const text = formatDirectorDebugEntry(selected);
+        try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            ErrorHandler.showUserSuccess('导演调试记录已复制');
+        } catch (error) {
+            ErrorHandler.showUserError(`复制失败：${error?.message || error}`);
+        }
+    }
+
+    function clearDirectorDebugEntries() {
+        if (!AppState.ui || typeof AppState.ui !== 'object') {
+            AppState.ui = {};
+        }
+        AppState.ui.directorDebugEntries = [];
+        AppState.ui.directorDebugSelectedId = null;
+        renderDirectorDebugPanel();
     }
 
     function renderOutlineList() {
@@ -1307,6 +1525,15 @@ export function createChapterExperienceView(deps = {}) {
         setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: true });
     }
 
+    function showDirectorDebugPanelInternal() {
+        persistLastModalView('director-debug');
+        setModeTabActive('director-debug');
+        setTxtSectionsVisible(false);
+        setResultSectionVisibleForMode('director-debug');
+        setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: false, showDirectorDebug: true });
+        renderDirectorDebugPanel();
+    }
+
     function showTxtConverterPanel() {
         persistLastModalView('txt');
         setModeTabActive('txt');
@@ -1417,6 +1644,10 @@ export function createChapterExperienceView(deps = {}) {
                 showProgressPanelInternal();
                 return;
             }
+            if (view === 'director-debug') {
+                showDirectorDebugPanelInternal();
+                return;
+            }
             if (view === 'settings') {
                 showSettingsPanelInternal();
                 return;
@@ -1468,10 +1699,54 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
+    function bindDirectorDebugEvents() {
+        const listEl = document.getElementById(selectors.directorDebugList);
+        if (listEl && !listEl.dataset.bound) {
+            listEl.dataset.bound = '1';
+            listEl.addEventListener('click', (event) => {
+                const item = event.target.closest('.ttw-director-debug-item[data-debug-id]');
+                if (!item) return;
+                AppState.ui.directorDebugSelectedId = item.getAttribute('data-debug-id') || null;
+                renderDirectorDebugPanel();
+            });
+        }
+
+        const refreshBtn = document.getElementById(selectors.directorDebugRefreshButton);
+        if (refreshBtn && !refreshBtn.dataset.bound) {
+            refreshBtn.dataset.bound = '1';
+            refreshBtn.addEventListener('click', renderDirectorDebugPanel);
+        }
+
+        const copyBtn = document.getElementById(selectors.directorDebugCopyButton);
+        if (copyBtn && !copyBtn.dataset.bound) {
+            copyBtn.dataset.bound = '1';
+            copyBtn.addEventListener('click', () => {
+                void copyDirectorDebugEntry();
+            });
+        }
+
+        const clearBtn = document.getElementById(selectors.directorDebugClearButton);
+        if (clearBtn && !clearBtn.dataset.bound) {
+            clearBtn.dataset.bound = '1';
+            clearBtn.addEventListener('click', clearDirectorDebugEntries);
+        }
+
+        if (!directorDebugWindowEventBound) {
+            directorDebugWindowEventBound = true;
+            window.addEventListener('westworld:director-debug-updated', () => {
+                const section = document.getElementById(selectors.directorDebugSection);
+                if (section && section.style.display !== 'none') {
+                    renderDirectorDebugPanel();
+                }
+            });
+        }
+    }
+
     function preparePanels() {
         bindViewModeEvents();
         bindOutlineEvents();
         bindCurrentEvents();
+        bindDirectorDebugEvents();
     }
 
     return {
@@ -1490,6 +1765,10 @@ export function createChapterExperienceView(deps = {}) {
         showProgressPanel: () => {
             preparePanels();
             showProgressPanelInternal();
+        },
+        showDirectorDebugPanel: () => {
+            preparePanels();
+            showDirectorDebugPanelInternal();
         },
         showSettingsPanel: () => {
             preparePanels();

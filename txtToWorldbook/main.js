@@ -2,7 +2,7 @@
 * TXT转世界书模块
 *
 * @file txtToWorldbook/main.js
-* @version 1.5.0
+* @version 1.6.0
 * @author WestWorld
 * @license MIT
 *
@@ -1006,6 +1006,7 @@ const {
     showProgressPanel,
     showStoryOutlinePanel,
     showCurrentChapterPanel,
+    showDirectorDebugPanel,
     showSettingsPanel,
 } = chapterExperienceView;
 
@@ -1273,6 +1274,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     showProgressPanel: (...args) => showProgressPanel(...args),
     showStoryOutlinePanel: (...args) => showStoryOutlinePanel(...args),
     showCurrentChapterPanel: (...args) => showCurrentChapterPanel(...args),
+    showDirectorDebugPanel: (...args) => showDirectorDebugPanel(...args),
     showSettingsPanel: (...args) => showSettingsPanel(...args),
     updateStreamContent,
     showPromptPreview: (...args) => showPromptPreview(...args),

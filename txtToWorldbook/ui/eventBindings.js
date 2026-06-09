@@ -29,10 +29,11 @@ export function bindActionEvents(deps = {}) {
         showProgressPanel,
         showStoryOutlinePanel,
         showCurrentChapterPanel,
+        showDirectorDebugPanel,
         showSettingsPanel,
     } = deps;
     const LAST_MODAL_VIEW_STORAGE_KEY = 'westworldTxtToWorldbookLastModalView';
-    const SUPPORTED_VIEW_MODES = new Set(['txt', 'outline', 'current', 'progress', 'settings', 'prompt-editor']);
+    const SUPPORTED_VIEW_MODES = new Set(['txt', 'outline', 'current', 'progress', 'settings', 'prompt-editor', 'director-debug']);
 
     function normalizeViewMode(mode) {
         const normalized = String(mode || '').trim().toLowerCase();
@@ -68,6 +69,10 @@ export function bindActionEvents(deps = {}) {
         }
         if (initialView === 'progress' && typeof showProgressPanel === 'function') {
             showProgressPanel();
+            return;
+        }
+        if (initialView === 'director-debug' && typeof showDirectorDebugPanel === 'function') {
+            showDirectorDebugPanel();
             return;
         }
         if (initialView === 'settings' && typeof showSettingsPanel === 'function') {

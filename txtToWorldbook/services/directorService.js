@@ -32,6 +32,46 @@ export function createDirectorService(deps = {}) {
         directorDebug(msg);
     }
 
+    function safeClone(value, fallback = null) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (_) {
+            return fallback;
+        }
+    }
+
+    function ensureDirectorDebugEntries() {
+        if (!AppState.ui || typeof AppState.ui !== 'object') {
+            AppState.ui = {};
+        }
+        if (!Array.isArray(AppState.ui.directorDebugEntries)) {
+            AppState.ui.directorDebugEntries = [];
+        }
+        return AppState.ui.directorDebugEntries;
+    }
+
+    function publishDirectorDebugEntry(entry) {
+        const entries = ensureDirectorDebugEntries();
+        const item = {
+            id: `director-debug-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            at: Date.now(),
+            ...entry,
+        };
+        entries.unshift(item);
+        if (entries.length > 20) {
+            entries.length = 20;
+        }
+        AppState.ui.directorDebugSelectedId = item.id;
+
+        try {
+            window.dispatchEvent(new CustomEvent('westworld:director-debug-updated', { detail: { entry: item } }));
+        } catch (_) {
+            // Ignore environments without CustomEvent support.
+        }
+
+        return item;
+    }
+
     function buildDirectorTurnPrefix(chapterIndex) {
         const chapterNo = Number.isInteger(chapterIndex) ? chapterIndex + 1 : 0;
         return chapterNo > 0
@@ -1297,6 +1337,30 @@ export function createDirectorService(deps = {}) {
             mes: injection,
             is_westworld_director: true,
             is_storyweaver_director: true,
+        });
+        publishDirectorDebugEntry({
+            chapterIndex,
+            chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
+            currentBeatIndex,
+            lockedBeatIndex,
+            beatCount: beats.length,
+            previousChapterIdx,
+            previousBeatIdx,
+            switchCommand: safeClone(switchCommand, {}),
+            switchControl: safeClone(switchControl, {}),
+            directionContext: safeClone(directionContext, {}),
+            latestUserMessage: toShortText(latestUserMessage || '', 1200),
+            latestAssistantMessage: toTailText(latestAssistantMessage || '', 1200),
+            prompt,
+            decisionSource,
+            decision: safeClone(decision, {}),
+            directionScript: safeClone(decision?.direction_script || {}, {}),
+            beatComplete: decision.beat_complete === true,
+            beatCompleteReason: String(decision.beat_complete_reason || ''),
+            nextBeatSummary: nextBeatSummary || '',
+            nextBeatPreview200: nextBeatPreview200 || '',
+            injection,
+            chatMessageCount: Array.isArray(eventData.chat) ? eventData.chat.length : 0,
         });
         directorInfo(`注入完成 chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
         if (typeof updateStreamContent === 'function') {

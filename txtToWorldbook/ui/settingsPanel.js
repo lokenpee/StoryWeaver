@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.13.0';
+const PLUGIN_VERSION = 'v3.14.0';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -688,6 +688,22 @@ function buildResultSectionHtml() {
                     <div id="ttw-current-opening" class="ttw-current-block-content">暂无开场白</div>
                 </div>
             </div>
+
+            <div id="ttw-director-debug-section" class="ttw-story-panel" style="display:none;">
+                <div class="ttw-story-panel-header">
+                    <h4>🎛️ 导演调试</h4>
+                    <div class="ttw-current-panel-actions">
+                        <button id="ttw-director-debug-refresh" class="ttw-btn ttw-btn-small">刷新</button>
+                        <button id="ttw-director-debug-copy" class="ttw-btn ttw-btn-small">复制当前</button>
+                        <button id="ttw-director-debug-clear" class="ttw-btn ttw-btn-small ttw-btn-danger">清空</button>
+                    </div>
+                </div>
+                <div class="ttw-current-hint">展示最近 20 次导演回合判定，包含起点定位、动作链、终点和最终注入提示词。</div>
+                <div class="ttw-director-debug-grid">
+                    <div id="ttw-director-debug-list" class="ttw-director-debug-list"></div>
+                    <div id="ttw-director-debug-detail" class="ttw-director-debug-detail"></div>
+                </div>
+            </div>
         </div>
     </div>`;
 }
@@ -723,6 +739,7 @@ function buildViewNavHtml() {
         <button id="ttw-view-mode-progress" class="ttw-view-tab" data-view="progress">⏳ 处理进度</button>
         <button id="ttw-view-mode-outline" class="ttw-view-tab" data-view="outline">🧭 故事大纲</button>
         <button id="ttw-view-mode-current" class="ttw-view-tab" data-view="current">🎬 当前章节概览</button>
+        <button id="ttw-view-mode-director-debug" class="ttw-view-tab" data-view="director-debug">🎛️ 导演调试</button>
         <button id="ttw-view-mode-prompt-editor" class="ttw-view-tab" data-view="prompt-editor">🛠️ 提示词编辑</button>
         <button id="ttw-view-mode-settings" class="ttw-view-tab" data-view="settings">⚙️ 设置</button>
     </div>`;

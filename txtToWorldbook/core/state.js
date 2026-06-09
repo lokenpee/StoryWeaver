@@ -60,7 +60,9 @@
             selectedIndices: new Set(),
             searchKeyword: '',
             tokenThreshold: 0,
-            manualMergeHighlight: null
+            manualMergeHighlight: null,
+            directorDebugEntries: [],
+            directorDebugSelectedId: null
         },
         config: {
             entryPosition: {},
