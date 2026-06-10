@@ -1340,8 +1340,11 @@ ${dialogue}`;
         }
 
         const noticeMessage = {
+            role: 'assistant',
             is_user: false,
+            is_system: false,
             mes: BEAT_COMPLETION_NOTICE_TEXT,
+            content: BEAT_COMPLETION_NOTICE_TEXT,
             _westworld_beat_completion_notice: true,
             _westworld_notice_id: notice.noticeId,
             _westworld_chapter: notice.chapterIndex + 1,
@@ -1351,11 +1354,9 @@ ${dialogue}`;
             _generatedAt: Date.now(),
         };
 
-        if (typeof context.addOneMessage === 'function') {
-            await context.addOneMessage(noticeMessage);
-            return;
-        }
-
+        // During after-generation events, addOneMessage may clone/reuse the active
+        // assistant message in some SillyTavern builds. Push a fully materialized
+        // notice item instead so the reminder text is the only inserted content.
         context.chat.push(noticeMessage);
         if (typeof context.saveChat === 'function') {
             await context.saveChat();

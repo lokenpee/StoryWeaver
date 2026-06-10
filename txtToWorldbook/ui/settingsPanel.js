@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.20.0';
+const PLUGIN_VERSION = 'v3.21.0';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -618,7 +618,7 @@ function buildProgressSectionHtml() {
             <div class="ttw-progress-controls">
                 <button id="ttw-stop-btn" class="ttw-btn ttw-btn-secondary">⏸️ 暂停</button>
                 <button id="ttw-repair-btn" class="ttw-btn ttw-btn-warning" style="display:none;">🔧 修复失败</button>
-                <button id="ttw-toggle-stream" class="ttw-btn ttw-btn-small">👁️ 实时输出</button>
+                <button id="ttw-toggle-stream" class="ttw-btn ttw-btn-small">🙈 隐藏日志</button>
             </div>
             <div id="ttw-stream-container" class="ttw-stream-container">
                 <div class="ttw-stream-header">

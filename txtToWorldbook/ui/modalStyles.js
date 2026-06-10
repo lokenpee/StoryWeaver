@@ -623,7 +623,7 @@ export function ensureModalStyles() {
         
         /* --- 流式输出容器 --- */
         .ttw-stream-container {
-            display: none;
+            display: block;
             margin-top: 16px;
             border: 1px solid var(--ttw-border-color);
             border-radius: 8px;

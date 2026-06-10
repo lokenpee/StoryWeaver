@@ -3,8 +3,18 @@ export function createProgressView(deps = {}) {
         AppState,
     } = deps;
 
+    function isTxtViewActive() {
+        const activeFromState = String(AppState?.ui?.lastModalView || AppState?.settings?.lastModalView || '').trim().toLowerCase();
+        if (activeFromState) return activeFromState === 'txt';
+        const txtTab = document.getElementById('ttw-view-mode-txt');
+        return !txtTab || txtTab.classList.contains('active');
+    }
+
     function showQueueSection(show) {
-        document.getElementById('ttw-queue-section').style.display = show ? 'block' : 'none';
+        const queueSection = document.getElementById('ttw-queue-section');
+        if (!queueSection) return;
+        queueSection.dataset.ttwDesiredDisplay = show ? 'block' : 'none';
+        queueSection.style.display = show && isTxtViewActive() ? 'block' : 'none';
     }
 
     function showProgressSection(show) {

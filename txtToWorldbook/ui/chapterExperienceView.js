@@ -208,6 +208,13 @@ export function createChapterExperienceView(deps = {}) {
                 hideWithRestore(el);
             }
         });
+
+        if (show) {
+            const queueSection = document.getElementById('ttw-queue-section');
+            if (queueSection?.dataset.ttwDesiredDisplay) {
+                queueSection.style.display = queueSection.dataset.ttwDesiredDisplay;
+            }
+        }
     }
 
     function setResultSectionVisibleForMode(mode) {
@@ -1540,6 +1547,10 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
         setTxtSectionsVisible(false);
         setResultSectionVisibleForMode('progress');
         setSectionVisibility({ showOutline: false, showCurrent: false, showProgress: true });
+        const streamContainer = document.getElementById('ttw-stream-container');
+        if (streamContainer) streamContainer.style.display = 'block';
+        const streamToggle = document.getElementById('ttw-toggle-stream');
+        if (streamToggle) streamToggle.textContent = '🙈 隐藏日志';
     }
 
     function showDirectorDebugPanelInternal() {

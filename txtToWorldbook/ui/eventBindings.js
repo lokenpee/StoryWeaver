@@ -471,7 +471,10 @@ export function bindStreamEvents(deps = {}) {
 
     document.getElementById('ttw-toggle-stream').addEventListener('click', () => {
         const container = document.getElementById('ttw-stream-container');
-        container.style.display = container.style.display === 'none' ? 'block' : 'none';
+        const btn = document.getElementById('ttw-toggle-stream');
+        const willShow = container.style.display === 'none';
+        container.style.display = willShow ? 'block' : 'none';
+        if (btn) btn.textContent = willShow ? '🙈 隐藏日志' : '👁️ 显示日志';
     });
     document.getElementById('ttw-clear-stream').addEventListener('click', () => updateStreamContent('', true));
 
