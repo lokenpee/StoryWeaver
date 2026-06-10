@@ -192,6 +192,108 @@ async function updateSelfFromRepo(repoUrl = WESTWORLD_REPO_URL) {
     throw new Error(`安装失败：${installDetail}`);
 }
 
+function extractApiErrorDetail(response, text, data) {
+    if (data && typeof data === 'object') {
+        const candidates = [data.message, data.error, data.detail, data.msg, data.cause];
+        for (const value of candidates) {
+            const normalized = String(value || '').trim();
+            if (normalized) return normalized;
+        }
+    }
+
+    const normalizedText = String(text || '').trim();
+    if (normalizedText) return normalizedText;
+    return response?.statusText || `HTTP ${response?.status || 'unknown'}`;
+}
+
+function shouldContinueUpdateFallback(response, detail = '') {
+    const status = Number(response?.status || 0);
+    if (status === 404 || status === 409) return true;
+    if (status >= 500) return true;
+
+    const normalized = String(detail || '').trim().toLowerCase();
+    if (!normalized) return false;
+
+    return normalized.includes('internal server error')
+        || normalized.includes('not found')
+        || normalized.includes('does not exist')
+        || normalized.includes('not a git repository')
+        || normalized.includes('not a repository')
+        || normalized.includes('repository')
+        || normalized.includes('enoent');
+}
+
+async function updateSelfFromRepoWithFallback(repoUrl = WESTWORLD_REPO_URL) {
+    const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
+    if (!normalizedRepoUrl) {
+        throw new Error('仓库地址无效，请检查后重试。');
+    }
+
+    const currentFolder = getExtensionFolderName();
+    const repoFolder = getRepoFolderName(normalizedRepoUrl);
+    const candidateFolders = [...new Set([
+        currentFolder,
+        repoFolder,
+        BRAND_NAME,
+        LEGACY_BRAND_NAME,
+        extensionName,
+        legacyExtensionName,
+    ].filter(Boolean))];
+    const updateFailures = [];
+
+    for (const folder of candidateFolders) {
+        let result;
+        try {
+            result = await updateExtensionByName(folder);
+        } catch (error) {
+            const detail = String(error?.message || error || 'unknown error').trim() || 'unknown error';
+            updateFailures.push({ folder, status: 0, detail });
+            continue;
+        }
+
+        const { response, text, data } = result;
+        if (response.ok) {
+            return {
+                mode: 'update',
+                extensionFolder: folder,
+                repoUrl: normalizedRepoUrl,
+                ...(data || {}),
+            };
+        }
+
+        const detail = extractApiErrorDetail(response, text, data);
+        updateFailures.push({ folder, status: response.status, detail });
+        if (!shouldContinueUpdateFallback(response, detail)) {
+            throw new Error(`插件更新失败：${detail}`);
+        }
+    }
+
+    let installResult = await installExtensionFromRepo(normalizedRepoUrl);
+    if (!installResult.response.ok && normalizedRepoUrl === WESTWORLD_REPO_URL) {
+        installResult = await installExtensionFromRepo(LEGACY_REPO_URL);
+    }
+    if (installResult.response.ok) {
+        return {
+            mode: 'install',
+            repoUrl: normalizedRepoUrl,
+            ...(installResult.data || {}),
+        };
+    }
+
+    const installDetail = extractApiErrorDetail(installResult.response, installResult.text, installResult.data);
+    const primaryUpdateFailure = updateFailures.find((item) => item.status && item.status !== 404) || updateFailures[0] || null;
+    if (installResult.response.status === 409) {
+        if (primaryUpdateFailure) {
+            throw new Error(`快捷更新失败：${primaryUpdateFailure.detail}。请到插件管理页手动更新，或确认插件目录名称/安装方式。`);
+        }
+        throw new Error('检测到同名目录已存在但无法直接安装，请到插件管理页确认插件安装状态。');
+    }
+    if (primaryUpdateFailure) {
+        throw new Error(`快捷更新失败：${primaryUpdateFailure.detail}；安装兜底也失败：${installDetail}`);
+    }
+    throw new Error(`安装失败：${installDetail}`);
+}
+
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -529,7 +631,7 @@ async function bootstrap() {
         window.WestWorld = {
             openTxtConverter: openTxtToWorldbookPanel,
             getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
-            updateSelfFromRepo,
+            updateSelfFromRepo: updateSelfFromRepoWithFallback,
         };
         window.StoryWeaver = window.WestWorld;
         console.log('[WestWorld] Plugin initialized successfully');

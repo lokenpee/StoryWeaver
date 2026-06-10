@@ -1164,14 +1164,20 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
     </div>
     <div class="ttw-beat-line ttw-beat-summary-line">📖 事件摘要：${escapeHtml(beat.event_summary || beat.summary || '')}</div>
     <div class="ttw-beat-line ttw-beat-exit-line">🎯 退出条件：${escapeHtml(beat.exitCondition || '等待关键互动完成')}</div>
-    <div class="ttw-beat-original">📝 原文：${escapeHtml(originalText || '暂无该节拍原文（旧数据或生成异常）。')}</div>
+    <details class="ttw-beat-original-fold">
+        <summary>📄 节拍原文</summary>
+        <div class="ttw-beat-original">${escapeHtml(originalText || '暂无该节拍原文')}</div>
+    </details>
 </div>`;
             }).join('')
             : '<div class="ttw-script-empty">暂无轻节拍，默认按摘要推进。</div>';
 
         return `
 <div class="ttw-script-block">
-    <div class="ttw-script-field"><strong>轻节拍器（事件点）：</strong><div class="ttw-beat-list">${beatCards}</div></div>
+    <div class="ttw-script-field">
+        <div class="ttw-script-field-title">轻节拍器（事件点）</div>
+        <div class="ttw-beat-list">${beatCards}</div>
+    </div>
 </div>`;
     }
 
@@ -1195,7 +1201,7 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
             if (summaryEl) summaryEl.textContent = '暂无章节数据';
             if (scriptEl) scriptEl.innerHTML = '<div class="ttw-script-empty">暂无剧本数据</div>';
             if (openingEl) openingEl.textContent = '暂无开场白';
-            if (hintEl) hintEl.textContent = '请先完成TXT处理。';
+            if (hintEl) hintEl.textContent = '暂无章节数据';
             if (prevBeatBtn) prevBeatBtn.disabled = true;
             if (nextBeatBtn) nextBeatBtn.disabled = true;
             if (nextBtn) nextBtn.disabled = true;
@@ -1246,19 +1252,12 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
         }
         if (nextBtn) {
             nextBtn.disabled = isLast;
-            nextBtn.textContent = isLast ? '⏹ 已是最后一章' : '⏭ 下一章';
+            nextBtn.textContent = isLast ? '最后一章' : '下一章';
         }
         if (hintEl) {
-            const beatHint = beatCount > 1
-                ? `当前节拍：${currentBeatIndex + 1}/${beatCount}。可点按钮切换，也可在输入中写“上一节拍/下一节拍”触发。`
-                : '当前章仅1个节拍，暂不可切换。';
-            if (isLast) {
-                hintEl.textContent = `当前已到最后一章。${beatHint}`;
-            } else if (idx === 0) {
-                hintEl.textContent = `首章由“开始阅读第一章”触发开场白；后续章节由“下一章”触发。${beatHint}`;
-            } else {
-                hintEl.textContent = `点击“下一章”将进入下一章并自动发送其开场白。${beatHint}`;
-            }
+            hintEl.textContent = beatCount > 0
+                ? `当前节拍 ${currentBeatIndex + 1}/${beatCount}`
+                : '暂无节拍';
         }
     }
 

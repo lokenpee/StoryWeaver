@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.21.0';
+const PLUGIN_VERSION = 'v3.22.0';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -485,7 +485,7 @@ function buildPromptConfigHtml() {
     <div class="ttw-section ttw-mode-txt" style="margin-bottom:12px;">
         <div class="ttw-section-header">
             <span>📝 提示词配置</span>
-            <div style="display:flex;gap:8px;">
+            <div class="ttw-section-actions" style="display:flex;gap:8px;">
                 <button id="ttw-export-settings" class="ttw-btn ttw-btn-small">📤 导出</button>
                 <button id="ttw-import-settings" class="ttw-btn ttw-btn-small">📥 导入</button>
                 <button id="ttw-preview-prompt" class="ttw-btn ttw-btn-small">👁️ 预览</button>
@@ -549,7 +549,7 @@ function buildFileUploadSectionHtml() {
     <div class="ttw-section ttw-mode-txt">
         <div class="ttw-section-header">
             <span>📄 文件上传</span>
-            <div style="display:flex;gap:8px;">
+            <div class="ttw-section-actions" style="display:flex;gap:8px;">
                 <button id="ttw-import-json" class="ttw-btn-small" title="导入已有世界书JSON并合并到当前世界书">📥 导入世界书</button>
                 <button id="ttw-import-chara" class="ttw-btn-small" title="导入已导出的角色卡JSON并提取其中的世界书条目">🃏 导入角色卡</button>
                 <button id="ttw-restore-snapshot" class="ttw-btn-small" title="从本地快照恢复上次任务（仅在你主动点击时触发）">🗂 读取任务快照</button>
@@ -583,7 +583,7 @@ function buildQueueSectionHtml() {
     <div class="ttw-section ttw-mode-txt" id="ttw-queue-section" style="display:none;">
         <div class="ttw-section-header">
             <span>📋 章节队列</span>
-            <div style="display:flex;gap:8px;margin-left:auto;">
+            <div class="ttw-section-actions" style="display:flex;gap:8px;margin-left:auto;">
                 <button id="ttw-view-processed" class="ttw-btn-small">📊 已处理</button>
                 <button id="ttw-select-start" class="ttw-btn-small">📍 选择起始</button>
                 <button id="ttw-multi-delete-btn" class="ttw-btn-small ttw-btn-warning">🗑️ 多选删除</button>
@@ -665,13 +665,13 @@ function buildResultSectionHtml() {
                 <div class="ttw-story-panel-header">
                     <h4 id="ttw-current-chapter-title">当前章节概览</h4>
                     <div class="ttw-current-panel-actions">
-                        <button id="ttw-edit-current-chapter-btn" class="ttw-btn ttw-btn-small">✏️ 编辑章节概览</button>
-                        <button id="ttw-prev-beat-btn" class="ttw-btn ttw-btn-small">⏮ 上一节拍</button>
-                        <button id="ttw-next-beat-btn" class="ttw-btn ttw-btn-small">⏭ 下一节拍</button>
+                        <button id="ttw-edit-current-chapter-btn" class="ttw-btn ttw-btn-small" title="编辑章节概览">✏️ 编辑</button>
+                        <button id="ttw-prev-beat-btn" class="ttw-btn ttw-btn-small" title="上一节拍">⏮ 上节拍</button>
+                        <button id="ttw-next-beat-btn" class="ttw-btn ttw-btn-small" title="下一节拍">⏭ 下节拍</button>
                         <button id="ttw-next-chapter-btn" class="ttw-btn ttw-btn-small">⏭ 下一章</button>
                     </div>
                 </div>
-                <div id="ttw-current-chapter-hint" class="ttw-current-hint">进入章节后将自动发送开场白。</div>
+                <div id="ttw-current-chapter-hint" class="ttw-current-hint">当前节拍</div>
 
                 <div class="ttw-current-block">
                     <div class="ttw-current-block-title">故事摘要</div>

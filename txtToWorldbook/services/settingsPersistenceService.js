@@ -69,8 +69,15 @@ export function createSettingsPersistenceService(deps) {
 
         AppState.settings.chunkSize = parseInt(document.getElementById('ttw-chunk-size')?.value) || 8000;
         AppState.settings.apiTimeout = (parseInt(document.getElementById('ttw-api-timeout')?.value) || 120) * 1000;
-        AppState.processing.incrementalMode = document.getElementById('ttw-incremental-mode')?.checked ?? true;
-        AppState.processing.volumeMode = document.getElementById('ttw-volume-mode')?.checked ?? false;
+        const incrementalModeEl = document.getElementById('ttw-incremental-mode');
+        AppState.processing.incrementalMode = incrementalModeEl
+            ? incrementalModeEl.checked
+            : AppState.processing.incrementalMode !== false;
+
+        const volumeModeEl = document.getElementById('ttw-volume-mode');
+        AppState.processing.volumeMode = volumeModeEl
+            ? volumeModeEl.checked
+            : AppState.processing.volumeMode === true;
         AppState.settings.useVolumeMode = AppState.processing.volumeMode;
         AppState.settings.enablePlotOutline = document.getElementById('ttw-enable-plot')?.checked ?? false;
         AppState.settings.enableLiteraryStyle = document.getElementById('ttw-enable-style')?.checked ?? false;
@@ -83,6 +90,29 @@ export function createSettingsPersistenceService(deps) {
             AppState.settings.customDirectorInjectionPrompt = document.getElementById('ttw-director-injection-prompt')?.value || '';
         }
         AppState.settings.useTavernApi = document.getElementById('ttw-use-tavern-api')?.checked ?? true;
+
+        const parallelEnabledEl = document.getElementById('ttw-parallel-enabled');
+        if (parallelEnabledEl) {
+            AppState.config.parallel.enabled = parallelEnabledEl.checked;
+        }
+
+        const parallelConcurrencyEl = document.getElementById('ttw-parallel-concurrency');
+        if (parallelConcurrencyEl) {
+            AppState.config.parallel.concurrency = Math.max(1, Math.min(10, parseInt(parallelConcurrencyEl.value, 10) || 1));
+            parallelConcurrencyEl.value = AppState.config.parallel.concurrency;
+        }
+
+        const sharedConcurrency = AppState.config.parallel.concurrency || 1;
+        const parallelMainConcurrencyEl = document.getElementById('ttw-parallel-main-concurrency');
+        const parallelDirectorConcurrencyEl = document.getElementById('ttw-parallel-director-concurrency');
+        AppState.config.parallel.mainConcurrency = parallelMainConcurrencyEl
+            ? Math.max(1, Math.min(10, parseInt(parallelMainConcurrencyEl.value, 10) || sharedConcurrency))
+            : sharedConcurrency;
+        AppState.config.parallel.directorConcurrency = parallelDirectorConcurrencyEl
+            ? Math.max(1, Math.min(10, parseInt(parallelDirectorConcurrencyEl.value, 10) || sharedConcurrency))
+            : sharedConcurrency;
+        AppState.config.parallel.mode = document.getElementById('ttw-parallel-mode')?.value || 'independent';
+
         AppState.settings.parallelEnabled = AppState.config.parallel.enabled;
         AppState.settings.parallelConcurrency = AppState.config.parallel.concurrency;
         AppState.settings.parallelMainConcurrency = AppState.config.parallel.mainConcurrency || AppState.config.parallel.concurrency || 1;
@@ -90,7 +120,10 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.parallelMode = AppState.config.parallel.mode;
         AppState.settings.chapterCompletionMode = document.getElementById('ttw-chapter-completion-mode')?.value || AppState.settings.chapterCompletionMode || 'consistency';
         AppState.settings.categoryLightSettings = { ...AppState.config.categoryLight };
-        AppState.settings.forceChapterMarker = document.getElementById('ttw-force-chapter-marker')?.checked ?? true;
+        const forceChapterMarkerEl = document.getElementById('ttw-force-chapter-marker');
+        AppState.settings.forceChapterMarker = forceChapterMarkerEl
+            ? forceChapterMarkerEl.checked
+            : AppState.settings.forceChapterMarker !== false;
         AppState.settings.chapterRegexPattern = document.getElementById('ttw-chapter-regex')?.value || AppState.config.chapterRegex.pattern;
         AppState.settings.defaultWorldbookEntriesUI = AppState.persistent.defaultEntries;
         AppState.settings.categoryDefaultConfig = AppState.config.categoryDefault;
@@ -128,17 +161,24 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.customApiModel = AppState.settings.mainApi.model;
         AppState.settings.customApiMaxTokens = AppState.settings.mainApi.maxTokens;
 
+        const allowRecursionEl = document.getElementById('ttw-allow-recursion');
+        AppState.settings.allowRecursion = allowRecursionEl
+            ? allowRecursionEl.checked
+            : AppState.settings.allowRecursion === true;
+        AppState.settings.filterResponseTags = document.getElementById('ttw-filter-tags')?.value
+            || AppState.settings.filterResponseTags
+            || 'thinking,/think';
+        AppState.settings.debugMode = document.getElementById('ttw-debug-mode')?.checked
+            ?? AppState.settings.debugMode
+            ?? false;
+        AppState.settings.plotOutlineExportConfig = AppState.config.plotOutline;
+
         try {
             const serialized = JSON.stringify(AppState.settings);
             localStorage.setItem(SETTINGS_STORAGE_KEY, serialized);
             // Keep legacy key in sync for backward compatibility.
             localStorage.setItem(LEGACY_SETTINGS_STORAGE_KEY, serialized);
         } catch (e) { }
-
-        AppState.settings.allowRecursion = document.getElementById('ttw-allow-recursion')?.checked ?? false;
-        AppState.settings.filterResponseTags = document.getElementById('ttw-filter-tags')?.value || 'thinking,/think';
-        AppState.settings.debugMode = document.getElementById('ttw-debug-mode')?.checked ?? false;
-        AppState.settings.plotOutlineExportConfig = AppState.config.plotOutline;
     }
 
     function loadSavedSettings() {
