@@ -725,6 +725,8 @@ export function createDirectorService(deps = {}) {
 3. 当前锁定节拍 = 剧情目标。节拍原文只提供素材、气氛和目标方向，不能覆盖最新对话事实。
 4. 导演框架 = 本回合执行骨架。起点、动作链、终点必须从实际剧情状态出发，控制在当前节拍内。
 5. 冲突判定 = 只处理会破坏后续关键前提的内容。普通插曲、延迟、替代行为和合理偏移优先判 normal。
+6. 主线推进 = 方向钩子，不是代替用户行动。未被用户明确触发的转场、上楼、离开现场、抵达下一节点，只能写成环境压力、NPC提醒或未完成线索，不得写成用户已经完成。
+7. 单回合节奏 = 慢写和扩写，不是缩短动作链。动作链可以完整，但每段应围绕当前局部动作、人物反应、环境细节或信息变化展开；除非用户明确快进或用户动作已经实际触发退出事件，不得跨过多个原文事件、直接写完整个节拍。
 
 最近三轮对话事实（原文，不压缩）：
 ${dialogue}`;
@@ -735,15 +737,19 @@ ${dialogue}`;
 - stage_idx 必须保持系统锁定值，不自行跳拍。
 - conflict_level / conflict_reason / conflict_strategy 必须同时对照用户输入、最近对话事实、当前节拍和后续关键前提。
 - direction_script.start 必须从最近对话的实际状态起笔，不从节拍原文头部重开。
-- direction_script.action_chain 必须是3-6段具体可见动作，避免空泛概括。
+- direction_script.action_chain 必须是3-6段具体可见动作，避免空泛概括；每一段都应扩写当前局部过程，不得用动作链跨过多个原文事件或直接抵达节拍结尾。
 - direction_script.end 必须收束到本回合可承接的临时节点，不替用户决定下一步。
+- will_complete_this_turn 只有在用户输入或最近对话状态已经实际抵达当前节拍退出事件时才可为 true；仅放出主线方向钩子时必须为 false。
+- will_complete_this_last_turn 只表示上一轮判断，不得强制本轮继续耗尽；若用户本轮继续做不破坏剧情的互动，可以回落为 false。
 - 只输出规定 JSON，不输出解释。`;
     }
 
     function buildActorInjectionFinalChecklist() {
         return `【演员执行前最终校验】
 - 先按导演给出的起点、动作链、终点执行，再参考节拍原文补素材。
+- 可以扩写语气、动作细节、环境和即时反应，但这些扩写只能服务于导演动作链；不得自行新增导演框架外的关键事件，也不得把节拍原文后续内容补完。
 - 正文必须承认最近三轮对话里已经成立的事实，不得把已发生桥段当作新剧情重演。
+- 未被用户明确触发的主线推进，只能写成环境压力、NPC提醒或方向钩子，不得替用户完成转场、上楼、离开现场或抵达下一节点。
 - 不替用户补写下一步动作、台词、心理或最终决定。
 - 结尾停在本回合终点附近，只留下可承接状态。`;
     }
@@ -1391,19 +1397,27 @@ ${dialogue}`;
         const switchedStage = stageIdx !== previousStageIdx;
         const currentOriginal = String(currentBeat?.original_text || '').trim();
         const currentOriginalSection = currentOriginal || '（当前节拍缺少原文，请优先遵循导演演绎指导并保持语气连续）';
-        const nextBeatSummary = toShortText(
+        const allowNextBeatPreview = decision?.will_complete_this_turn === true || decision?.beat_complete === true;
+        const rawNextBeatSummary = toShortText(
             decision?.next_beat_summary
             || nextBeat?.summary
             || '',
             120
-        ) || '（当前已是最后节拍）';
+        );
+        const nextBeatSummary = allowNextBeatPreview
+            ? (rawNextBeatSummary || '（当前已是最后节拍）')
+            : (rawNextBeatSummary
+                ? `方向钩子素材：${rawNextBeatSummary}`
+                : '（当前节拍未完成，无需引出下一节拍）');
         const nextBeatEntryEvent = '';
-        const nextBeatPreview200 = toHeadText(
-            decision?.next_beat_preview_200
-            || nextBeat?.original_text
-            || '',
-            220
-        ) || '（当前已是最后节拍，无下一节拍原文预览）';
+        const nextBeatPreview200 = allowNextBeatPreview
+            ? (toHeadText(
+                decision?.next_beat_preview_200
+                || nextBeat?.original_text
+                || '',
+                220
+            ) || '（当前已是最后节拍，无下一节拍原文预览）')
+            : '（当前节拍未完成：禁止展开下一节拍原文；只可用环境压力、NPC提醒或未完成线索作为方向钩子。）';
         const currentExitCondition = toShortText(currentBeat?.exitCondition || '', 140) || '无明确退出事件';
         const directionContext = decision?.direction_context && typeof decision.direction_context === 'object'
             ? decision.direction_context
@@ -1727,7 +1741,7 @@ ${dialogue}`;
         }
         decision.conflict_strategy = String(decision.conflict_strategy || '').trim() || buildDefaultConflictStrategy(decision.conflict_level);
         decision.will_complete_this_last_turn = willCompleteThisLastTurn;
-        decision.will_complete_this_turn = willCompleteThisLastTurn || decision.will_complete_this_turn === true;
+        decision.will_complete_this_turn = decision.will_complete_this_turn === true;
         if (decision.will_complete_this_turn && !String(decision.beat_complete_reason || '').trim()) {
             decision.beat_complete_reason = previousBeatCompletionState.beatCompleteReason || '当前节拍将在本回合推进到结尾';
         }
