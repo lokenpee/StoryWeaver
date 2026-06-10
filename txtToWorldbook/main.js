@@ -2,7 +2,7 @@
 * TXT转世界书模块
 *
 * @file txtToWorldbook/main.js
-* @version 1.8.0
+* @version 1.9.0
 * @author WestWorld
 * @license MIT
 *

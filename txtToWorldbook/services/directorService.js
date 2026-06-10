@@ -17,6 +17,7 @@ export function createDirectorService(deps = {}) {
     const BEAT_COMPLETION_NOTICE_TTL_MS = 15 * 60 * 1000;
     const ACTION_CHAIN_MIN_STEPS = 3;
     const ACTION_CHAIN_MAX_STEPS = 6;
+    const RECENT_DIALOGUE_MAX_ITEMS = 6;
 
     function directorDebug(msg) {
         if (typeof debugLog === 'function') {
@@ -628,6 +629,14 @@ export function createDirectorService(deps = {}) {
         }
     }
 
+    function getGenerationChatHistory(eventData) {
+        const promptChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
+        if (hasDialogueChatItems(promptChat)) return promptChat;
+        const realChat = getSillyTavernChatHistory();
+        if (Array.isArray(realChat) && realChat.length > 0) return realChat;
+        return promptChat;
+    }
+
     function getChatItemContent(item) {
         return String(item?.mes || item?.content || '').trim();
     }
@@ -657,6 +666,14 @@ export function createDirectorService(deps = {}) {
         return true;
     }
 
+    function hasDialogueChatItems(chat) {
+        if (!Array.isArray(chat)) return false;
+        return chat.some((item) => (
+            (isUserChatItem(item) || isAssistantChatItem(item))
+            && !!getChatItemContent(item)
+        ));
+    }
+
     function pickLatestFromChat(chat, matcher) {
         const source = Array.isArray(chat) ? chat : [];
         for (let i = source.length - 1; i >= 0; i--) {
@@ -668,30 +685,79 @@ export function createDirectorService(deps = {}) {
         return '';
     }
 
+    function buildRecentDialogueContext(eventData, options = {}) {
+        const {
+            maxItems = RECENT_DIALOGUE_MAX_ITEMS,
+        } = options;
+        const chat = getGenerationChatHistory(eventData);
+        const picked = [];
+
+        for (let i = chat.length - 1; i >= 0 && picked.length < maxItems; i--) {
+            const item = chat[i] || {};
+            let role = '';
+            if (isUserChatItem(item)) {
+                role = 'user';
+            } else if (isAssistantChatItem(item)) {
+                role = 'assistant';
+            }
+            if (!role) continue;
+
+            const content = getChatItemContent(item);
+            if (!content) continue;
+            picked.push({ role, content });
+        }
+
+        if (picked.length === 0) return '';
+
+        const lines = picked.reverse().map((item) => {
+            const label = item.role === 'user' ? '用户' : 'AI';
+            return `${label}: ${item.content}`;
+        });
+
+        return lines.join('\n');
+    }
+
+    function buildRecentStatePriorityBlock(recentDialogue) {
+        const dialogue = String(recentDialogue || '').trim() || '无最近对话';
+        return `【任务优先级（先读）】
+1. 最新对话事实 = 实际剧情状态。最近三轮对话中已经成立的事实，高于当前节拍原文。
+2. 当前用户输入 = 本回合边界。必须接住用户动作与核心意图，不得替用户补写未声明的后续动作、台词、心理或决定。
+3. 当前锁定节拍 = 剧情目标。节拍原文只提供素材、气氛和目标方向，不能覆盖最新对话事实。
+4. 导演框架 = 本回合执行骨架。起点、动作链、终点必须从实际剧情状态出发，控制在当前节拍内。
+5. 冲突判定 = 只处理会破坏后续关键前提的内容。普通插曲、延迟、替代行为和合理偏移优先判 normal。
+
+最近三轮对话事实（原文，不压缩）：
+${dialogue}`;
+    }
+
+    function buildDirectorPromptFinalChecklist() {
+        return `【导演输出前最终校验】
+- stage_idx 必须保持系统锁定值，不自行跳拍。
+- conflict_level / conflict_reason / conflict_strategy 必须同时对照用户输入、最近对话事实、当前节拍和后续关键前提。
+- direction_script.start 必须从最近对话的实际状态起笔，不从节拍原文头部重开。
+- direction_script.action_chain 必须是3-6段具体可见动作，避免空泛概括。
+- direction_script.end 必须收束到本回合可承接的临时节点，不替用户决定下一步。
+- 只输出规定 JSON，不输出解释。`;
+    }
+
+    function buildActorInjectionFinalChecklist() {
+        return `【演员执行前最终校验】
+- 先按导演给出的起点、动作链、终点执行，再参考节拍原文补素材。
+- 正文必须承认最近三轮对话里已经成立的事实，不得把已发生桥段当作新剧情重演。
+- 不替用户补写下一步动作、台词、心理或最终决定。
+- 结尾停在本回合终点附近，只留下可承接状态。`;
+    }
+
     function getLatestDialogue(eventData) {
-        void eventData;
-        const lines = [];
-
-        const realChat = getSillyTavernChatHistory();
-        const lastAssistant = pickLatestFromChat(realChat, isAssistantChatItem);
-        const lastUser = pickLatestFromChat(realChat, isUserChatItem);
-
-        if (lastAssistant) lines.push(`AI:${toShortText(lastAssistant, 320)}`);
-        if (lastUser) lines.push(`用户:${toShortText(lastUser, 320)}`);
-
-        return lines.length > 0 ? lines.join('\n') : '无最近对话';
+        return buildRecentDialogueContext(eventData) || '无最近对话';
     }
 
     function getLatestUserMessage(eventData) {
-        void eventData;
-        const realChat = getSillyTavernChatHistory();
-        return pickLatestFromChat(realChat, isUserChatItem);
+        return pickLatestFromChat(getGenerationChatHistory(eventData), isUserChatItem);
     }
 
     function getLatestAssistantMessage(eventData) {
-        void eventData;
-        const realChat = getSillyTavernChatHistory();
-        return pickLatestFromChat(realChat, isAssistantChatItem);
+        return pickLatestFromChat(getGenerationChatHistory(eventData), isAssistantChatItem);
     }
 
     function buildDirectionContext({
@@ -700,6 +766,7 @@ export function createDirectorService(deps = {}) {
         isNewBeat = false,
         latestAssistantMessage = '',
         latestUserMessage = '',
+        recentDialogue = '',
         isLargeBeatJump = false,
         beatJumpDistance = 0,
     }) {
@@ -763,6 +830,7 @@ export function createDirectorService(deps = {}) {
             end_guideline: toShortText(endGuideline, 180),
             recent_assistant: toTailText(latestAssistantMessage || '', 200),
             recent_user: recentUser || '',
+            recent_dialogue: String(recentDialogue || '').trim(),
             is_large_beat_jump: hasLargeBeatJump,
             beat_jump_distance: jumpDistance,
         };
@@ -891,6 +959,7 @@ export function createDirectorService(deps = {}) {
                 : '承接最近AI输出，再接入用户动作继续推进。');
         const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || '无';
         const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
+        const recentDialogue = String(context.recent_dialogue || latestDialogue || '').trim() || '无最近对话';
         const endGuideline = toShortText(context.end_guideline || '', 180)
             || '本回合收束到可中断临时节点，不要求完成整节拍，且不得超出用户输入边界。';
         const currentOriginal = String(currentBeat?.original_text || '').trim();
@@ -908,13 +977,14 @@ export function createDirectorService(deps = {}) {
             ENTRY_EVENT_LINE: '',
             CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
             RECENT_USER: contextRecentUser,
+            RECENT_DIALOGUE: recentDialogue,
             START_ANCHOR: startAnchor,
             END_GUIDELINE: endGuideline,
             COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
             FIXED_STAGE_IDX: String(currentBeatIdx),
         });
         const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        return `${prefix}${promptBody}`;
+        return `${prefix}${buildRecentStatePriorityBlock(recentDialogue)}\n\n${promptBody}\n\n${buildDirectorPromptFinalChecklist()}`;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
@@ -1343,7 +1413,9 @@ export function createDirectorService(deps = {}) {
                 isNewBeat: decision?.is_new_beat === true,
                 latestAssistantMessage: decision?.latest_assistant_message || '',
                 latestUserMessage: decision?.latest_user_message || '',
+                recentDialogue: decision?.recent_dialogue || '',
             });
+        const recentDialogue = String(decision?.recent_dialogue || directionContext?.recent_dialogue || '').trim() || '无最近对话';
         const directionScript = normalizeDirectionScript(
             decision.direction_script,
             buildDefaultDirectionScript(currentBeat, nextBeat, directionContext)
@@ -1379,13 +1451,14 @@ export function createDirectorService(deps = {}) {
         const template = ensureDirectorInjectionTemplateCompatibility(
             String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt
         );
-        return renderPromptTemplate(template, {
+        const injectionBody = renderPromptTemplate(template, {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
             CONFLICT_LEVEL: getConflictLevelLabel(conflictLevel),
             CONFLICT_REASON: conflictReason,
             CONFLICT_STRATEGY: conflictStrategy,
             CONFLICT_REQUIREMENT: conflictRequirement,
+            RECENT_DIALOGUE: recentDialogue,
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
             DIRECTION_START: String(directionScript.start || '从当前局面直接接续。'),
             DIRECTION_ACTION_CHAIN: String(actionChain || '围绕当前节拍推进可见动作并收束。'),
@@ -1398,6 +1471,7 @@ export function createDirectorService(deps = {}) {
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
         });
+        return `${buildRecentStatePriorityBlock(recentDialogue)}\n\n${injectionBody}\n\n${buildActorInjectionFinalChecklist()}`;
     }
 
     async function handleDirectorAfterGeneration(eventData = {}) {
@@ -1545,6 +1619,7 @@ export function createDirectorService(deps = {}) {
             isNewBeat,
             latestAssistantMessage,
             latestUserMessage,
+            recentDialogue: latestDialogue,
             isLargeBeatJump,
             beatJumpDistance,
         });
@@ -1666,6 +1741,7 @@ export function createDirectorService(deps = {}) {
         decision.direction_context = directionContext;
         decision.latest_assistant_message = toTailText(latestAssistantMessage || '', 200);
         decision.latest_user_message = toShortText(latestUserMessage || '', 220);
+        decision.recent_dialogue = String(latestDialogue || '').trim();
 
         const nextBeat = beats[lockedBeatIdx + 1] || null;
         const nextBeatSummary = toShortText(nextBeat?.summary || '', 200);
