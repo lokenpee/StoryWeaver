@@ -936,108 +936,38 @@ export function createChapterExperienceView(deps = {}) {
 
     function formatDirectorDebugEntry(entry) {
         if (!entry) return '';
-        const ds = entry.directionScript || entry.decision?.direction_script || {};
-        const conflictLevel = entry.conflictLevel || entry.decision?.conflict_level || entry.decision?.conflictLevel || 'normal';
-        const conflictReason = entry.conflictReason || entry.decision?.conflict_reason || entry.decision?.conflictReason || '';
-        const conflictStrategy = entry.conflictStrategy || entry.decision?.conflict_strategy || entry.decision?.conflictStrategy || '';
         return [
             `时间: ${new Date(Number(entry.at) || Date.now()).toLocaleString('zh-CN')}`,
-            `章节: 第${(entry.chapterIndex ?? 0) + 1}章 ${entry.chapterTitle || ''}`,
-            `节拍: 当前 ${Number(entry.currentBeatIndex ?? 0) + 1} -> 锁定 ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`,
             `判定来源: ${entry.decisionSource || 'unknown'}`,
-            `切拍: ${entry.switchControl?.direction || 'none'} (${entry.switchControl?.reason || '无'})`,
-            `冲突级别: ${conflictLevel} ${conflictReason || ''}`,
-            `冲突处理: ${conflictStrategy || '无'}`,
-            `节拍完成: ${entry.beatComplete ? '是' : '否'}`,
-            `上一轮耗尽: ${entry.willCompleteThisLastTurn ? '是' : '否'}`,
-            `本轮耗尽: ${entry.willCompleteThisTurn ? '是' : '否'} ${entry.beatCompleteReason || ''}`,
             '',
-            '用户输入:',
-            stringifyDebugValue(entry.latestUserMessage),
+            '===== 1. 发给导演 AI API 的提示词原文 =====',
+            stringifyDebugValue(entry.directorPrompt || entry.prompt),
             '',
-            '最近AI尾部:',
-            stringifyDebugValue(entry.latestAssistantMessage),
+            '===== 2. 导演 AI API 原始返回 =====',
+            stringifyDebugValue(entry.directorRawResponse || '旧记录未保存导演 API 原始返回'),
             '',
-            '起点:',
-            stringifyDebugValue(ds.start),
-            '',
-            '动作链:',
-            stringifyDebugValue(ds.action_chain || ds.actionChain || ds.steps),
-            '',
-            '终点:',
-            stringifyDebugValue(ds.end),
-            '',
-            '方向上下文:',
-            stringifyDebugValue(entry.directionContext),
-            '',
-            '导演判定JSON:',
-            stringifyDebugValue(entry.decision),
-            '',
-            '最终注入提示词:',
-            stringifyDebugValue(entry.injection),
-            '',
-            '导演请求提示词:',
-            stringifyDebugValue(entry.prompt),
+            '===== 3. 最终注入到演员 AI 的提示词 =====',
+            stringifyDebugValue(entry.actorInjection || entry.injection),
         ].join('\n');
     }
 
     function buildDirectorDebugDetailHtml(entry) {
         if (!entry) {
-            return '<div class="ttw-director-debug-empty">暂无导演调试记录。发送一轮消息并触发导演后，这里会显示判定详情。</div>';
+            return '<div class="ttw-director-debug-empty">暂无导演调试记录。发送一轮消息并触发导演后，这里会显示三段链路：导演请求原文、导演 API 原始返回、最终注入演员 AI 的提示词。</div>';
         }
 
-        const directionScript = entry.directionScript || entry.decision?.direction_script || {};
-        const actionChain = directionScript.action_chain || directionScript.actionChain || '';
-        const steps = Array.isArray(directionScript.steps) ? directionScript.steps : [];
-        const switchText = `${entry.switchControl?.direction || 'none'} / ${entry.switchControl?.reason || '无'}`;
         const beatText = `${Number(entry.currentBeatIndex ?? 0) + 1} -> ${Number(entry.lockedBeatIndex ?? 0) + 1} / ${entry.beatCount || 0}`;
-        const completeClass = entry.beatComplete ? 'is-complete' : '';
-        const willCompleteClass = entry.willCompleteThisTurn ? 'is-complete' : '';
-        const conflictLevel = entry.conflictLevel || entry.decision?.conflict_level || entry.decision?.conflictLevel || 'normal';
-        const conflictReason = entry.conflictReason || entry.decision?.conflict_reason || entry.decision?.conflictReason || '';
-        const conflictStrategy = entry.conflictStrategy || entry.decision?.conflict_strategy || entry.decision?.conflictStrategy || '';
-        const conflictText = `${conflictLevel}${conflictReason ? ` / ${conflictReason}` : ''}`;
+        const rawResponse = entry.directorRawResponse || '旧记录未保存导演 API 原始返回';
 
         return `
 <div class="ttw-director-debug-summary">
     <div class="ttw-director-debug-metric"><span>章节</span><strong>${escapeHtml(entry.chapterTitle || `第${(entry.chapterIndex ?? 0) + 1}章`)}</strong></div>
     <div class="ttw-director-debug-metric"><span>节拍</span><strong>${escapeHtml(beatText)}</strong></div>
     <div class="ttw-director-debug-metric"><span>来源</span><strong>${escapeHtml(entry.decisionSource || 'unknown')}</strong></div>
-    <div class="ttw-director-debug-metric ${completeClass}"><span>完成</span><strong>${entry.beatComplete ? '是' : '否'}</strong></div>
-    <div class="ttw-director-debug-metric ${willCompleteClass}"><span>本轮耗尽</span><strong>${entry.willCompleteThisTurn ? '是' : '否'}</strong></div>
 </div>
-<div class="ttw-director-debug-block">
-    <div class="ttw-current-block-title">用户输入</div>
-    <div class="ttw-current-block-content">${escapeHtml(entry.latestUserMessage || '无')}</div>
-</div>
-<div class="ttw-director-debug-block">
-    <div class="ttw-current-block-title">起点定位</div>
-    <div class="ttw-current-block-content">${escapeHtml(directionScript.start || entry.directionContext?.start_anchor || '无')}</div>
-</div>
-<div class="ttw-director-debug-block">
-    <div class="ttw-current-block-title">动作链</div>
-    <div class="ttw-current-block-content">${escapeHtml(actionChain || steps.join(' → ') || '无')}</div>
-</div>
-<div class="ttw-director-debug-block">
-    <div class="ttw-current-block-title">终点</div>
-    <div class="ttw-current-block-content">${escapeHtml(directionScript.end || entry.directionContext?.end_guideline || '无')}</div>
-</div>
-<div class="ttw-director-debug-block">
-    <div class="ttw-current-block-title">切拍与完成判定</div>
-    <div class="ttw-current-block-content">切拍：${escapeHtml(switchText)}
-冲突：${escapeHtml(conflictText)}
-处理：${escapeHtml(conflictStrategy || '无')}
-上一轮耗尽：${entry.willCompleteThisLastTurn ? '是' : '否'}
-本轮耗尽：${entry.willCompleteThisTurn ? '是' : '否'}
-耗尽原因：${escapeHtml(entry.beatCompleteReason || '未判定耗尽')}
-下一节拍：${escapeHtml(entry.nextBeatSummary || '无')}</div>
-</div>
-${buildDebugPreBlock('最近AI输出尾部', entry.latestAssistantMessage, { compact: true })}
-${buildDebugPreBlock('方向上下文', entry.directionContext, { compact: true })}
-${buildDebugPreBlock('最终注入提示词', entry.injection, { open: true })}
-${buildDebugPreBlock('导演判定 JSON', entry.decision)}
-${buildDebugPreBlock('导演请求提示词', entry.prompt)}
-${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: true })}`;
+${buildDebugPreBlock('1. 发给导演 AI API 的提示词原文', entry.directorPrompt || entry.prompt, { open: true })}
+${buildDebugPreBlock('2. 导演 AI API 原始返回', rawResponse, { open: true })}
+${buildDebugPreBlock('3. 最终注入到演员 AI 的提示词', entry.actorInjection || entry.injection, { open: true })}`;
     }
 
     function renderDirectorDebugPanel() {
@@ -1060,7 +990,10 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
             const chapter = `第${(entry.chapterIndex ?? 0) + 1}章`;
             const beat = `${Number(entry.lockedBeatIndex ?? 0) + 1}/${entry.beatCount || 0}`;
             const source = entry.decisionSource || 'unknown';
-            const userPreview = toShortText(entry.latestUserMessage || '无用户输入', 70);
+            const promptLen = String(entry.directorPrompt || entry.prompt || '').length;
+            const responseLen = String(entry.directorRawResponse || '').length;
+            const injectionLen = String(entry.actorInjection || entry.injection || '').length;
+            const preview = `导演请求 ${promptLen}字 · API返回 ${responseLen}字 · 演员注入 ${injectionLen}字`;
             return `
 <button type="button" class="ttw-director-debug-item ${isSelected ? 'is-active' : ''}" data-debug-id="${escapeHtml(entry.id)}">
     <span class="ttw-director-debug-item-head">
@@ -1068,7 +1001,7 @@ ${buildDebugPreBlock('下一节拍预览', entry.nextBeatPreview200, { compact: 
         <em>${escapeHtml(source)}</em>
     </span>
     <span class="ttw-director-debug-item-meta">${escapeHtml(chapter)} · 节拍 ${escapeHtml(beat)}</span>
-    <span class="ttw-director-debug-item-preview">${escapeHtml(userPreview)}</span>
+    <span class="ttw-director-debug-item-preview">${escapeHtml(preview)}</span>
 </button>`;
         }).join('');
 

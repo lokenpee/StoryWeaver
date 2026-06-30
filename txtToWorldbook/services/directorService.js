@@ -305,12 +305,21 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function normalizeActionSegment(text, maxLen = 180) {
+    function isOverpackedActionSegment(text) {
+        const plain = String(text || '').replace(/\s+/g, ' ').trim();
+        if (!plain) return true;
+        const punctuationCount = (plain.match(/[，,。；;、]/g) || []).length;
+        const transitionCount = (plain.match(/然后|接着|随后|最后|并且|同时|直到|之后|以前|得知/g) || []).length;
+        return plain.length > 96 || punctuationCount >= 3 || transitionCount >= 2;
+    }
+
+    function normalizeActionSegment(text, maxLen = 72) {
         const plain = String(text || '')
             .replace(/[“”"']/g, '')
             .replace(/[「」]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+        if (isOverpackedActionSegment(plain)) return '';
         return toShortText(plain, maxLen);
     }
 
@@ -322,7 +331,7 @@ export function createDirectorService(deps = {}) {
         if (!normalized) return [];
         return normalized
             .split('→')
-            .map((segment) => normalizeActionSegment(segment, 180))
+            .map((segment) => normalizeActionSegment(segment))
             .filter(Boolean)
             .slice(0, limit);
     }
@@ -330,7 +339,7 @@ export function createDirectorService(deps = {}) {
     function buildActionChain(steps, maxLen = 720) {
         const normalizedSteps = Array.isArray(steps)
             ? steps
-                .map((step) => normalizeActionSegment(step, 180))
+                .map((step) => normalizeActionSegment(step))
                 .filter(Boolean)
                 .slice(0, ACTION_CHAIN_MAX_STEPS)
             : [];
@@ -1008,8 +1017,6 @@ ${dialogue}`;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
-        const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 200) || '当前节拍';
-        const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 200) || '下一节拍';
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const mode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const startAnchor = context.start_anchor || '';
@@ -1026,12 +1033,12 @@ ${dialogue}`;
 
         if (mode === 'new_beat') {
             const steps = [
-                '直接进入当前节拍的首个可见动作，不重铺背景。',
-                `围绕”${currentSummary}”先落下一处明确动作，让人物站位和现场局面稳定下来。`,
-                '顺着这处动作推进一轮具体回应或信息变化，把本回合带到可承接的临时节点。',
+                '承接起点画面落下第一个可见动作',
+                '让在场人物对这个动作给出即时反应',
+                '把局面停在可继续接写的临时状态',
             ];
             return {
-                start: startText || `先以”${currentSummary}”触发当前节拍开场，再进入可见动作。`,
+                start: startText || '从当前节拍起点直接起笔，不复述背景。',
                 action_chain: buildActionChain(steps),
                 steps,
                 end: endGuideline,
@@ -1039,12 +1046,12 @@ ${dialogue}`;
         }
 
         const steps = [
-            `紧接当前局面推进一处看得见的小动作，持续压在”${currentSummary}”轨道内。`,
-            '让在场人物给出对应反应，形成一处具体的信息、关系或局势变化。',
-            `把变化收束到可承接的位置，必要时只为”${nextSummary}”保留趋势，不提前展开下一拍。`,
+            '紧接上一轮尾部推进一个小动作',
+            '让在场人物围绕该动作作出回应',
+            '把变化收束到可继续接写的位置',
         ];
         return {
-            start: startText || `从”${currentSummary}”已进行中的局面继续推进，不复述背景。`,
+            start: startText || '从当前局面直接接续，不复述背景。',
             action_chain: buildActionChain(steps),
             steps,
             end: endGuideline,
@@ -1071,12 +1078,12 @@ ${dialogue}`;
             ...(Array.isArray(fallback.steps) ? fallback.steps : []),
             ...fallbackChainSteps,
         ]
-            .map((step) => normalizeActionSegment(step, 180))
+            .map((step) => normalizeActionSegment(step))
             .filter(Boolean)
             .slice(0, ACTION_CHAIN_MAX_STEPS);
 
         const steps = (stepCandidates.length > 0 ? stepCandidates : sourceChainSteps)
-            .map((step) => normalizeActionSegment(step, 180))
+            .map((step) => normalizeActionSegment(step))
             .filter(Boolean)
             .slice(0, ACTION_CHAIN_MAX_STEPS);
 
@@ -1691,17 +1698,20 @@ ${dialogue}`;
 
         let decision = null;
         let decisionSource = 'model';
+        let directorRawResponse = '';
+        let directorApiError = '';
         try {
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
             }
             const response = await callDirectorAPI(prompt, chapterIndex + 1);
+            directorRawResponse = String(response || '');
             if (typeof updateStreamContent === 'function') {
-                updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${String(response || '').length} 字符\n`);
+                updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${directorRawResponse.length} 字符\n`);
             }
-            const parsed = extractJsonObject(response);
+            const parsed = extractJsonObject(directorRawResponse);
             if (!parsed) {
-                directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
+                directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(directorRawResponse, 220));
                 if (typeof updateStreamContent === 'function') {
                     updateStreamContent(`⚠️ ${turnPrefix} 响应不是有效JSON，已切换回退判定\n`);
                 }
@@ -1737,9 +1747,11 @@ ${dialogue}`;
                 updateStreamContent(`   终点: ${toShortText(ds.end || '', 100) || '（默认）'}\n`);
             }
         } catch (error) {
-            directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
+            directorApiError = error?.message || String(error);
+            directorRawResponse = directorApiError ? `导演 API 请求失败：${directorApiError}` : '';
+            directorWarn('导演判定失败，已使用回退判定', directorApiError);
             if (typeof updateStreamContent === 'function') {
-                updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${error?.message || String(error)}\n`);
+                updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${directorApiError}\n`);
                 updateStreamContent(`⚠️ ${turnPrefix} 已启用本地回退判定\n`);
             }
             decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback', directionContext);
@@ -1891,6 +1903,9 @@ ${dialogue}`;
             latestUserMessage: toShortText(latestUserMessage || '', 1200),
             latestAssistantMessage: toTailText(latestAssistantMessage || '', 1200),
             prompt,
+            directorPrompt: prompt,
+            directorRawResponse,
+            directorApiError,
             decisionSource,
             decision: safeClone(decision, {}),
             directionScript: safeClone(decision?.direction_script || {}, {}),
@@ -1904,6 +1919,7 @@ ${dialogue}`;
             nextBeatSummary: nextBeatSummary || '',
             nextBeatPreview200: nextBeatPreview200 || '',
             injection,
+            actorInjection: injection,
             chatMessageCount: Array.isArray(eventData.chat) ? eventData.chat.length : 0,
         });
         directorInfo(`注入完成 chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
