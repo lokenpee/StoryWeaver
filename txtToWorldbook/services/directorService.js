@@ -757,7 +757,6 @@ export function createDirectorService(deps = {}) {
         if (role === 'assistant' && /^(好的|收到|明白|准备好了)[，,。！!]/.test(content) && content.includes('导演')) {
             return true;
         }
-
         return false;
     }
 
@@ -780,7 +779,7 @@ export function createDirectorService(deps = {}) {
         if (contentMatches.length > 0) {
             return contentMatches.join('\n');
         }
-        return stripNonStoryMarkup(raw);
+        return '';
     }
 
     function getCleanDialogueContent(item, role) {
@@ -1763,9 +1762,10 @@ ${dialogue}`;
             ? Math.abs(currentGlobalBeatOrdinal - previousGlobalBeatOrdinal)
             : 0;
         const isLargeBeatJump = beatJumpDistance >= 2;
-        const isNewBeat = hasReliableBeatHistory
-            ? currentGlobalBeatOrdinal !== previousGlobalBeatOrdinal
-            : (chapterChanged || switchControl.switched === true || !latestAssistantMessage);
+        const isNewBeat = !latestAssistantMessage
+            || (hasReliableBeatHistory
+                ? currentGlobalBeatOrdinal !== previousGlobalBeatOrdinal
+                : (chapterChanged || switchControl.switched === true));
         const directionContext = buildDirectionContext({
             beats,
             currentBeatIdx: lockedBeatIdx,
