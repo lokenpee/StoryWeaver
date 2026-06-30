@@ -53,7 +53,19 @@ export function createApiService(deps = {}) {
         return `[${apiTag}]`;
     }
 
+    const lastReasoningByTarget = {
+        main: '',
+        director: '',
+    };
+
+    function rememberReasoningText(target = 'main', reasoningText = '') {
+        const normalized = normalizeReasoningText(reasoningText);
+        lastReasoningByTarget[target || 'main'] = normalized;
+        return normalized;
+    }
+
     async function callSillyTavernAPI(messages, taskId = null) {
+        lastReasoningByTarget.main = '';
         const timeout = AppState.settings.apiTimeout || 120000;
         const logPrefix = buildApiLogPrefix('main', taskId);
         const combinedPrompt = messagesToString(messages);
@@ -110,6 +122,7 @@ export function createApiService(deps = {}) {
             updateStreamContent(`📥 ${logPrefix} 收到响应 (${result.length}字符)\n`);
             const thinkFromText = extractThinkBlocksFromText(result);
             if (thinkFromText) {
+                rememberReasoningText('main', thinkFromText);
                 logReasoningToProgress(logPrefix, thinkFromText, 'sillytavern-think-tag');
             }
             return result;
@@ -136,7 +149,11 @@ export function createApiService(deps = {}) {
     }
 
     function buildCustomApiRequest(messages, target = 'main', options = {}) {
-        const { disableDirectorJsonMode = false, forceNonStream = false } = options;
+        const {
+            disableDirectorJsonMode = false,
+            disableDirectorThinking = false,
+            forceNonStream = false,
+        } = options;
         const config = getApiConfig(target);
         const provider = config.provider;
         const apiKey = config.apiKey;
@@ -144,6 +161,8 @@ export function createApiService(deps = {}) {
         const model = config.model;
         const customApiMaxTokens = normalizeMaxTokens(config.maxTokens, 65536);
         const openaiMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+        const isDirectorTarget = target === 'director';
+        const enableDirectorThinking = isDirectorTarget && !disableDirectorThinking;
         let requestUrl = '';
         let requestOptions = {};
         let isStreamRequest = false;
@@ -152,6 +171,19 @@ export function createApiService(deps = {}) {
             case 'anthropic': {
                 if (!apiKey) throw new Error('Anthropic API Key 未设置');
                 requestUrl = 'https://api.anthropic.com/v1/messages';
+                const anthropicBody = {
+                    model: model || 'claude-sonnet-4-20250514',
+                    messages: openaiMessages,
+                    temperature: 0.3,
+                    max_tokens: 64000,
+                };
+                if (enableDirectorThinking) {
+                    anthropicBody.thinking = {
+                        type: 'enabled',
+                        budget_tokens: 4096,
+                    };
+                    delete anthropicBody.temperature;
+                }
                 requestOptions = {
                     method: 'POST',
                     headers: {
@@ -159,12 +191,7 @@ export function createApiService(deps = {}) {
                         'x-api-key': apiKey,
                         'anthropic-version': '2023-06-01',
                     },
-                    body: JSON.stringify({
-                        model: model || 'claude-sonnet-4-20250514',
-                        messages: openaiMessages,
-                        temperature: 0.3,
-                        max_tokens: 64000,
-                    }),
+                    body: JSON.stringify(anthropicBody),
                 };
                 break;
             }
@@ -185,12 +212,19 @@ export function createApiService(deps = {}) {
                     requestUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
                 }
                 const geminiData = convertToGeminiContents(messages);
+                const generationConfig = { maxOutputTokens: 65536, temperature: 0.3 };
+                if (enableDirectorThinking) {
+                    generationConfig.thinkingConfig = {
+                        includeThoughts: true,
+                        thinkingBudget: -1,
+                    };
+                }
                 requestOptions = {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         ...geminiData,
-                        generationConfig: { maxOutputTokens: 65536, temperature: 0.3 },
+                        generationConfig,
                         safetySettings: [
                             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'OFF' },
                             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'OFF' },
@@ -205,7 +239,6 @@ export function createApiService(deps = {}) {
             case 'openai-compatible': {
                 let openaiEndpoint = endpoint || 'http://127.0.0.1:5000/v1/chat/completions';
                 const openaiModel = model || 'local-model';
-                const isDirectorTarget = target === 'director';
 
                 if (!openaiEndpoint.includes('/chat/completions')) {
                     if (openaiEndpoint.endsWith('/v1')) {
@@ -236,6 +269,9 @@ export function createApiService(deps = {}) {
                 // Ask director endpoint for strict JSON when supported to reduce free-form prose responses.
                 if (isDirectorTarget && !disableDirectorJsonMode) {
                     openaiBody.response_format = { type: 'json_object' };
+                }
+                if (enableDirectorThinking) {
+                    openaiBody.reasoning_effort = 'medium';
                 }
 
                 requestOptions = {
@@ -432,6 +468,7 @@ export function createApiService(deps = {}) {
 
     async function callCustomAPI(messages, target = 'main', taskId = null) {
         const maxRetries = 3;
+        lastReasoningByTarget[target || 'main'] = '';
         const baseTimeout = AppState.settings.apiTimeout || 120000;
         const parseTimeout = (value, fallback) => {
             const parsed = parseInt(value, 10);
@@ -465,6 +502,23 @@ export function createApiService(deps = {}) {
                 || text.includes('unknown field');
         };
 
+        const isUnsupportedDirectorThinkingError = (error) => {
+            if (target !== 'director') return false;
+            const status = Number(error?.status || 0);
+            if (status !== 400 && status !== 422) return false;
+            const text = String(error?.responseText || error?.message || '').toLowerCase();
+            return text.includes('reasoning')
+                || text.includes('reasoning_effort')
+                || text.includes('thinking')
+                || text.includes('thinkingconfig')
+                || text.includes('thinking_config')
+                || text.includes('thought')
+                || text.includes('budget_tokens')
+                || text.includes('unknown field')
+                || text.includes('unsupported')
+                || text.includes('invalid');
+        };
+
         try {
             return await APICaller.withRetry(async (attempt) => {
                 const attemptNo = attempt + 1;
@@ -492,6 +546,10 @@ export function createApiService(deps = {}) {
                             updateStreamContent(`ℹ️ ${logPrefix} 当前端点不支持 response_format，已自动降级并重试本次请求\n`);
                             const degradedConfig = buildCustomApiRequest(messages, target, { disableDirectorJsonMode: true });
                             result = await tryStreamRequest(degradedConfig);
+                        } else if (isUnsupportedDirectorThinkingError(error)) {
+                            updateStreamContent(`ℹ️ ${logPrefix} 当前端点不支持导演思考参数，已自动关闭思考参数并重试本次请求\n`);
+                            const degradedConfig = buildCustomApiRequest(messages, target, { disableDirectorThinking: true });
+                            result = await tryStreamRequest(degradedConfig);
                         } else {
                             throw error;
                         }
@@ -501,6 +559,7 @@ export function createApiService(deps = {}) {
                         updateStreamContent(`ℹ️ ${logPrefix} 流式响应为空，自动回退非流式重试本次请求\n`);
                         const fallbackConfig = buildCustomApiRequest(messages, target, {
                             disableDirectorJsonMode: target === 'director',
+                            disableDirectorThinking: target === 'director',
                             forceNonStream: true,
                         });
                         const fallbackData = await APICaller.requestJSON(fallbackConfig.requestUrl, {
@@ -510,6 +569,7 @@ export function createApiService(deps = {}) {
                         result = extractCustomApiText(fallbackConfig.provider, fallbackData);
                         const fallbackReasoning = extractReasoningFromCustomApiResponse(fallbackConfig.provider, fallbackData);
                         if (fallbackReasoning) {
+                            rememberReasoningText(target, fallbackReasoning);
                             logReasoningToProgress(logPrefix, fallbackReasoning, 'json-fallback');
                         }
                     }
@@ -517,6 +577,7 @@ export function createApiService(deps = {}) {
                     debugLog(`${logPrefix} 流式读取完成, 结果长度=${result.length}字符`);
                     updateStreamContent(`📥 ${logPrefix} 收到流式响应 (${result.length}字符)\n`);
                     if (streamReasoningBuffer) {
+                        rememberReasoningText(target, streamReasoningBuffer);
                         logReasoningToProgress(logPrefix, streamReasoningBuffer, 'stream');
                     }
                     if (!String(result || '').trim()) {
@@ -525,16 +586,30 @@ export function createApiService(deps = {}) {
                     return result;
                 }
 
-                const data = await APICaller.requestJSON(requestConfig.requestUrl, {
-                    ...requestConfig.requestOptions,
-                    timeout,
-                });
+                let data;
+                try {
+                    data = await APICaller.requestJSON(requestConfig.requestUrl, {
+                        ...requestConfig.requestOptions,
+                        timeout,
+                    });
+                } catch (error) {
+                    if (!isUnsupportedDirectorThinkingError(error)) {
+                        throw error;
+                    }
+                    updateStreamContent(`[info] ${logPrefix} Director thinking options unsupported; retrying without them.\n`);
+                    const degradedConfig = buildCustomApiRequest(messages, target, { disableDirectorThinking: true });
+                    data = await APICaller.requestJSON(degradedConfig.requestUrl, {
+                        ...degradedConfig.requestOptions,
+                        timeout,
+                    });
+                }
                 debugLog(`${logPrefix} JSON解析完成, 开始提取内容`);
                 const result = extractCustomApiText(requestConfig.provider, data);
                 const reasoningText = extractReasoningFromCustomApiResponse(requestConfig.provider, data);
                 debugLog(`${logPrefix} 提取完成, 结果长度=${result.length}字符`);
                 updateStreamContent(`📥 ${logPrefix} 收到响应 (${result.length}字符)\n`);
                 if (reasoningText) {
+                    rememberReasoningText(target, reasoningText);
                     logReasoningToProgress(logPrefix, reasoningText, 'json');
                 }
                 if (!String(result || '').trim()) {
@@ -735,6 +810,10 @@ export function createApiService(deps = {}) {
         }
     }
 
+    function getLastReasoningText(target = 'main') {
+        return lastReasoningByTarget[target || 'main'] || '';
+    }
+
     return {
         callSillyTavernAPI,
         callCustomAPI,
@@ -743,5 +822,6 @@ export function createApiService(deps = {}) {
         callMainAPI,
         callDirectorAPI,
         callAPI,
+        getLastReasoningText,
     };
 }

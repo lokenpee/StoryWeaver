@@ -768,6 +768,7 @@ const {
     handleQuickTestModel,
     callDirectorAPI,
     callAPI,
+    getLastReasoningText,
 } = apiService;
 const {
     normalizeWorldbookEntry,
@@ -828,6 +829,7 @@ const directorService = createDirectorService({
     AppState,
     Logger,
     callDirectorAPI,
+    getDirectorReasoningText: () => getLastReasoningText?.('director') || '',
     getLanguagePrefix,
     debugLog,
     updateStreamContent,

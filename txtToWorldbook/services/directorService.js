@@ -8,6 +8,7 @@ export function createDirectorService(deps = {}) {
         AppState,
         Logger,
         callDirectorAPI,
+        getDirectorReasoningText,
         getLanguagePrefix,
         debugLog,
         updateStreamContent,
@@ -102,6 +103,12 @@ export function createDirectorService(deps = {}) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
+    }
+
+    function isFreePlayRequest(text) {
+        const compact = String(text || '').replace(/\s+/g, '');
+        if (!compact) return false;
+        return /(?:\u81ea\u7531\u63a8\u8fdb|\u968f\u610f\u63a8\u8fdb|\u81ea\u7531\u53d1\u6325|\u968f\u610f\u53d1\u6325|\u81ea\u7531\u6f14\u7ece|\u968f\u610f\u6f14\u7ece|\u4f60\u7ee7\u7eed|\u4f60\u63a8\u8fdb|\u81ea\u7531\u5199|\u968f\u4fbf\u5199|\u968f\u610f\u5199|\u81ea\u7531\u53d1\u6325\u5267\u60c5|\u968f\u610f\u53d1\u6325\u5267\u60c5)/.test(compact);
     }
 
     function renderPromptTemplate(template, variables = {}) {
@@ -955,7 +962,7 @@ ${dialogue}`;
          // ===== end_guideline 新增逻辑 =====
 
         const freePlayKeywords = /自由推进|随意推进|自由发挥|随意发挥|自由演绎|随意演绎|你继续|你推进|自由写|随便写|随意写|自由发挥剧情|随意发挥剧情/;
-        const isFreePlay = freePlayKeywords.test(recentUser);
+        const isFreePlay = isFreePlayRequest(recentUser) || freePlayKeywords.test(recentUser);
 
         let endGuideline = '';
         if (isFreePlay) {
@@ -973,6 +980,7 @@ ${dialogue}`;
             recent_assistant: toTailText(latestAssistantMessage || '', 200),
             recent_user: recentUser || '',
             recent_dialogue: String(recentDialogue || '').trim(),
+            is_free_play: isFreePlay,
             is_large_beat_jump: hasLargeBeatJump,
             beat_jump_distance: jumpDistance,
         };
@@ -1813,6 +1821,7 @@ ${dialogue}`;
         let decision = null;
         let decisionSource = 'model';
         let directorRawResponse = '';
+        let directorReasoning = '';
         let directorApiError = '';
         try {
             if (typeof updateStreamContent === 'function') {
@@ -1820,6 +1829,9 @@ ${dialogue}`;
             }
             const response = await callDirectorAPI(prompt, chapterIndex + 1);
             directorRawResponse = String(response || '');
+            directorReasoning = typeof getDirectorReasoningText === 'function'
+                ? String(getDirectorReasoningText() || '')
+                : '';
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${directorRawResponse.length} 字符\n`);
             }
@@ -1863,6 +1875,9 @@ ${dialogue}`;
         } catch (error) {
             directorApiError = error?.message || String(error);
             directorRawResponse = directorApiError ? `导演 API 请求失败：${directorApiError}` : '';
+            directorReasoning = typeof getDirectorReasoningText === 'function'
+                ? String(getDirectorReasoningText() || '')
+                : '';
             directorWarn('导演判定失败，已使用回退判定', directorApiError);
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${directorApiError}\n`);
@@ -1886,6 +1901,16 @@ ${dialogue}`;
         decision.conflict_strategy = String(decision.conflict_strategy || '').trim() || buildDefaultConflictStrategy(decision.conflict_level);
         decision.will_complete_this_last_turn = willCompleteThisLastTurn;
         decision.will_complete_this_turn = decision.will_complete_this_turn === true;
+        if (directionContext?.is_free_play === true && !willCompleteThisLastTurn) {
+            if (decision.will_complete_this_turn === true) {
+                directorDebug('free-play guard: suppress will_complete_this_turn');
+            }
+            decision.will_complete_this_turn = false;
+            decision.beat_complete_reason = '';
+            if (decision.conflict_level === 'normal' && /(结尾|耗尽|完成|末尾|end|complete)/i.test(decision.conflict_strategy)) {
+                decision.conflict_strategy = buildDefaultConflictStrategy('normal');
+            }
+        }
         if (decision.will_complete_this_turn && !String(decision.beat_complete_reason || '').trim()) {
             decision.beat_complete_reason = previousBeatCompletionState.beatCompleteReason || '当前节拍将在本回合推进到结尾';
         }
@@ -2019,6 +2044,7 @@ ${dialogue}`;
             prompt,
             directorPrompt: prompt,
             directorRawResponse,
+            directorReasoning,
             directorApiError,
             decisionSource,
             decision: safeClone(decision, {}),

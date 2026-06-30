@@ -946,7 +946,10 @@ export function createChapterExperienceView(deps = {}) {
             '===== 2. 导演 AI API 原始返回 =====',
             stringifyDebugValue(entry.directorRawResponse || '旧记录未保存导演 API 原始返回'),
             '',
-            '===== 3. 最终注入到演员 AI 的提示词 =====',
+            '===== 3. 导演 AI 思考/Reasoning（接口返回） =====',
+            stringifyDebugValue(entry.directorReasoning || '当前接口未返回 reasoning/thinking 字段，或该模型未开启/不支持思考内容返回。'),
+            '',
+            '===== 4. 最终注入到演员 AI 的提示词 =====',
             stringifyDebugValue(entry.actorInjection || entry.injection),
         ].join('\n');
     }
@@ -967,7 +970,8 @@ export function createChapterExperienceView(deps = {}) {
 </div>
 ${buildDebugPreBlock('1. 发给导演 AI API 的提示词原文', entry.directorPrompt || entry.prompt, { open: true })}
 ${buildDebugPreBlock('2. 导演 AI API 原始返回', rawResponse, { open: true })}
-${buildDebugPreBlock('3. 最终注入到演员 AI 的提示词', entry.actorInjection || entry.injection, { open: true })}`;
+${buildDebugPreBlock('3. 导演 AI 思考/Reasoning（接口返回）', entry.directorReasoning || '当前接口未返回 reasoning/thinking 字段，或该模型未开启/不支持思考内容返回。', { open: false })}
+${buildDebugPreBlock('4. 最终注入到演员 AI 的提示词', entry.actorInjection || entry.injection, { open: true })}`;
     }
 
     function renderDirectorDebugPanel() {
