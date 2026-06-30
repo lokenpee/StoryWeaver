@@ -193,17 +193,31 @@ export function createDirectorService(deps = {}) {
         }
     }
 
+    function buildConflictControlBlock(conflictLevel, conflictReason, conflictRequirement) {
+        const level = normalizeConflictLevel(conflictLevel);
+        const label = getConflictLevelLabel(level);
+        if (level === 'normal') {
+            return `- 当前冲突级别: ${label}
+- 执行要求: 用户输入仍在当前节拍轨道内，按当前节拍正常推进，严格承接用户输入，并吸收用户输入中的可用动作与细节。`;
+        }
+        return `- 当前冲突级别: ${label}
+- 冲突原因: ${conflictReason}
+- 冲突执行要求: ${conflictRequirement}
+- 执行优先级: 冲突执行要求 > 起点/动作链/终点 > 当前节拍原文 > 下一节拍预览。后两者仅作素材参考，不得推翻前两者。`;
+    }
+
     function ensureDirectorInjectionTemplateCompatibility(template) {
         const base = String(template || '').trim() || defaultDirectorInjectionPrompt;
         const supplements = [];
 
-        const hasConflictBlock = (
+        const hasNewConflictBlock = base.includes('{CONFLICT_CONTROL_BLOCK}');
+        const hasOldConflictBlock = (
             base.includes('{CONFLICT_LEVEL}')
             && base.includes('{CONFLICT_REASON}')
             && base.includes('{CONFLICT_STRATEGY}')
             && base.includes('{CONFLICT_REQUIREMENT}')
         );
-        if (!hasConflictBlock) {
+        if (!hasNewConflictBlock && !hasOldConflictBlock) {
             supplements.push(`## 系统补充：冲突控制
 - 当前冲突级别: {CONFLICT_LEVEL}
 - 冲突原因: {CONFLICT_REASON}
@@ -1038,22 +1052,10 @@ ${dialogue}`;
     }
 
     function normalizeDirectionScript(rawScript, fallbackScript) {
-        const scriptText = typeof rawScript === 'string' ? rawScript : '';
         const source = rawScript && typeof rawScript === 'object' ? rawScript : {};
         const fallback = fallbackScript && typeof fallbackScript === 'object' ? fallbackScript : {};
 
-        let start = toShortText(
-            source.start || source.opening || source.begin || scriptText || fallback.start || '',
-            180
-        );
-        if (start.length < 20) {
-            const richerFallback = toShortText(
-                fallback.start || '先锚定当前回合可见动作，再展开本回合推进，不复述背景。',
-                150
-            );
-            start = toShortText([start, richerFallback].filter(Boolean).join(' '), 180);
-        }
-
+        const start = toShortText(fallback.start || '', 180);
         const stepCandidates = Array.isArray(source.steps)
             ? source.steps
             : (Array.isArray(source.middle_steps)
@@ -1098,6 +1100,17 @@ ${dialogue}`;
             steps,
             end: end || toShortText(fallback.end || '本回合收束到可承接的临时节点。', 180),
         };
+    }
+
+    function resolveDirectionStartForInjection(directionScript, directionContext = {}) {
+        const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
+        const anchor = toShortText(context.start_anchor || '', 180);
+
+        if (anchor) {
+            return anchor;
+        }
+
+        return String(directionScript?.start || anchor || '从当前局面直接接续。');
     }
 
     function resolveBeatSwitchControl(currentBeatIdx, beats, switchCommand) {
@@ -1435,6 +1448,9 @@ ${dialogue}`;
             decision.direction_script,
             buildDefaultDirectionScript(currentBeat, nextBeat, directionContext)
         );
+        const directionStart = resolveDirectionStartForInjection(directionScript, directionContext);
+        directionScript.start = directionStart;
+        decision.direction_script = directionScript;
         const conflictLevel = normalizeConflictLevel(decision?.conflict_level);
         const conflictReason = toShortText(decision?.conflict_reason || '', 180) || buildDefaultConflictReason(conflictLevel);
         const conflictStrategy = toShortText(decision?.conflict_strategy || '', 180) || buildDefaultConflictStrategy(conflictLevel);
@@ -1474,8 +1490,9 @@ ${dialogue}`;
             CONFLICT_STRATEGY: conflictStrategy,
             CONFLICT_REQUIREMENT: conflictRequirement,
             RECENT_DIALOGUE: recentDialogue,
+            CONFLICT_CONTROL_BLOCK: buildConflictControlBlock(conflictLevel, conflictReason, conflictRequirement),
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
-            DIRECTION_START: String(directionScript.start || '从当前局面直接接续。'),
+            DIRECTION_START: directionStart,
             DIRECTION_ACTION_CHAIN: String(actionChain || '围绕当前节拍推进可见动作并收束。'),
             DIRECTION_PROCESS_LINES: processLines || '  1. 围绕当前节拍推进一个可见动作。\n  2. 让在场角色或局势产生一处具体变化。\n  3. 在可承接位置收束本轮输出。',
             DIRECTION_END: String(directionScript.end || '本回合收束到可承接的临时节点。'),
@@ -1484,7 +1501,7 @@ ${dialogue}`;
             NEXT_BEAT_SUMMARY: nextBeatSummary,
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
-            START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
+            START_RECAP: directionStart,
         });
         return `${buildRecentStatePriorityBlock(recentDialogue)}\n\n${injectionBody}\n\n${buildActorInjectionFinalChecklist()}`;
     }
@@ -1902,3 +1919,4 @@ ${dialogue}`;
         runDirectorBeforeGeneration,
     };
 }
+

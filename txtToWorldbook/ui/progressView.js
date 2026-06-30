@@ -3,18 +3,48 @@ export function createProgressView(deps = {}) {
         AppState,
     } = deps;
 
-    function isTxtViewActive() {
-        const activeFromState = String(AppState?.ui?.lastModalView || AppState?.settings?.lastModalView || '').trim().toLowerCase();
-        if (activeFromState) return activeFromState === 'txt';
-        const txtTab = document.getElementById('ttw-view-mode-txt');
-        return !txtTab || txtTab.classList.contains('active');
+    const LAST_MODAL_VIEW_STORAGE_KEY = 'westworldTxtToWorldbookLastModalView';
+    const NON_TXT_VIEWS = new Set(['outline', 'current', 'progress', 'settings', 'prompt-editor', 'director-debug']);
+
+    function getPersistedViewMode() {
+        const fromUi = String(AppState?.ui?.lastModalView || '').trim().toLowerCase();
+        if (NON_TXT_VIEWS.has(fromUi)) return fromUi;
+
+        const fromSettings = String(AppState?.settings?.lastModalView || '').trim().toLowerCase();
+        if (NON_TXT_VIEWS.has(fromSettings)) return fromSettings;
+
+        try {
+            const fromStorage = String(localStorage.getItem(LAST_MODAL_VIEW_STORAGE_KEY) || '').trim().toLowerCase();
+            if (NON_TXT_VIEWS.has(fromStorage)) return fromStorage;
+        } catch (_) {
+            // ignore localStorage read errors
+        }
+
+        return '';
     }
 
     function showQueueSection(show) {
-        const queueSection = document.getElementById('ttw-queue-section');
-        if (!queueSection) return;
-        queueSection.dataset.ttwDesiredDisplay = show ? 'block' : 'none';
-        queueSection.style.display = show && isTxtViewActive() ? 'block' : 'none';
+        const el = document.getElementById('ttw-queue-section');
+        if (!el) return;
+
+        const activeTab = document.querySelector('.ttw-view-tab.active[data-view]');
+        const activeView = activeTab?.getAttribute('data-view') || 'txt';
+        const persistedView = getPersistedViewMode();
+        const hiddenByNonTxtMode = (el.dataset.swHiddenByMode === '1' && activeView !== 'txt')
+            || (!activeTab && persistedView)
+            || (activeView === 'txt' && persistedView && !el.dataset.swHiddenByMode);
+
+        if (show && hiddenByNonTxtMode) {
+            el.dataset.swHiddenByMode = '1';
+            el.dataset.swPrevDisplayMode = 'block';
+            el.style.display = 'none';
+            return;
+        }
+
+        el.style.display = show ? 'block' : 'none';
+        if (show && el.dataset.swHiddenByMode === '1') {
+            el.dataset.swPrevDisplayMode = 'block';
+        }
     }
 
     function showProgressSection(show) {
