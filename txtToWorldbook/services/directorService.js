@@ -652,11 +652,21 @@ export function createDirectorService(deps = {}) {
         }
     }
 
-    function getGenerationChatHistory(eventData) {
-        const promptChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
+    function getGenerationChatSources(eventData) {
+        const sources = [];
         const realChat = getSillyTavernChatHistory();
-        if (hasDialogueChatItems(realChat)) return realChat;
-        if (hasDialogueChatItems(promptChat)) return promptChat;
+        const promptChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
+        if (Array.isArray(realChat) && realChat.length > 0) sources.push(realChat);
+        if (Array.isArray(promptChat) && promptChat.length > 0 && promptChat !== realChat) sources.push(promptChat);
+        return sources;
+    }
+
+    function getGenerationChatHistory(eventData) {
+        const sources = getGenerationChatSources(eventData);
+        for (const source of sources) {
+            if (hasDialogueChatItems(source)) return source;
+        }
+        const promptChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
         return promptChat;
     }
 
@@ -760,22 +770,26 @@ export function createDirectorService(deps = {}) {
 
     function buildCleanDialogueEntries(eventData, options = {}) {
         const { maxItems = RECENT_DIALOGUE_MAX_ITEMS } = options;
-        const chat = getGenerationChatHistory(eventData);
+        const sources = getGenerationChatSources(eventData);
         const picked = [];
 
-        for (let i = chat.length - 1; i >= 0 && picked.length < maxItems; i--) {
-            const item = chat[i] || {};
-            let role = '';
-            if (isUserChatItem(item)) {
-                role = 'user';
-            } else if (isAssistantChatItem(item)) {
-                role = 'assistant';
-            }
-            if (!role) continue;
+        for (const chat of sources) {
+            for (let i = chat.length - 1; i >= 0 && picked.length < maxItems; i--) {
+                const item = chat[i] || {};
+                let role = '';
+                if (isUserChatItem(item)) {
+                    role = 'user';
+                } else if (isAssistantChatItem(item)) {
+                    role = 'assistant';
+                }
+                if (!role) continue;
 
-            const content = getCleanDialogueContent(item, role);
-            if (!content) continue;
-            picked.push({ role, content });
+                const content = getCleanDialogueContent(item, role);
+                if (!content) continue;
+                if (picked.some((entry) => entry.role === role && entry.content === content)) continue;
+                picked.push({ role, content });
+            }
+            if (picked.length >= maxItems) break;
         }
 
         return picked.reverse();
@@ -901,7 +915,10 @@ ${dialogue}`;
             // 模式2: 节拍中段续写 → 仅AI尾50字
             startAnchor = assistantTail50;
             startMode = 'continue';
-        } else if (beatHead50) {
+        } else if (!isNewBeat && recentUser) {
+            startAnchor = toShortText(recentUser, 100);
+            startMode = 'user';
+        } else if (isNewBeat && beatHead50) {
             startAnchor = beatHead50;
             startMode = 'beat-head';
         } else if (recentUser) {
@@ -1057,7 +1074,7 @@ ${dialogue}`;
         const startAnchor = toShortText(context.start_anchor || '', 180)
             || (contextMode === 'new_beat'
                 ? '先触发当前节拍入场动作，再进入可见互动。'
-                : '承接最近AI输出，再接入用户动作继续推进。');
+                : '无可用上一轮AI正文锚点；只接住用户输入边界继续推进。');
         const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || '无';
         const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
         const recentDialogue = String(context.recent_dialogue || latestDialogue || '').trim() || '无最近对话';
@@ -1737,7 +1754,7 @@ ${dialogue}`;
         directorDebug(`switch-command=${switchCommand.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
         directorDebug(`switch-control=${switchControl.reason}, lockedBeat=${lockedBeatIdx + 1}/${beats.length}`);
         directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}, history=${hasReliableBeatHistory ? 'reliable' : 'fallback'}`);
-        directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
+        directorDebug(`start-mode=${directionContext.mode}/${directionContext.start_mode}, hasAssistant=${latestAssistantMessage ? 'yes' : 'no'}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
 
         // 新增：输出导演回合判定开始日志
         if (typeof updateStreamContent === 'function') {
