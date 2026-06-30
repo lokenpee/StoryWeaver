@@ -761,9 +761,34 @@ export function createDirectorService(deps = {}) {
         return false;
     }
 
+    function stripNonStoryMarkup(text) {
+        return String(text || '')
+            .replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, ' ')
+            .replace(/<summary\b[^>]*>[\s\S]*?<\/summary>/gi, ' ')
+            .replace(/<\/?context\b[^>]*>/gi, ' ')
+            .replace(/<\/?message\b[^>]*>/gi, ' ')
+            .replace(/<\/?[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function extractAssistantStoryContent(text) {
+        const raw = String(text || '');
+        const contentMatches = [...raw.matchAll(/<content\b[^>]*>([\s\S]*?)<\/content>/gi)]
+            .map((match) => stripNonStoryMarkup(match[1]))
+            .filter(Boolean);
+        if (contentMatches.length > 0) {
+            return contentMatches.join('\n');
+        }
+        return stripNonStoryMarkup(raw);
+    }
+
     function getCleanDialogueContent(item, role) {
         const raw = getChatItemContent(item);
-        const cleaned = role === 'user' ? stripInjectedUserSuffix(raw) : raw;
+        const withoutInjectedSuffix = role === 'user' ? stripInjectedUserSuffix(raw) : raw;
+        const cleaned = role === 'assistant'
+            ? extractAssistantStoryContent(withoutInjectedSuffix)
+            : withoutInjectedSuffix;
         if (isPromptLikeDialogue(role, cleaned)) return '';
         return cleaned;
     }
