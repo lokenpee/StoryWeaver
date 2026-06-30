@@ -654,9 +654,9 @@ export function createDirectorService(deps = {}) {
 
     function getGenerationChatHistory(eventData) {
         const promptChat = Array.isArray(eventData?.chat) ? eventData.chat : [];
-        if (hasDialogueChatItems(promptChat)) return promptChat;
         const realChat = getSillyTavernChatHistory();
-        if (Array.isArray(realChat) && realChat.length > 0) return realChat;
+        if (hasDialogueChatItems(realChat)) return realChat;
+        if (hasDialogueChatItems(promptChat)) return promptChat;
         return promptChat;
     }
 
@@ -689,29 +689,77 @@ export function createDirectorService(deps = {}) {
         return true;
     }
 
-    function hasDialogueChatItems(chat) {
-        if (!Array.isArray(chat)) return false;
-        return chat.some((item) => (
-            (isUserChatItem(item) || isAssistantChatItem(item))
-            && !!getChatItemContent(item)
-        ));
-    }
+    function stripInjectedUserSuffix(text) {
+        let cleaned = String(text || '').trim();
+        if (!cleaned) return '';
 
-    function pickLatestFromChat(chat, matcher) {
-        const source = Array.isArray(chat) ? chat : [];
-        for (let i = source.length - 1; i >= 0; i--) {
-            const item = source[i] || {};
-            if (!matcher(item)) continue;
-            const content = getChatItemContent(item);
-            if (content) return content;
+        const hardMarkers = [
+            '秋青子，开始你的表演',
+            '硬约束：你的第一句必须从',
+            '硬约束:你的第一句必须从',
+            '【导演->演员执行单】',
+            '【导演-＞演员执行单】',
+        ];
+        for (const marker of hardMarkers) {
+            const idx = cleaned.indexOf(marker);
+            if (idx > 0) cleaned = cleaned.slice(0, idx).trim();
+            else if (idx === 0) return '';
         }
-        return '';
+
+        return cleaned;
     }
 
-    function buildRecentDialogueContext(eventData, options = {}) {
-        const {
-            maxItems = RECENT_DIALOGUE_MAX_ITEMS,
-        } = options;
+    function isPromptLikeDialogue(role, text) {
+        const content = String(text || '').trim();
+        if (!content) return true;
+
+        const compact = content.replace(/\s+/g, '');
+        const promptMarkers = [
+            '<Task',
+            '</Task',
+            '<think',
+            '</think',
+            '<thinking',
+            '</thinking',
+            '你是秋青子，定位为',
+            '导演：演员秋青子',
+            '准备好了，导演',
+            '收到，导演',
+            '自检模块',
+            '安全/道德/模板化',
+            '扫描输出草稿',
+            '现在作为演员秋青子',
+            '我将根据导演提供的剧本',
+            '导演演绎指导',
+            '导演执行单',
+            '导演->演员执行单',
+            '系统级执行指令',
+            '不要复述执行单或规则',
+            '只输出剧情正文',
+            '提示词/系统/占位',
+            '泄露提示词',
+        ];
+
+        if (promptMarkers.some((marker) => content.includes(marker) || compact.includes(marker.replace(/\s+/g, '')))) {
+            return true;
+        }
+
+        if (role === 'assistant' && /^(好的|收到|明白|准备好了)[，,。！!]/.test(content) && content.includes('导演')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function getCleanDialogueContent(item, role) {
+        const raw = getChatItemContent(item);
+        const cleaned = role === 'user' ? stripInjectedUserSuffix(raw) : raw;
+        if (isPromptLikeDialogue(role, cleaned)) return '';
+        return cleaned;
+    }
+
+    function buildCleanDialogueEntries(eventData, options = {}) {
+        const { maxItems = RECENT_DIALOGUE_MAX_ITEMS } = options;
         const chat = getGenerationChatHistory(eventData);
         const picked = [];
 
@@ -725,14 +773,40 @@ export function createDirectorService(deps = {}) {
             }
             if (!role) continue;
 
-            const content = getChatItemContent(item);
+            const content = getCleanDialogueContent(item, role);
             if (!content) continue;
             picked.push({ role, content });
         }
 
+        return picked.reverse();
+    }
+
+    function hasDialogueChatItems(chat) {
+        if (!Array.isArray(chat)) return false;
+        return chat.some((item) => {
+            const role = isUserChatItem(item) ? 'user' : (isAssistantChatItem(item) ? 'assistant' : '');
+            return !!role && !!getCleanDialogueContent(item, role);
+        });
+    }
+
+    function pickLatestCleanDialogue(eventData, role) {
+        const source = buildCleanDialogueEntries(eventData, { maxItems: 20 });
+        for (let i = source.length - 1; i >= 0; i--) {
+            const item = source[i];
+            if (item?.role === role && item.content) return item.content;
+        }
+        return '';
+    }
+
+    function buildRecentDialogueContext(eventData, options = {}) {
+        const {
+            maxItems = RECENT_DIALOGUE_MAX_ITEMS,
+        } = options;
+        const picked = buildCleanDialogueEntries(eventData, { maxItems });
+
         if (picked.length === 0) return '';
 
-        const lines = picked.reverse().map((item) => {
+        const lines = picked.map((item) => {
             const label = item.role === 'user' ? '用户' : 'AI';
             return `${label}: ${item.content}`;
         });
@@ -759,7 +833,7 @@ ${dialogue}`;
         return `【导演输出前最终校验】
 - stage_idx 必须保持系统锁定值，不自行跳拍。
 - conflict_level / conflict_reason / conflict_strategy 必须同时对照用户输入、最近对话事实、当前节拍和后续关键前提。
-- direction_script.start 必须从最近对话的实际状态起笔，不从节拍原文头部重开。
+- 不要输出 direction_script.start，起点由系统锚点注入。
 - direction_script.action_chain 必须是3-6段具体可见动作，避免空泛概括；每一段都应扩写当前局部过程，不得用动作链跨过多个原文事件或直接抵达节拍结尾。
 - direction_script.end 必须收束到本回合可承接的临时节点，不替用户决定下一步。
 - will_complete_this_turn 只有在用户输入或最近对话状态已经实际抵达当前节拍退出事件时才可为 true；仅放出主线方向钩子时必须为 false。
@@ -782,11 +856,11 @@ ${dialogue}`;
     }
 
     function getLatestUserMessage(eventData) {
-        return pickLatestFromChat(getGenerationChatHistory(eventData), isUserChatItem);
+        return pickLatestCleanDialogue(eventData, 'user');
     }
 
     function getLatestAssistantMessage(eventData) {
-        return pickLatestFromChat(getGenerationChatHistory(eventData), isAssistantChatItem);
+        return pickLatestCleanDialogue(eventData, 'assistant');
     }
 
     function buildDirectionContext({
@@ -819,16 +893,14 @@ ${dialogue}`;
             // 模式3: 跳节拍（≥2拍或跨章）→ 仅用新节拍前50字，不承接上文
             startAnchor = beatHead50 || '';
             startMode = 'jump';
+        } else if (isNewBeat) {
+            // 模式1: 新入节拍 → 仅用新节拍前50字，避免把上一轮尾部或提示词污染带入起点
+            startAnchor = beatHead50 || assistantTail50 || '';
+            startMode = 'beat-head';
         } else if (assistantTail50) {
-            if (isNewBeat) {
-                // 模式1: 自然进入新节拍 → AI尾50字 + 节拍头50字，融合衔接
-                startAnchor = beatHead50 ? `${assistantTail50}${beatHead50}` : assistantTail50;
-                startMode = 'transition';
-            } else {
-                // 模式2: 节拍中段续写 → 仅AI尾50字
-                startAnchor = assistantTail50;
-                startMode = 'continue';
-            }
+            // 模式2: 节拍中段续写 → 仅AI尾50字
+            startAnchor = assistantTail50;
+            startMode = 'continue';
         } else if (beatHead50) {
             startAnchor = beatHead50;
             startMode = 'beat-head';
@@ -1013,7 +1085,7 @@ ${dialogue}`;
             FIXED_STAGE_IDX: String(currentBeatIdx),
         });
         const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        return `${prefix}${buildRecentStatePriorityBlock(recentDialogue)}\n\n${promptBody}\n\n${buildDirectorPromptFinalChecklist()}`;
+        return `${prefix}${promptBody}`;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
@@ -1651,7 +1723,7 @@ ${dialogue}`;
         const isLargeBeatJump = beatJumpDistance >= 2;
         const isNewBeat = hasReliableBeatHistory
             ? currentGlobalBeatOrdinal !== previousGlobalBeatOrdinal
-            : (chapterChanged || switchControl.switched === true);
+            : (chapterChanged || switchControl.switched === true || !latestAssistantMessage);
         const directionContext = buildDirectionContext({
             beats,
             currentBeatIdx: lockedBeatIdx,
