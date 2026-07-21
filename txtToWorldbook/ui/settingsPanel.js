@@ -87,10 +87,23 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v4.1.2';
+const PLUGIN_VERSION = 'v4.1.3';
 
 function buildPluginUpdateHtml() {
     return '';
+}
+
+function buildPluginMasterSwitchHtml() {
+    return `
+            <div class="ttw-setting-card ttw-setting-card-green">
+                <label class="ttw-checkbox-label">
+                    <input type="checkbox" id="ttw-plugin-enabled" checked>
+                    <div>
+                        <span style="font-weight:bold;color:#27ae60;">启用插件总开关</span>
+                        <div class="ttw-setting-hint">关闭后停止导演注入、世界书处理和自动流程；设置页仍可打开。</div>
+                    </div>
+                </label>
+            </div>`;
 }
 
 function buildParallelConfigHtml() {
@@ -231,6 +244,7 @@ export function buildSettingsHtml() {
             <span>⚙️ 设置</span>
         </div>
         <div class="ttw-section-content" id="ttw-settings-content">
+            ${buildPluginMasterSwitchHtml()}
             <div class="ttw-setting-card ttw-setting-card-green">
                 <label class="ttw-checkbox-label">
                     <input type="checkbox" id="ttw-use-tavern-api" checked>
@@ -770,6 +784,9 @@ export function hydrateSettingsFromState(deps = {}) {
     } = deps;
 
     if (!AppState) return;
+
+    const pluginEnabledEl = document.getElementById('ttw-plugin-enabled');
+    if (pluginEnabledEl) pluginEnabledEl.checked = AppState.settings.pluginEnabled !== false;
 
     const chunkSizeEl = document.getElementById('ttw-chunk-size');
     if (chunkSizeEl) chunkSizeEl.value = AppState.settings.chunkSize;

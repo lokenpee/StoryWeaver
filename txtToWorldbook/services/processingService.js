@@ -281,6 +281,10 @@
         return 'both';
     }
 
+    function isPluginEnabled() {
+        return AppState.settings?.pluginEnabled !== false;
+    }
+
     function shouldRunWorldbook(mode) {
         return mode === 'worldbook-only' || mode === 'both';
     }
@@ -3319,6 +3323,11 @@ ${'='.repeat(50)}
     }
 
     async function handleStartProcessing(options = {}) {
+        if (!isPluginEnabled()) {
+            ErrorHandler?.showUserError?.('插件总开关已关闭，请在设置中开启后再运行。');
+            return false;
+        }
+
         const runMode = normalizeProcessingMode(options.mode || 'both');
         AppState.processing.currentMode = runMode;
         AppState.processing.directorOnDemand = shouldRunDirector(runMode);
@@ -3513,6 +3522,11 @@ ${'='.repeat(50)}
     }
 
     async function handleStartDirectorProcessing(options = {}) {
+        if (!isPluginEnabled()) {
+            ErrorHandler?.showUserError?.('插件总开关已关闭，请在设置中开启后再运行。');
+            return false;
+        }
+
         if (options?.appendOnRunning) {
             const currentMode = normalizeProcessingMode(AppState.processing.currentMode || 'both');
             if (!AppState.processing.isRunning || currentMode !== 'worldbook-only') {

@@ -463,6 +463,10 @@ function registerDirectorPromptHook() {
                     directorTrace('skip: txtToWorldbook api not ready or missing runDirectorBeforeGeneration');
                     return;
                 }
+                if (typeof api.isPluginEnabled === 'function' && api.isPluginEnabled() === false) {
+                    directorTrace('skip: plugin disabled');
+                    return;
+                }
                 await api.runDirectorBeforeGeneration(eventData);
                 directorTrace('runDirectorBeforeGeneration completed');
             } catch (error) {
@@ -481,6 +485,10 @@ function registerDirectorPromptHook() {
                 const api = getTxtToWorldbookApiSafe();
                 if (!api || typeof api.handleDirectorAfterGeneration !== 'function') {
                     directorTrace('skip: txtToWorldbook api not ready or missing handleDirectorAfterGeneration');
+                    return;
+                }
+                if (typeof api.isPluginEnabled === 'function' && api.isPluginEnabled() === false) {
+                    directorTrace('skip after-generation: plugin disabled');
                     return;
                 }
                 await api.handleDirectorAfterGeneration(eventData);

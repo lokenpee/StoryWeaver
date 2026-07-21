@@ -19,6 +19,7 @@ export function createDirectorService(deps = {}) {
     const ACTION_CHAIN_MIN_STEPS = 3;
     const ACTION_CHAIN_MAX_STEPS = 6;
     const RECENT_DIALOGUE_MAX_ITEMS = 6;
+    const DIRECTOR_DECISION_HISTORY_LIMIT = 3;
 
     function directorDebug(msg) {
         if (typeof debugLog === 'function') {
@@ -182,6 +183,7 @@ export function createDirectorService(deps = {}) {
         currentOriginalForPrompt,
         contextRecentUser,
         recentDialogue,
+        recentDirectorDecisions,
         startAnchor,
         endGuideline,
         compactBeats,
@@ -194,6 +196,7 @@ export function createDirectorService(deps = {}) {
             WILL_COMPLETE_THIS_LAST_TURN: willCompleteThisLastTurn ? 'true' : 'false',
             CONTEXT_MODE_LABEL: contextModeLabel,
             RECENT_ASSISTANT: contextRecentAssistant,
+            RECENT_DIRECTOR_DECISIONS: formatRecentDirectorDecisions(recentDirectorDecisions),
             ENTRY_EVENT_LINE: '',
             CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
             RECENT_USER: contextRecentUser,
@@ -203,6 +206,59 @@ export function createDirectorService(deps = {}) {
             COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
             FIXED_STAGE_IDX: String(currentBeatIdx),
         };
+    }
+
+    function buildDirectorDecisionPromptSnapshot(decision = {}) {
+        const script = decision?.direction_script && typeof decision.direction_script === 'object'
+            ? decision.direction_script
+            : {};
+        return {
+            stage_idx: Number.isInteger(decision?.stage_idx) ? decision.stage_idx : 0,
+            conflict_level: normalizeConflictLevel(decision?.conflict_level),
+            conflict_reason: String(decision?.conflict_reason || ''),
+            conflict_strategy: String(decision?.conflict_strategy || ''),
+            will_complete_this_last_turn: normalizeBooleanFlag(decision?.will_complete_this_last_turn),
+            will_complete_this_turn: normalizeBooleanFlag(decision?.will_complete_this_turn),
+            beat_complete_reason: String(decision?.beat_complete_reason || ''),
+            direction_script: {
+                action_chain: String(script.action_chain || ''),
+                end: String(script.end || ''),
+            },
+        };
+    }
+
+    function getRecentDirectorDecisionHistory(memory) {
+        const history = Array.isArray(memory?.directorDecisionHistory)
+            ? memory.directorDecisionHistory
+            : [];
+        const source = history.length > 0
+            ? history
+            : (memory?.directorDecision ? [memory.directorDecision] : []);
+        return source
+            .slice(-DIRECTOR_DECISION_HISTORY_LIMIT)
+            .map((decision) => buildDirectorDecisionPromptSnapshot(decision));
+    }
+
+    function formatRecentDirectorDecisions(history) {
+        const items = Array.isArray(history) ? history.filter(Boolean) : [];
+        if (items.length === 0) return '无';
+        return items
+            .slice(-DIRECTOR_DECISION_HISTORY_LIMIT)
+            .map((decision, idx) => `第${idx + 1}轮：\n${JSON.stringify(buildDirectorDecisionPromptSnapshot(decision), null, 2)}`)
+            .join('\n\n');
+    }
+
+    function appendDirectorDecisionHistory(memory, decision) {
+        if (!memory || typeof memory !== 'object') return [];
+        const history = Array.isArray(memory.directorDecisionHistory)
+            ? memory.directorDecisionHistory
+            : [];
+        const nextHistory = [
+            ...history,
+            buildDirectorDecisionPromptSnapshot(decision),
+        ].slice(-DIRECTOR_DECISION_HISTORY_LIMIT);
+        memory.directorDecisionHistory = nextHistory;
+        return nextHistory;
     }
 
     function normalizeBooleanFlag(value) {
@@ -1122,7 +1178,7 @@ export function createDirectorService(deps = {}) {
         };
     }
 
-    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, directionContext, willCompleteThisLastTurn = false }) {
+    function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, directionContext, willCompleteThisLastTurn = false, recentDirectorDecisions = [] }) {
         const compactBeats = beats.map((beat, idx) => ({
             idx,
             id: beat.id,
@@ -1154,6 +1210,7 @@ export function createDirectorService(deps = {}) {
             currentOriginalForPrompt,
             contextRecentUser,
             recentDialogue,
+            recentDirectorDecisions,
             startAnchor,
             endGuideline,
             compactBeats,
@@ -1657,6 +1714,7 @@ export function createDirectorService(deps = {}) {
             currentOriginalForPrompt,
             contextRecentUser: toShortText(directionContext?.recent_user || decision?.latest_user_message || '', 220) || '无',
             recentDialogue,
+            recentDirectorDecisions: getRecentDirectorDecisionHistory(memory),
             startAnchor: directionContext?.start_anchor || directionStart,
             endGuideline: directionContext?.end_guideline || String(directionScript.end || ''),
             compactBeats,
@@ -1696,6 +1754,11 @@ export function createDirectorService(deps = {}) {
 
     async function handleDirectorAfterGeneration(eventData = {}) {
         void eventData;
+        if (AppState.settings?.pluginEnabled === false) {
+            directorDebug('skip beat completion notice: pluginEnabled=false');
+            return false;
+        }
+
         const experience = ensureExperienceState();
         const notice = experience.pendingBeatCompletionNotice;
         if (!notice) return false;
@@ -1728,6 +1791,10 @@ export function createDirectorService(deps = {}) {
     }
 
     async function runDirectorBeforeGeneration(eventData) {
+        if (AppState.settings?.pluginEnabled === false) {
+            directorDebug('skip: pluginEnabled=false');
+            return null;
+        }
         if (AppState.settings.directorEnabled === false) {
             directorDebug('skip: directorEnabled=false');
             return null;
@@ -1862,6 +1929,7 @@ export function createDirectorService(deps = {}) {
             updateStreamContent(`   判定模式: ${modeLabel}\n`);
         }
 
+        const recentDirectorDecisions = getRecentDirectorDecisionHistory(memory);
         const prompt = buildDirectorPrompt({
             chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
             chapterOutline: toShortText(memory.chapterOutline || '', 200),
@@ -1871,6 +1939,7 @@ export function createDirectorService(deps = {}) {
             latestUserMessage,
             directionContext,
             willCompleteThisLastTurn,
+            recentDirectorDecisions,
         });
 
         // 新增：输出导演提示词构建完成日志
@@ -2065,9 +2134,11 @@ export function createDirectorService(deps = {}) {
             beat_complete_reason: decision.beat_complete_reason || '',
             at: Date.now(),
         };
+        appendDirectorDecisionHistory(memory, memory.directorDecision);
         AppState.experience.currentBeatIndex = decision.stage_idx;
         AppState.experience.lastBeatIdx = lockedBeatIdx;
         AppState.experience.lastChapterIdx = chapterIndex;
+        AppState.experience.directorDecisionHistory = safeClone(memory.directorDecisionHistory, []);
         AppState.experience.directorLastDecision = {
             ...memory.directorDecision,
             beat_complete: decision.beat_complete || false,

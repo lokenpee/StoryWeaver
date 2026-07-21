@@ -1376,7 +1376,8 @@ open = shellRuntimeBindings.open;
     }));
     publicApi.handleDirectorAfterGeneration = (...args) => directorService.handleDirectorAfterGeneration(...args);
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
-    publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
+    publicApi.isPluginEnabled = () => AppState.settings.pluginEnabled !== false;
+    publicApi.isDirectorEnabled = () => AppState.settings.pluginEnabled !== false && AppState.settings.directorEnabled !== false;
     window[WESTWORLD_TTW_API_KEY] = publicApi;
     window[LEGACY_STORYWEAVER_TTW_API_KEY] = publicApi;
 

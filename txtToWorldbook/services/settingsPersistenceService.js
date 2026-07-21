@@ -68,6 +68,8 @@ export function createSettingsPersistenceService(deps) {
         } = options;
 
         AppState.settings.chunkSize = parseInt(document.getElementById('ttw-chunk-size')?.value) || 8000;
+        AppState.settings.pluginEnabled = document.getElementById('ttw-plugin-enabled')?.checked
+            ?? AppState.settings.pluginEnabled !== false;
         AppState.settings.apiTimeout = (parseInt(document.getElementById('ttw-api-timeout')?.value) || 120) * 1000;
         const incrementalModeEl = document.getElementById('ttw-incremental-mode');
         AppState.processing.incrementalMode = incrementalModeEl
@@ -188,6 +190,7 @@ export function createSettingsPersistenceService(deps) {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 AppState.settings = { ...defaultSettings, ...parsed };
+                AppState.settings.pluginEnabled = parsed.pluginEnabled ?? true;
 
                 const migratedMainApi = normalizeApiConfig(
                     parsed.mainApi,
