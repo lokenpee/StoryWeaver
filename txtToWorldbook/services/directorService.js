@@ -14,7 +14,7 @@ export function createDirectorService(deps = {}) {
         updateStreamContent,
     } = deps;
 
-    const BEAT_COMPLETION_NOTICE_TEXT = '🎯 当前节拍剧情已推进到结尾，建议切换到下一节拍。';
+    const BEAT_COMPLETION_NOTICE_TEXT = '本回合节拍内容耗尽，请切换下一节拍。';
     const BEAT_COMPLETION_NOTICE_TTL_MS = 15 * 60 * 1000;
     const ACTION_CHAIN_MIN_STEPS = 3;
     const ACTION_CHAIN_MAX_STEPS = 6;
@@ -1506,13 +1506,14 @@ export function createDirectorService(deps = {}) {
                 decision,
                 latestAssistantMessage,
             });
-            return;
+            return experience.pendingBeatCompletionNotice;
         }
 
         const pending = experience.pendingBeatCompletionNotice;
         if (pending?.chapterIndex === chapterIndex && pending?.beatIndex === beatIndex) {
             experience.pendingBeatCompletionNotice = null;
         }
+        return null;
     }
 
     function isCurrentPendingNotice(notice) {
@@ -1554,7 +1555,10 @@ export function createDirectorService(deps = {}) {
         });
     }
 
-    async function pushBeatCompletionNoticeMessage(notice) {
+    async function pushBeatCompletionNoticeMessage(notice, options = {}) {
+        const {
+            preferAddOneMessage = false,
+        } = options;
         const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
         if (!st || typeof st.getContext !== 'function') {
             throw new Error('SillyTavern context is unavailable');
@@ -1584,6 +1588,11 @@ export function createDirectorService(deps = {}) {
             _generatedAt: Date.now(),
         };
 
+        if (preferAddOneMessage && typeof context.addOneMessage === 'function') {
+            await context.addOneMessage(noticeMessage);
+            return;
+        }
+
         // During after-generation events, addOneMessage may clone/reuse the active
         // assistant message in some SillyTavern builds. Push a fully materialized
         // notice item instead so the reminder text is the only inserted content.
@@ -1595,6 +1604,22 @@ export function createDirectorService(deps = {}) {
             await context.reloadCurrentChat();
         } else if (typeof context.renderChat === 'function') {
             context.renderChat();
+        }
+    }
+
+    async function sendBeatCompletionNoticeNow(notice) {
+        if (!isCurrentPendingNotice(notice)) return false;
+        notice.sending = true;
+        try {
+            await pushBeatCompletionNoticeMessage(notice, { preferAddOneMessage: true });
+            notice.consumed = true;
+            clearPendingBeatCompletionNotice(notice);
+            directorInfo(`beat completion notice sent immediately chapter=${notice.chapterIndex + 1}, beat=${notice.beatIndex + 1}`);
+            return true;
+        } catch (error) {
+            notice.sending = false;
+            directorWarn('failed to send immediate beat completion notice, keep pending fallback', error?.message || String(error));
+            return false;
         }
     }
 
@@ -2091,7 +2116,7 @@ export function createDirectorService(deps = {}) {
         }
 
         decision.previous_stage_idx = currentBeatIdx;
-        updatePendingBeatCompletionNotice({
+        const pendingBeatCompletionNotice = updatePendingBeatCompletionNotice({
             chapterIndex,
             beatIndex: lockedBeatIdx,
             beats,
@@ -2146,6 +2171,8 @@ export function createDirectorService(deps = {}) {
             will_complete_this_turn: decision.will_complete_this_turn === true,
         };
         AppState.experience.directorLastDecisionAt = Date.now();
+
+        await sendBeatCompletionNoticeNow(pendingBeatCompletionNotice);
 
         const injection = buildInjection(decision, beats, memory, chapterIndex);
         stripExistingDirectorInjection(eventData.chat);
