@@ -105,6 +105,30 @@ export function createDirectorService(deps = {}) {
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
     }
 
+    function getDirectorBeatDisplayId(beats, currentBeatIdx) {
+        const list = Array.isArray(beats) ? beats : [];
+        const fallbackIdx = Math.max(0, Number.isInteger(currentBeatIdx) ? currentBeatIdx : 0);
+        if (list.length === 0) return `b${fallbackIdx + 1}`;
+        const safeIdx = Math.max(0, Math.min(fallbackIdx, list.length - 1));
+        return String(list[safeIdx]?.id || `b${safeIdx + 1}`).trim() || `b${safeIdx + 1}`;
+    }
+
+    function buildDirectorBeatTextMap(beats, currentBeatIdx) {
+        const list = Array.isArray(beats) ? beats : [];
+        if (list.length === 0) {
+            return `当前位置：${getDirectorBeatDisplayId(beats, currentBeatIdx)}`;
+        }
+        const safeIdx = Math.max(0, Math.min(currentBeatIdx || 0, list.length - 1));
+        const sections = list.map((beat, idx) => {
+            const beatId = String(beat?.id || `b${idx + 1}`).trim() || `b${idx + 1}`;
+            const beatText = String(beat?.original_text || '').trim() || '（本节拍暂无正文）';
+            return `${beatId}\n${beatText}`;
+        });
+
+        sections.push(`当前位置：${getDirectorBeatDisplayId(list, safeIdx)}`);
+        return sections.join('\n\n');
+    }
+
     function isFreePlayRequest(text) {
         const compact = String(text || '').replace(/\s+/g, '');
         if (!compact) return false;
@@ -117,6 +141,68 @@ export function createDirectorService(deps = {}) {
             output = output.split(`{${key}}`).join(value == null ? '' : String(value));
         }
         return output;
+    }
+
+    function composePromptLayers(...layers) {
+        return layers
+            .map((layer) => String(layer || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
+    }
+
+    function renderDirectorPromptFrame({ promptHead = '', promptBody = '', promptTail = '', headMode = 'section' }) {
+        const content = composePromptLayers(promptBody, promptTail);
+        const head = String(promptHead || '');
+        if (!head) return content;
+        if (!content) return head;
+        return headMode === 'prefix'
+            ? `${head}${content}`
+            : composePromptLayers(head, content);
+    }
+
+    function resolveDirectorFrameworkPromptTemplate() {
+        return String(AppState?.settings?.customDirectorFrameworkPrompt || '').trim() || defaultDirectorFrameworkPrompt;
+    }
+
+    function resolveDirectorInjectionPromptTemplate() {
+        return ensureDirectorInjectionTemplateCompatibility(
+            String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt
+        );
+    }
+
+    function buildDirectorPromptTemplateValues({
+        chapterTitle,
+        chapterOutline,
+        currentBeatIdx,
+        currentBeatLabel,
+        latestUserMessage,
+        willCompleteThisLastTurn,
+        contextModeLabel,
+        contextRecentAssistant,
+        currentOriginalForPrompt,
+        contextRecentUser,
+        recentDialogue,
+        startAnchor,
+        endGuideline,
+        compactBeats,
+    }) {
+        return {
+            CHAPTER_TITLE: String(chapterTitle || ''),
+            CHAPTER_OUTLINE: String(chapterOutline || ''),
+            CURRENT_BEAT_INDEX: String(currentBeatLabel || currentBeatIdx),
+            LATEST_USER_MESSAGE: toShortText(latestUserMessage || '', 320) || '\u65e0',
+            WILL_COMPLETE_THIS_LAST_TURN: willCompleteThisLastTurn ? 'true' : 'false',
+            CONTEXT_MODE_LABEL: contextModeLabel,
+            RECENT_ASSISTANT: contextRecentAssistant,
+            ENTRY_EVENT_LINE: '',
+            CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
+            RECENT_USER: contextRecentUser,
+            RECENT_DIALOGUE: recentDialogue,
+            START_ANCHOR: startAnchor,
+            END_GUIDELINE: endGuideline,
+            COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
+            FIXED_STAGE_IDX: String(currentBeatIdx),
+        };
     }
 
     function normalizeBooleanFlag(value) {
@@ -896,6 +982,14 @@ ${dialogue}`;
 - 结尾停在本回合终点附近，只留下可承接状态。`;
     }
 
+    function buildDirectorInjectionPrompt({ recentDialogue, promptValues }) {
+        const promptHead = buildRecentStatePriorityBlock(recentDialogue);
+        const promptTemplate = resolveDirectorInjectionPromptTemplate();
+        const promptBody = renderPromptTemplate(promptTemplate, promptValues);
+        const promptTail = buildActorInjectionFinalChecklist();
+        return renderDirectorPromptFrame({ promptHead, promptBody, promptTail });
+    }
+
     function getLatestDialogue(eventData) {
         return buildRecentDialogueContext(eventData) || '无最近对话';
     }
@@ -1097,10 +1191,7 @@ ${dialogue}`;
         const compactBeats = beats.map((beat, idx) => ({
             idx,
             id: beat.id,
-            summary: beat.summary,
-            exitCondition: beat.exitCondition,
         }));
-        const currentBeat = beats[currentBeatIdx] || beats[0] || null;
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const contextMode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const startAnchor = toShortText(context.start_anchor || '', 180)
@@ -1112,29 +1203,35 @@ ${dialogue}`;
         const recentDialogue = String(context.recent_dialogue || latestDialogue || '').trim() || '无最近对话';
         const endGuideline = toShortText(context.end_guideline || '', 180)
             || '本回合收束到可中断临时节点，不要求完成整节拍，且不得超出用户输入边界。';
-        const currentOriginal = String(currentBeat?.original_text || '').trim();
-        const currentOriginalForPrompt = currentOriginal || '无';
-        const template = String(AppState?.settings?.customDirectorFrameworkPrompt || '').trim() || defaultDirectorFrameworkPrompt;
+        const currentBeatLabel = getDirectorBeatDisplayId(beats, currentBeatIdx);
+        const currentOriginalForPrompt = buildDirectorBeatTextMap(beats, currentBeatIdx);
+        const template = resolveDirectorFrameworkPromptTemplate();
         const contextModeLabel = contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写';
-        const promptBody = renderPromptTemplate(template, {
-            CHAPTER_TITLE: String(chapterTitle || ''),
-            CHAPTER_OUTLINE: String(chapterOutline || ''),
-            CURRENT_BEAT_INDEX: String(currentBeatIdx),
-            LATEST_USER_MESSAGE: toShortText(latestUserMessage || '无', 320) || '无',
-            WILL_COMPLETE_THIS_LAST_TURN: willCompleteThisLastTurn ? 'true' : 'false',
-            CONTEXT_MODE_LABEL: contextModeLabel,
-            RECENT_ASSISTANT: contextRecentAssistant,
-            ENTRY_EVENT_LINE: '',
-            CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
-            RECENT_USER: contextRecentUser,
-            RECENT_DIALOGUE: recentDialogue,
-            START_ANCHOR: startAnchor,
-            END_GUIDELINE: endGuideline,
-            COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
-            FIXED_STAGE_IDX: String(currentBeatIdx),
+        const promptValues = buildDirectorPromptTemplateValues({
+            chapterTitle,
+            chapterOutline,
+            currentBeatIdx,
+            currentBeatLabel,
+            latestUserMessage,
+            willCompleteThisLastTurn,
+            contextModeLabel,
+            contextRecentAssistant,
+            currentOriginalForPrompt,
+            contextRecentUser,
+            recentDialogue,
+            startAnchor,
+            endGuideline,
+            compactBeats,
         });
-        const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        return `${prefix}${promptBody}`;
+        const promptBody = renderPromptTemplate(template, promptValues);
+        const promptHead = getLanguagePrefix ? getLanguagePrefix() : '';
+        const promptTail = '';
+        return renderDirectorPromptFrame({
+            promptHead,
+            promptBody,
+            promptTail,
+            headMode: 'prefix',
+        });
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
@@ -1607,10 +1704,7 @@ ${dialogue}`;
             ? '- 执行要求: 本回合发生切拍时，先用1-2句完成过渡/回接，再进入动作链；终点只做临时收束，不等于继续切拍。'
             : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
 
-        const template = ensureDirectorInjectionTemplateCompatibility(
-            String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt
-        );
-        const injectionBody = renderPromptTemplate(template, {
+        const promptValues = {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
             CONFLICT_LEVEL: getConflictLevelLabel(conflictLevel),
@@ -1630,8 +1724,8 @@ ${dialogue}`;
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: directionStart,
-        });
-        return `${buildRecentStatePriorityBlock(recentDialogue)}\n\n${injectionBody}\n\n${buildActorInjectionFinalChecklist()}`;
+        };
+        return buildDirectorInjectionPrompt({ recentDialogue, promptValues });
     }
 
     async function handleDirectorAfterGeneration(eventData = {}) {
