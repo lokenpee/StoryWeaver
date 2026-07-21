@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v4.1.1';
+const PLUGIN_VERSION = 'v4.1.2';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -362,7 +362,7 @@ function buildDirectorInjectionPromptSectionHtml() {
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div id="ttw-director-injection-content" class="ttw-prompt-content" style="display:block;">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留节拍位置、节拍正文地图、起点、动作链和终点占位符；未使用的占位符不会影响运行。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留当前节拍正文、起点、动作链和终点占位符；未使用的占位符不会影响运行。</div>
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
                 <code>{CURRENT_BEAT_INDEX}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_END}</code> <code>{CURRENT_EXIT_CONDITION}</code> <code>{NEXT_BEAT_INDEX}</code> <code>{NEXT_BEAT_PREVIEW_200}</code>

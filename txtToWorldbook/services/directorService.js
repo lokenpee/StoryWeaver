@@ -1576,27 +1576,20 @@ export function createDirectorService(deps = {}) {
         const currentOriginal = String(currentBeat?.original_text || '').trim();
         const currentOriginalSection = currentOriginal || '（当前节拍缺少原文，请优先遵循导演演绎指导并保持语气连续）';
         const currentOriginalForPrompt = buildDirectorBeatTextMap(beats, stageIdx);
-        const allowNextBeatPreview = decision?.will_complete_this_turn === true || decision?.beat_complete === true;
         const rawNextBeatSummary = toShortText(
             decision?.next_beat_summary
             || nextBeat?.summary
             || '',
             120
         );
-        const nextBeatSummary = allowNextBeatPreview
-            ? (rawNextBeatSummary || '（当前已是最后节拍）')
-            : (rawNextBeatSummary
-                ? `方向钩子素材：${rawNextBeatSummary}`
-                : '（当前节拍未完成，无需引出下一节拍）');
+        const nextBeatSummary = rawNextBeatSummary || '（当前已是最后节拍）';
         const nextBeatEntryEvent = '';
-        const nextBeatPreview200 = allowNextBeatPreview
-            ? (toHeadText(
-                decision?.next_beat_preview_200
-                || nextBeat?.original_text
-                || '',
-                220
-            ) || '（当前已是最后节拍，无下一节拍原文预览）')
-            : '（当前节拍未完成：禁止展开下一节拍原文；只可用环境压力、NPC提醒或未完成线索作为方向钩子。）';
+        const nextBeatPreview200 = toHeadText(
+            decision?.next_beat_preview_200
+            || nextBeat?.original_text
+            || '',
+            220
+        ) || (rawNextBeatSummary ? `摘要：${rawNextBeatSummary}` : '（当前已是最后节拍，无下一节拍原文预览）');
         const currentExitCondition = toShortText(currentBeat?.exitCondition || '', 140) || '无明确退出事件';
         const directionContext = decision?.direction_context && typeof decision.direction_context === 'object'
             ? decision.direction_context
@@ -1643,6 +1636,9 @@ export function createDirectorService(deps = {}) {
         const stageExecutionRequirement = switchedStage
             ? '- 执行要求: 本回合发生切拍时，先用1-2句完成过渡/回接，再进入动作链；终点只做临时收束，不等于继续切拍。'
             : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
+        const nextBeatPreviewSection = nextBeatLabel
+            ? `${nextBeatLabel}\n${nextBeatPreview200}`
+            : nextBeatPreview200;
         const contextMode = directionContext?.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const safeChapterIndex = Number.isInteger(chapterIndex) ? chapterIndex : 0;
         const compactBeats = (Array.isArray(beats) ? beats : []).map((beat, idx) => ({
@@ -1677,7 +1673,7 @@ export function createDirectorService(deps = {}) {
             CONFLICT_REQUIREMENT: conflictRequirement,
             RECENT_DIALOGUE: recentDialogue,
             CONFLICT_CONTROL_BLOCK: buildConflictControlBlock(conflictLevel, conflictReason, conflictRequirement),
-            CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
+            CURRENT_BEAT_ORIGINAL: currentOriginalSection,
             CURRENT_BEAT_CONTENT: currentOriginalSection,
             CURRENT_BEAT_TEXT_MAP: currentOriginalForPrompt,
             DIRECTION_START: directionStart,
@@ -1690,7 +1686,7 @@ export function createDirectorService(deps = {}) {
             NEXT_BEAT_INDEX: nextBeatLabel || '无下一节拍',
             NEXT_BEAT_SUMMARY: nextBeatSummary,
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
-            NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
+            NEXT_BEAT_PREVIEW_200: nextBeatPreviewSection,
             START_RECAP: directionStart,
             WILL_COMPLETE_THIS_TURN: decision?.will_complete_this_turn === true ? 'true' : 'false',
             BEAT_COMPLETE_REASON: String(decision?.beat_complete_reason || ''),

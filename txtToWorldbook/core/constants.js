@@ -381,7 +381,7 @@ export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行�
 ⚠️ 【位置指针】本回合的“唯一起演位置”以【起点】为准：你的第一句必须从【起点】描述的画面/动作起笔，不得从聊天记录最后一句或“当前节拍原文”的末尾接续。
 ## 2) 当前节拍内容
 - 当前节拍序号：{CURRENT_BEAT_INDEX}
-- 当前节拍正文地图：
+- 当前节拍正文：
 {CURRENT_BEAT_ORIGINAL}
 
 - 当前节拍退出事件: {CURRENT_EXIT_CONDITION}

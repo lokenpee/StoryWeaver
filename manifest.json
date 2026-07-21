@@ -7,6 +7,6 @@
   "css": "style.css",
   "html": "drawer-component.html",
   "author": "lokenpee",
-  "version": "4.1.1",
+  "version": "4.1.2",
   "description": "TXT to worldbook and character card converter for SillyTavern"
 }
