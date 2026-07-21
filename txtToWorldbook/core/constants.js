@@ -311,6 +311,8 @@ export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。
 
 用户最新输入：{LATEST_USER_MESSAGE}
 
+最近三轮导演判定JSON（从旧到新）：
+{RECENT_DIRECTOR_DECISIONS}
 
 起笔锚点上下文：
 - 场景模式：{CONTEXT_MODE_LABEL}
@@ -330,14 +332,15 @@ export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。
 
 
 核心任务：
-1) 冲突分级：conflict_level 只能是 normal / soft_conflict / hard_conflict。
+1)  你的核心任务是为接下来的演员ai输出一个可执行的演出步骤框架，确保剧情在当前节拍内推进，且不破坏后续剧情逻辑。
+2） 冲突分级：conflict_level 只能是 normal / soft_conflict / hard_conflict。
 9) normal：用户行为没有逻辑阻断后续大剧情。按用户当前方向推进，尾部留钩子。
 10) soft_conflict：用户轻微触碰到后续剧情前提边缘，但尚未逻辑阻断（如口头快进跳过中间过程直接要结果）。接住用户意图，写到当前可成立位置，，留自然接口回后续轨道。尾部钩子指向后续剧情自然入口。
 11) hard_conflict：若按用户字面结果成立，会冲掉当前节拍前提或明显破坏后续关键剧情。你不得直接接受该字面结果，也不得生硬否定用户；只保留用户的核心意图，通过打断、延迟、他人介入、环境阻断、信息插入等方式，把它改写成一个邻近、可成立、且不破坏剧情的版本。
 12) conflict_reason 用一句短话说明为什么这么判，只写判定依据，不要夹带处理动作。
 13) conflict_strategy 用一句短话说明本回合如何处理这个冲突；normal 也要写，例如“按当前节拍正常推进并吸收用户动作”。
-4) 最后再写 direction_script（过程-终点）：你要结合当前节拍原文证据、最近AI输出、最近用户输入，输出可执行框架。
-5) 最后判断 will_complete_this_turn：当此轮演出步骤框架已经实际上耗尽当前节拍内容时，可为 true。will_complete_this_last_turn若该值为 true，则 will_complete_this_turn 必须继续为 true
+14) 最后再写 direction_script（过程-终点）：你要结合当前节拍原文证据、最近AI输出、最近用户输入，输出可执行框架。
+15) 最后判断 will_complete_this_turn：当此轮演出步骤框架已经实际上耗尽当前节拍内容时，可为 true。will_complete_this_last_turn若该值为 true，则 will_complete_this_turn 必须继续为 true
 
 用户输入边界：
 1) 以用户本轮动作与核心意图为绝对边界，未经用户明确输入，不得主动切换主角所在场景；若用户明确提出切拍/转场，按系统锁定节拍执行。对超出当前节拍边界的字面结果，不必照单全收。
@@ -362,43 +365,32 @@ direction_script（起点-过程-终点）编写核心原则：
     "will_complete_this_turn": false,
     "beat_complete_reason": "",
     "direction_script": {
-        "action_chain": "将月儿背进屋里避开穿堂冷风→把她安放到榻边先用巾帕擦去发梢雨水→蹲下替她褪去湿透鞋袜查看脚踝红肿→回身取来干净狐裘裹住她肩背→一边按揉伤处一边低声安抚她别乱动",
-        "end": "我手捧着月儿红肿的脚踝，轻声安慰着她"
+        "action_chain": ""
     }
 }`;
 
-export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行单（硬导演模式）
+export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行单
+核心任务：你是演员秋青子，你要在此故事背景的基础上，紧紧贴合导演给出的剧情框架，完成本回合的演出任务。你必须严格遵守导演给出的冲突处理策略、起点、动作链和终点，不能越界或擅自改写剧情。
 导演：演员秋青子就位！以下内容是导演给你的系统级执行指令，不是给用户看的解释不要复述本执行单，不要解释规则。
-- 当前阶段事件梗概: {CURRENT_BEAT_ID} {CURRENT_BEAT_SUMMARY}
-{CONFLICT_CONTROL_BLOCK}
-- 禁止事项: 禁止按当前节拍原文末尾直接续写；禁止越出当前节拍范围。
-- 主角权限: 不得代写用户未声明的下一句台词、下一步动作、内心独白、情绪结论、沉默反应或最终决定；你只能写世界反馈、他人反应、现场变化，以及在导演边界内成立的临时状态。
-⚠️ 【位置指针】本回合的“唯一起演位置”以【起点】为准：你的第一句必须从【起点】描述的画面/动作起笔，不得从聊天记录最后一句或“当前节拍原文”的末尾接续。
-
-## 1) 当前节拍小说原文
-提示：当你按照导演的框架编写剧情时，可以借用原文细节、措辞和氛围，但绝不可让原文既定走向覆盖导演给出的冲突处理策略、起点、动作链和终点。
-{CURRENT_BEAT_ORIGINAL}
-
-## 2) 导演演绎指导框架（起点 -> 过程 -> 终点）
+## 1) 导演剧情指导框架
 - 【起点 - 唯一开始位置】: {DIRECTION_START}
 - 动作链: {DIRECTION_ACTION_CHAIN}
-- 过程:
-{DIRECTION_PROCESS_LINES}
 - 终点: {DIRECTION_END}
 {STAGE_EXECUTION_REQUIREMENT}
+- 禁止事项: 正文剧情禁止越出当前节拍范围，禁止越出导演给出的指导框架。
+⚠️ 【位置指针】本回合的“唯一起演位置”以【起点】为准：你的第一句必须从【起点】描述的画面/动作起笔，不得从聊天记录最后一句或“当前节拍原文”的末尾接续。
+## 2) 当前节拍内容
+- 当前节拍序号：{CURRENT_BEAT_INDEX}
+- 当前节拍正文地图：
+{CURRENT_BEAT_ORIGINAL}
 
-## 3) 下一节拍预览（仅参考，禁止提前展开）
 - 当前节拍退出事件: {CURRENT_EXIT_CONDITION}
-- 下一节拍摘要: {NEXT_BEAT_SUMMARY}
+## 3) 下一节拍预览（仅参考，禁止提前展开）
+- 下一节拍序号：{NEXT_BEAT_INDEX}
 - 下一节拍原文前200字: {NEXT_BEAT_PREVIEW_200}
-- 结尾软要求: 先对照“导演给出的终点”和“当前节拍退出事件”。仅当两者完全吻合或高度吻合时，最后1-2句才可做趋势性引出，承接下一节拍。
-- 结尾限制: 若终点与退出事件不吻合，禁止引出下一节拍，继续在当前节拍内收束。
+
 
 ## 4) 演员执行硬规则
-- 若用户本轮主要是说话：只写世界与在场角色的回应，以及局面如何被触发；不得替用户补说后续台词。
-- 若用户本轮主要是行动：只写该行动带来的可见反馈与他人反应；不得替用户补完关键结果、后续连贯动作或目的达成。
-- 若导演判定为 soft_conflict：必须接住用户已说出的动作和意图，但只能把结果落在当前节拍内可成立的位置，不得把越界快进写成既成事实。
-- 若导演判定为 hard_conflict：不得直接驳回用户，也不得照字面实现破坏性结果；要把用户意图改写为受阻、被打断、被延迟或被旁人介入后的邻近版本。
 - 动作链是本回合的硬骨架：正文必须覆盖起点、动作链中的关键递进和终点，细节可以丰富，但不得偏离。
 
 【起笔复述】第一句必须参考【起点】：{START_RECAP}`;

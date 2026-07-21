@@ -87,7 +87,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v4.1';
+const PLUGIN_VERSION = 'v4.1.1';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -337,10 +337,10 @@ function buildDirectorFrameworkPromptSectionHtml() {
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div id="ttw-director-framework-content" class="ttw-prompt-content" style="display:block;">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演AI用于生成演出框架的提示词模板。可调整语气和规则，但建议保留关键占位符。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演AI用于生成演出框架的提示词模板。可调整语气和规则，但建议保留节拍、用户输入和最近导演判定占位符。</div>
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
-                <code>{CHAPTER_TITLE}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{COMPACT_BEATS_JSON}</code> <code>{FIXED_STAGE_IDX}</code>
+                <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{CURRENT_BEAT_INDEX}</code> <code>{LATEST_USER_MESSAGE}</code> <code>{RECENT_DIRECTOR_DECISIONS}</code> <code>{FIXED_STAGE_IDX}</code>
             </div>
             <textarea id="ttw-director-framework-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -362,10 +362,10 @@ function buildDirectorInjectionPromptSectionHtml() {
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div id="ttw-director-injection-content" class="ttw-prompt-content" style="display:block;">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留冲突控制、起点、动作链和过程占位符；旧模板若缺少冲突占位符，系统会自动补兼容块。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留节拍位置、节拍正文地图、起点、动作链和终点占位符；未使用的占位符不会影响运行。</div>
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
-                <code>{CURRENT_BEAT_SUMMARY}</code> <code>{CONFLICT_LEVEL}</code> <code>{CONFLICT_REASON}</code> <code>{CONFLICT_STRATEGY}</code> <code>{CONFLICT_REQUIREMENT}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
+                <code>{CURRENT_BEAT_INDEX}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_END}</code> <code>{CURRENT_EXIT_CONDITION}</code> <code>{NEXT_BEAT_INDEX}</code> <code>{NEXT_BEAT_PREVIEW_200}</code>
             </div>
             <textarea id="ttw-director-injection-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">

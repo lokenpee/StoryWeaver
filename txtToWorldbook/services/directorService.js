@@ -300,44 +300,7 @@ export function createDirectorService(deps = {}) {
     }
 
     function ensureDirectorInjectionTemplateCompatibility(template) {
-        const base = String(template || '').trim() || defaultDirectorInjectionPrompt;
-        const supplements = [];
-
-        const hasNewConflictBlock = base.includes('{CONFLICT_CONTROL_BLOCK}');
-        const hasOldConflictBlock = (
-            base.includes('{CONFLICT_LEVEL}')
-            && base.includes('{CONFLICT_REASON}')
-            && base.includes('{CONFLICT_STRATEGY}')
-            && base.includes('{CONFLICT_REQUIREMENT}')
-        );
-        if (!hasNewConflictBlock && !hasOldConflictBlock) {
-            supplements.push(`## 系统补充：冲突控制
-- 当前冲突级别: {CONFLICT_LEVEL}
-- 冲突原因: {CONFLICT_REASON}
-- 冲突处理策略: {CONFLICT_STRATEGY}
-- 冲突执行要求: {CONFLICT_REQUIREMENT}
-- 执行优先级: 冲突执行要求/冲突处理策略 > 起点/动作链/终点 > 当前节拍原文 > 下一节拍预览。`);
-        }
-
-        if (!base.includes('{DIRECTION_PROCESS_LINES}')) {
-            supplements.push(`## 系统补充：过程动作
-{DIRECTION_PROCESS_LINES}`);
-        }
-
-        if (!base.includes('{START_RECAP}')) {
-            supplements.push(`【起笔复述】第一句必须参考【起点】：{START_RECAP}`);
-        }
-
-        if (!base.includes('不得代写用户未声明')) {
-            supplements.push(`## 系统补充：主角权限
-- 不得代写用户未声明的下一句台词、下一步动作、内心独白、沉默反应或最终决定。
-- soft_conflict 时接住用户动作，但只能把结果落在当前节拍内可成立的位置。
-- hard_conflict 时不得直接驳回用户，要把意图改写为受阻、被打断、被延迟或被旁人介入后的邻近版本。`);
-        }
-
-        return supplements.length > 0
-            ? `${base}\n\n${supplements.join('\n\n')}`
-            : base;
+        return String(template || '').trim() || defaultDirectorInjectionPrompt;
     }
 
     function ensureExperienceState() {
@@ -945,45 +908,17 @@ export function createDirectorService(deps = {}) {
         return lines.join('\n');
     }
 
-    function buildRecentStatePriorityBlock(recentDialogue) {
-        const dialogue = String(recentDialogue || '').trim() || '无最近对话';
-        return `【任务优先级（先读）】
-1. 最新对话事实 = 实际剧情状态。最近三轮对话中已经成立的事实，高于当前节拍原文。
-2. 当前用户输入 = 本回合边界。必须接住用户动作与核心意图，不得替用户补写未声明的后续动作、台词、心理或决定。
-3. 当前锁定节拍 = 剧情目标。节拍原文只提供素材、气氛和目标方向，不能覆盖最新对话事实。
-4. 导演框架 = 本回合执行骨架。起点、动作链、终点必须从实际剧情状态出发，控制在当前节拍内。
-5. 冲突判定 = 只处理会破坏后续关键前提的内容。普通插曲、延迟、替代行为和合理偏移优先判 normal。
-6. 主线推进 = 方向钩子，不是代替用户行动。未被用户明确触发的转场、上楼、离开现场、抵达下一节点，只能写成环境压力、NPC提醒或未完成线索，不得写成用户已经完成。
-7. 单回合节奏 = 慢写和扩写，不是缩短动作链。动作链可以完整，但每段应围绕当前局部动作、人物反应、环境细节或信息变化展开；除非用户明确快进或用户动作已经实际触发退出事件，不得跨过多个原文事件、直接写完整个节拍。
-
-最近三轮对话事实（原文，不压缩）：
-${dialogue}`;
-    }
-
-    function buildDirectorPromptFinalChecklist() {
-        return `【导演输出前最终校验】
-- stage_idx 必须保持系统锁定值，不自行跳拍。
-- conflict_level / conflict_reason / conflict_strategy 必须同时对照用户输入、最近对话事实、当前节拍和后续关键前提。
-- 不要输出 direction_script.start，起点由系统锚点注入。
-- direction_script.action_chain 必须是3-6段具体可见动作，避免空泛概括；每一段都应扩写当前局部过程，不得用动作链跨过多个原文事件或直接抵达节拍结尾。
-- direction_script.end 必须收束到本回合可承接的临时节点，不替用户决定下一步。
-- will_complete_this_turn 只有在用户输入或最近对话状态已经实际抵达当前节拍退出事件时才可为 true；仅放出主线方向钩子时必须为 false。
-- will_complete_this_last_turn 只表示上一轮判断，不得强制本轮继续耗尽；若用户本轮继续做不破坏剧情的互动，可以回落为 false。
-- 只输出规定 JSON，不输出解释。`;
-    }
-
     function buildActorInjectionFinalChecklist() {
         return `【演员执行前最终校验】
 - 先按导演给出的起点、动作链、终点执行，再参考节拍原文补素材。
 - 可以扩写语气、动作细节、环境和即时反应，但这些扩写只能服务于导演动作链；不得自行新增导演框架外的关键事件，也不得把节拍原文后续内容补完。
 - 正文必须承认最近三轮对话里已经成立的事实，不得把已发生桥段当作新剧情重演。
 - 未被用户明确触发的主线推进，只能写成环境压力、NPC提醒或方向钩子，不得替用户完成转场、上楼、离开现场或抵达下一节点。
-- 不替用户补写下一步动作、台词、心理或最终决定。
 - 结尾停在本回合终点附近，只留下可承接状态。`;
     }
 
-    function buildDirectorInjectionPrompt({ recentDialogue, promptValues }) {
-        const promptHead = buildRecentStatePriorityBlock(recentDialogue);
+    function buildDirectorInjectionPrompt({ promptValues }) {
+        const promptHead = '';
         const promptTemplate = resolveDirectorInjectionPromptTemplate();
         const promptBody = renderPromptTemplate(promptTemplate, promptValues);
         const promptTail = buildActorInjectionFinalChecklist();
@@ -1626,16 +1561,21 @@ ${dialogue}`;
         }
     }
 
-    function buildInjection(decision, beats) {
+    function buildInjection(decision, beats, memory = {}, chapterIndex = 0) {
         const stageIdx = Number.isInteger(decision.stage_idx) ? decision.stage_idx : 0;
         const currentBeat = beats[stageIdx] || beats[0] || null;
         const nextBeat = beats[stageIdx + 1] || null;
+        const currentBeatLabel = getDirectorBeatDisplayId(beats, stageIdx);
+        const nextBeatLabel = nextBeat
+            ? String(nextBeat?.id || `b${stageIdx + 2}`).trim() || `b${stageIdx + 2}`
+            : '';
         const previousStageIdx = Number.isInteger(decision.previous_stage_idx)
             ? Math.max(0, Math.min(decision.previous_stage_idx, beats.length - 1))
             : Math.max(0, stageIdx - 1);
         const switchedStage = stageIdx !== previousStageIdx;
         const currentOriginal = String(currentBeat?.original_text || '').trim();
         const currentOriginalSection = currentOriginal || '（当前节拍缺少原文，请优先遵循导演演绎指导并保持语气连续）';
+        const currentOriginalForPrompt = buildDirectorBeatTextMap(beats, stageIdx);
         const allowNextBeatPreview = decision?.will_complete_this_turn === true || decision?.beat_complete === true;
         const rawNextBeatSummary = toShortText(
             decision?.next_beat_summary
@@ -1703,9 +1643,33 @@ ${dialogue}`;
         const stageExecutionRequirement = switchedStage
             ? '- 执行要求: 本回合发生切拍时，先用1-2句完成过渡/回接，再进入动作链；终点只做临时收束，不等于继续切拍。'
             : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
+        const contextMode = directionContext?.mode === 'new_beat' ? 'new_beat' : 'in_beat';
+        const safeChapterIndex = Number.isInteger(chapterIndex) ? chapterIndex : 0;
+        const compactBeats = (Array.isArray(beats) ? beats : []).map((beat, idx) => ({
+            idx,
+            id: beat?.id,
+        }));
+        const frameworkPromptValues = buildDirectorPromptTemplateValues({
+            chapterTitle: memory?.chapterTitle || `第${safeChapterIndex + 1}章`,
+            chapterOutline: toShortText(memory?.chapterOutline || '', 200),
+            currentBeatIdx: stageIdx,
+            currentBeatLabel,
+            latestUserMessage: decision?.latest_user_message || directionContext?.recent_user || '',
+            willCompleteThisLastTurn: decision?.will_complete_this_last_turn === true,
+            contextModeLabel: contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写',
+            contextRecentAssistant: toTailText(directionContext?.recent_assistant || decision?.latest_assistant_message || '', 200) || '无',
+            currentOriginalForPrompt,
+            contextRecentUser: toShortText(directionContext?.recent_user || decision?.latest_user_message || '', 220) || '无',
+            recentDialogue,
+            startAnchor: directionContext?.start_anchor || directionStart,
+            endGuideline: directionContext?.end_guideline || String(directionScript.end || ''),
+            compactBeats,
+        });
 
         const promptValues = {
-            CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
+            ...frameworkPromptValues,
+            CURRENT_BEAT_ID: currentBeatLabel,
+            CURRENT_BEAT_INDEX: currentBeatLabel,
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
             CONFLICT_LEVEL: getConflictLevelLabel(conflictLevel),
             CONFLICT_REASON: conflictReason,
@@ -1713,19 +1677,25 @@ ${dialogue}`;
             CONFLICT_REQUIREMENT: conflictRequirement,
             RECENT_DIALOGUE: recentDialogue,
             CONFLICT_CONTROL_BLOCK: buildConflictControlBlock(conflictLevel, conflictReason, conflictRequirement),
-            CURRENT_BEAT_ORIGINAL: currentOriginalSection,
+            CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
+            CURRENT_BEAT_CONTENT: currentOriginalSection,
+            CURRENT_BEAT_TEXT_MAP: currentOriginalForPrompt,
             DIRECTION_START: directionStart,
             DIRECTION_ACTION_CHAIN: String(actionChain || '围绕当前节拍推进可见动作并收束。'),
             DIRECTION_PROCESS_LINES: processLines || '  1. 围绕当前节拍推进一个可见动作。\n  2. 让在场角色或局势产生一处具体变化。\n  3. 在可承接位置收束本轮输出。',
             DIRECTION_END: String(directionScript.end || '本回合收束到可承接的临时节点。'),
             STAGE_EXECUTION_REQUIREMENT: stageExecutionRequirement,
             CURRENT_EXIT_CONDITION: currentExitCondition,
+            NEXT_BEAT_ID: nextBeatLabel,
+            NEXT_BEAT_INDEX: nextBeatLabel || '无下一节拍',
             NEXT_BEAT_SUMMARY: nextBeatSummary,
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: directionStart,
+            WILL_COMPLETE_THIS_TURN: decision?.will_complete_this_turn === true ? 'true' : 'false',
+            BEAT_COMPLETE_REASON: String(decision?.beat_complete_reason || ''),
         };
-        return buildDirectorInjectionPrompt({ recentDialogue, promptValues });
+        return buildDirectorInjectionPrompt({ promptValues });
     }
 
     async function handleDirectorAfterGeneration(eventData = {}) {
@@ -2110,7 +2080,7 @@ ${dialogue}`;
         };
         AppState.experience.directorLastDecisionAt = Date.now();
 
-        const injection = buildInjection(decision, beats);
+        const injection = buildInjection(decision, beats, memory, chapterIndex);
         stripExistingDirectorInjection(eventData.chat);
         eventData.chat.unshift({
             role: 'system',
