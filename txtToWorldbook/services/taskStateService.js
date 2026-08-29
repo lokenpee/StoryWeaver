@@ -1,3 +1,5 @@
+import { normalizeChapterSplitType as normalizeSplitType } from '../../src/domain/chapter/splitTypes.js';
+
 export function createTaskStateService(deps = {}) {
     const {
         AppState,
@@ -23,47 +25,11 @@ export function createTaskStateService(deps = {}) {
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
     const TASK_STATE_VERSION = '3.5.1';
-    const SPLIT_TYPES = new Set([
-        'scene_change',
-        'time_jump',
-        'goal_shift',
-        'conflict_closed',
-    ]);
-    const LEGACY_SPLIT_TYPE_MAP = {
-        scene_switch: 'scene_change',
-        situation_change: 'scene_change',
-        action_closed: 'conflict_closed',
-        dialogue_closed: 'conflict_closed',
-        plot_twist: 'conflict_closed',
-        perspective_switch: 'scene_change',
-        relationship_shift: 'conflict_closed',
-        revelation: 'conflict_closed',
-        decision_point: 'goal_shift',
-        emotional_turn: 'conflict_closed',
-        interaction_point: 'goal_shift',
-        scene_change: 'scene_change',
-        time_skip: 'time_jump',
-        time_jump: 'time_jump',
-        goal_shift: 'goal_shift',
-        conflict_closed: 'conflict_closed',
-        '场景明显切换': 'scene_change',
-        '时间明显跳转': 'time_jump',
-        '人物核心目标完全改变': 'goal_shift',
-        '完整冲突闭环结束': 'conflict_closed',
-        '一个完整冲突/行动闭环结束': 'conflict_closed',
-    };
 
     function clampInt(value, min, max, fallback = min) {
         const parsed = parseInt(value, 10);
         if (!Number.isFinite(parsed)) return fallback;
         return Math.max(min, Math.min(max, parsed));
-    }
-
-    function normalizeSplitType(type) {
-        const raw = String(type || '').trim();
-        if (SPLIT_TYPES.has(raw)) return raw;
-        if (LEGACY_SPLIT_TYPE_MAP[raw]) return LEGACY_SPLIT_TYPE_MAP[raw];
-        return 'goal_shift';
     }
 
     function normalizeSplitRule(rawRule = {}) {

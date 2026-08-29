@@ -1,3 +1,5 @@
+import { normalizeChapterSplitType as normalizeSplitType } from '../../src/domain/chapter/splitTypes.js';
+
 export function createChapterExperienceView(deps = {}) {
     const {
         AppState,
@@ -44,41 +46,6 @@ export function createChapterExperienceView(deps = {}) {
         txtModeClass: 'ttw-mode-txt',
     };
 
-    const SPLIT_TYPES = new Set([
-        'scene_change',
-        'time_jump',
-        'goal_shift',
-        'conflict_closed',
-    ]);
-    const LEGACY_SPLIT_TYPE_MAP = {
-        scene_switch: 'scene_change',
-        situation_change: 'scene_change',
-        action_closed: 'conflict_closed',
-        dialogue_closed: 'conflict_closed',
-        plot_twist: 'conflict_closed',
-        perspective_switch: 'scene_change',
-        relationship_shift: 'conflict_closed',
-        revelation: 'conflict_closed',
-        decision_point: 'goal_shift',
-        emotional_turn: 'conflict_closed',
-        interaction_point: 'goal_shift',
-        scene_change: 'scene_change',
-        time_skip: 'time_jump',
-        time_jump: 'time_jump',
-        goal_shift: 'goal_shift',
-        conflict_closed: 'conflict_closed',
-        '场景明显切换': 'scene_change',
-        '时间明显跳转': 'time_jump',
-        '人物核心目标完全改变': 'goal_shift',
-        '完整冲突闭环结束': 'conflict_closed',
-        '一个完整冲突/行动闭环结束': 'conflict_closed',
-    };
-    const EDITABLE_SPLIT_TYPES = [
-        { value: 'scene_change', label: 'scene_change（场景明显切换）' },
-        { value: 'time_jump', label: 'time_jump（时间明显跳转）' },
-        { value: 'goal_shift', label: 'goal_shift（人物核心目标改变）' },
-        { value: 'conflict_closed', label: 'conflict_closed（完整冲突闭环结束）' },
-    ];
     let activeEditorModal = null;
     let directorDebugWindowEventBound = false;
     const LAST_MODAL_VIEW_STORAGE_KEY = 'westworldTxtToWorldbookLastModalView';
@@ -304,13 +271,6 @@ export function createChapterExperienceView(deps = {}) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
-    }
-
-    function normalizeSplitType(type) {
-        const raw = String(type || '').trim();
-        if (SPLIT_TYPES.has(raw)) return raw;
-        if (LEGACY_SPLIT_TYPE_MAP[raw]) return LEGACY_SPLIT_TYPE_MAP[raw];
-        return 'goal_shift';
     }
 
     function normalizeSplitRule(rawRule = {}) {
