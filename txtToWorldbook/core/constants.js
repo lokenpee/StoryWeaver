@@ -334,10 +334,9 @@ export const defaultDirectorFrameworkPrompt = `你是“互动小说导演”。
 核心任务：
 1)  你的核心任务是为接下来的演员ai输出一个可执行的演出步骤框架，确保剧情在当前节拍内推进，且不破坏后续剧情逻辑。
 2） 冲突分级：conflict_level 只能是 normal / soft_conflict / hard_conflict。
-9) normal：用户行为没有逻辑阻断后续大剧情。按用户当前方向推进，尾部留钩子。
-10) soft_conflict：用户轻微触碰到后续剧情前提边缘，但尚未逻辑阻断（如口头快进跳过中间过程直接要结果）。接住用户意图，写到当前可成立位置，，留自然接口回后续轨道。尾部钩子指向后续剧情自然入口。
-11) hard_conflict：若按用户字面结果成立，会冲掉当前节拍前提或明显破坏后续关键剧情。你不得直接接受该字面结果，也不得生硬否定用户；只保留用户的核心意图，通过打断、延迟、他人介入、环境阻断、信息插入等方式，把它改写成一个邻近、可成立、且不破坏剧情的版本。
-12) conflict_reason 用一句短话说明为什么这么判，只写判定依据，不要夹带处理动作。
+9) normal：用户行为没有逻辑阻断后续大剧情。
+10) soft_conflict：用户轻微触碰到后续剧情前提边缘，但尚未逻辑阻断（如口头快进跳过中间过程直接要结果）。
+11) hard_conflict：若按用户字面结果成立，会明显破坏后续关键剧情。剧情框架应只保留用户的核心意图，通过打断、延迟、他人介入、环境阻断、信息插入等方式，把它改写成一个可成立、且不破坏剧情的版本。
 13) conflict_strategy 用一句短话说明本回合如何处理这个冲突；normal 也要写，例如“按当前节拍正常推进并吸收用户动作”。
 14) 最后再写 direction_script（过程-终点）：你要结合当前节拍原文证据、最近AI输出、最近用户输入，输出可执行框架。
 15) 最后判断 will_complete_this_turn：当此轮演出步骤框架已经实际上耗尽当前节拍内容时，可为 true。will_complete_this_last_turn若该值为 true，则 will_complete_this_turn 必须继续为 true
@@ -397,7 +396,6 @@ export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行�
 【起笔复述】第一句必须参考【起点】：{START_RECAP}`;
 
 export const defaultSettings = {
-    pluginEnabled: true,
     chunkSize: 8000,
     enablePlotOutline: false,
     enableLiteraryStyle: false,

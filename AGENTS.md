@@ -10,6 +10,21 @@
    - **正确做法**：先把 Python 脚本内容写到临时 `.py` 文件（用 `WriteFile`），再执行 `python temp.py`。
 
 3. **终端显示问题**：PowerShell 中 Python 打印中文有时显示为乱码（���），但文件内容本身是正确的，不要根据终端显示来判断文件是否已损坏。
+## SillyTavern 技术资料
+
+项目内 SillyTavern 技术参考文档：
+
+- `docs/sillytavern-technical-reference.md`
+
+遇到以下任务时，必须先完整阅读该文档的相关章节，再分析或修改代码：
+
+- 修改 SillyTavern 扩展入口、生命周期或事件钩子
+- 调用 SillyTavern API、生成接口或上下文对象
+- 操作世界书、角色卡、聊天消息或扩展设置
+- 不确定某个 SillyTavern 接口、字段或兼容行为
+- 排查仅在特定 SillyTavern 版本中出现的问题
+
+不要仅凭记忆猜测 SillyTavern 行为。如果文档、当前代码和实际运行行为冲突，应明确指出冲突并进一步验证。
 
 ## 推荐修改流程
 

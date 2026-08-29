@@ -1,0 +1,562 @@
+``` text
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选项正则</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
+            font-family: 'Noto Sans SC', sans-serif;
+            color: #333;
+        }
+
+        .container {
+            padding: 10px;
+        }
+
+        .reading-content {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            position: relative;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .reading-content p {
+            margin-bottom: 12px;
+            font-size: 15px;
+            font-weight: 500;
+            line-height: 1.6;
+            opacity: 1;
+            position: relative;
+            cursor: pointer;
+            padding: 10px 15px;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            background: rgba(255,255,255,0.5);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        .reading-content p:hover {
+            background: rgba(255,255,255,0.8);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .paragraph-text {
+            flex: 1;
+            text-indent: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .paragraph-actions {
+            display: flex;
+            gap: 0.5rem;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+            flex-shrink: 0;
+            align-items: center;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            color: #333;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .send-btn:hover {
+            background: linear-gradient(135deg, #e9ecef, #dee2e6);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+
+        .custom-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        .custom-modal {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            padding: 20px;
+            min-width: 320px;
+            max-width: 500px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            background: rgba(255,255,255,0.8);
+            color: #333;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+
+        .modal-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 8px 16px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: rgba(255,255,255,0.8);
+            color: #333;
+        }
+
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            border-color: #007bff;
+        }
+
+        .modal-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-btn-primary:hover {
+            background: linear-gradient(135deg, #0056b3, #004085);
+        }
+
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        @keyframes slideOutRight {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 8px;
+            }
+
+            .reading-content {
+                padding: 12px;
+            }
+
+            .reading-content p {
+                font-size: 14px;
+                padding: 8px 12px;
+            }
+
+            .send-btn {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="reading-content" id="readingContent">
+            $1
+        </div>
+    </div>
+
+    <script>
+        // 性能优化：使用事件委托和 DocumentFragment 减少 DOM 操作
+        function processTextContent() {
+            const contentDiv = document.getElementById('readingContent');
+            const rawText = contentDiv.textContent.trim();
+            
+            if (!rawText) return;
+            
+            // 按换行符分割文本
+            const paragraphs = rawText.split(/\n+/).filter(p => p.trim().length > 0);
+            
+            // 性能优化：使用 DocumentFragment 批量操作 DOM
+            const fragment = document.createDocumentFragment();
+            
+            // 为每个段落创建 <p> 标签
+            paragraphs.forEach((text, index) => {
+                const p = document.createElement('p');
+                p.dataset.text = text; // 存储文本用于事件委托
+                
+                // 创建文本容器
+                const textDiv = document.createElement('div');
+                textDiv.className = 'paragraph-text';
+                textDiv.textContent = text;
+                
+                // 创建操作按钮区域
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'paragraph-actions';
+                
+                // 创建补充并发送按钮
+                const sendBtn = document.createElement('button');
+                sendBtn.className = 'send-btn';
+                sendBtn.innerHTML = '📝➜';
+                sendBtn.title = '补充并发送';
+                sendBtn.dataset.action = 'supplement'; // 标记按钮类型
+                
+                actionsDiv.appendChild(sendBtn);
+                
+                // 组装段落
+                p.appendChild(textDiv);
+                p.appendChild(actionsDiv);
+                
+                fragment.appendChild(p);
+            });
+            
+            // 性能优化：一次性更新 DOM
+            contentDiv.innerHTML = '';
+            contentDiv.appendChild(fragment);
+            
+            // 性能优化：使用事件委托，只在容器上绑定一次事件
+            setupEventDelegation(contentDiv);
+        }
+        
+        // 性能优化：使用事件委托处理所有段落的点击事件
+        function setupEventDelegation(contentDiv) {
+            // 移除旧的监听器（如果存在）
+            contentDiv.removeEventListener('click', handleContentClick);
+            
+            // 使用事件委托处理所有点击
+            contentDiv.addEventListener('click', handleContentClick);
+        }
+        
+        // 统一的事件处理函数
+        function handleContentClick(e) {
+            const target = e.target;
+            
+            // 检查是否点击了补充发送按钮
+            if (target.classList.contains('send-btn') || target.closest('.send-btn')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const btn = target.classList.contains('send-btn') ? target : target.closest('.send-btn');
+                const paragraph = btn.closest('p');
+                if (paragraph && paragraph.dataset.text) {
+                    supplementAndSend(paragraph.dataset.text);
+                }
+                return;
+            }
+            
+            // 检查是否点击了操作区域（阻止冒泡）
+            if (target.classList.contains('paragraph-actions') || target.closest('.paragraph-actions')) {
+                e.stopPropagation();
+                return;
+            }
+            
+            // 检查是否点击了段落本身
+            const paragraph = target.closest('p');
+            if (paragraph && paragraph.dataset.text) {
+                handleParagraphClick(paragraph.dataset.text);
+            }
+        }
+
+        // 处理段落点击 - 发送消息到酒馆
+        function handleParagraphClick(text) {
+            const command = `/send ${text} | /trigger await=true`;
+            if (typeof triggerSlash === 'function') {
+                try {
+                    triggerSlash(command);
+                    showToast('✅ 已发送消息', 'success');
+                } catch (e) {
+                    console.error('发送失败:', e);
+                    showToast('❌ 发送失败，请手动复制', 'error');
+                }
+            } else {
+                console.warn('SillyTavern API 不可用');
+                showToast('⚠️ 无法自动发送，请手动复制', 'warning');
+            }
+        }
+
+        // 自定义弹窗函数
+        function showCustomPrompt(title, placeholder = '') {
+            return new Promise((resolve) => {
+                // 创建遮罩层
+                const overlay = document.createElement('div');
+                overlay.className = 'custom-modal-overlay';
+                
+                // 创建弹窗
+                const modal = document.createElement('div');
+                modal.className = 'custom-modal';
+                
+                // 标题
+                const titleEl = document.createElement('div');
+                titleEl.className = 'modal-title';
+                titleEl.innerHTML = `<span>📝</span> ${title}`;
+                
+                // 输入框
+                const input = document.createElement('input');
+                input.className = 'modal-input';
+                input.type = 'text';
+                input.placeholder = placeholder;
+                
+                // 按钮容器
+                const buttonsDiv = document.createElement('div');
+                buttonsDiv.className = 'modal-buttons';
+                
+                // 关闭弹窗的通用函数
+                const closeModal = (value) => {
+                    document.body.classList.remove('modal-open');
+                    document.body.removeChild(overlay);
+                    resolve(value);
+                };
+                
+                // 取消按钮
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'modal-btn';
+                cancelBtn.textContent = '取消';
+                cancelBtn.onclick = () => closeModal(null);
+                
+                // 确定按钮
+                const confirmBtn = document.createElement('button');
+                confirmBtn.className = 'modal-btn modal-btn-primary';
+                confirmBtn.textContent = '确定';
+                confirmBtn.onclick = () => closeModal(input.value);
+                
+                // 回车键提交
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        confirmBtn.click();
+                    }
+                });
+                
+                // ESC键取消
+                overlay.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        cancelBtn.click();
+                    }
+                });
+                
+                // 点击遮罩层取消
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) {
+                        cancelBtn.click();
+                    }
+                });
+                
+                // 组装弹窗
+                buttonsDiv.appendChild(cancelBtn);
+                buttonsDiv.appendChild(confirmBtn);
+                modal.appendChild(titleEl);
+                modal.appendChild(input);
+                modal.appendChild(buttonsDiv);
+                overlay.appendChild(modal);
+                
+                // 添加到DOM并锁定背景滚动
+                document.body.classList.add('modal-open');
+                document.body.appendChild(overlay);
+                
+                // 自动聚焦输入框
+                setTimeout(() => input.focus(), 100);
+            });
+        }
+
+        // 补充并发送功能
+        async function supplementAndSend(originalText) {
+            // 使用自定义弹窗获取补充文字
+            const supplement = await showCustomPrompt(
+                '补充内容', 
+                '输入要补充的文字...'
+            );
+            
+            // 如果用户取消或没有输入，则不发送
+            if (supplement === null || supplement.trim() === '') {
+                if (supplement !== null) {
+                    showToast('⚠️ 未输入补充内容', 'warning');
+                }
+                return;
+            }
+            
+            // 拼接原文和补充文字
+            const finalText = originalText + supplement.trim();
+            
+            // 发送消息
+            const command = `/send ${finalText} | /trigger await=true`;
+            if (typeof triggerSlash === 'function') {
+                try {
+                    triggerSlash(command);
+                    showToast('✅ 已补充并发送', 'success');
+                } catch (e) {
+                    console.error('发送失败:', e);
+                    showToast('❌ 发送失败', 'error');
+                }
+            } else {
+                console.warn('SillyTavern API 不可用');
+                showToast('⚠️ 无法自动发送', 'warning');
+            }
+        }
+
+        // 复制到剪贴板
+        function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                // 使用现代 Clipboard API
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('✅ 已复制到剪贴板', 'success');
+                }).catch((err) => {
+                    console.error('复制失败:', err);
+                    fallbackCopyTextToClipboard(text);
+                });
+            } else {
+                // 降级方案
+                fallbackCopyTextToClipboard(text);
+            }
+        }
+
+        // 降级复制方案
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast('✅ 已复制到剪贴板', 'success');
+                } else {
+                    showToast('❌ 复制失败', 'error');
+                }
+            } catch (err) {
+                console.error('降级复制失败:', err);
+                showToast('❌ 复制失败', 'error');
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // 显示Toast提示
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? '#28a745' : 
+                           type === 'error' ? '#dc3545' : '#ffa500';
+            
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${bgColor};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 10000;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+                animation: slideInRight 0.3s ease-out;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOutRight 0.3s ease-in';
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 2000);
+        }
+
+        // 页面加载初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            processTextContent();
+        });
+    </script>
+</body>
+</html>
+``` 

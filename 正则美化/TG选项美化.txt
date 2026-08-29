@@ -1,0 +1,835 @@
+```
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选项卡片</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Caveat:wght@400..700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+    --accent-color: #007bff;
+    --accent-strong: #0056b3;
+    --text-primary: #333333;
+    --text-muted: #667085;
+    --panel-bg: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    --item-bg: rgba(255,255,255,0.5);
+    --item-bg-hover: rgba(255,255,255,0.82);
+    --border-soft: rgba(255,255,255,0.3);
+    --shadow-soft: 0 2px 8px rgba(0,0,0,0.1);
+    --shadow-hover: 0 4px 15px rgba(0,0,0,0.12);
+    --transition: 0.3s ease;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 10px;
+    background-color: transparent;
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text-primary);
+}
+
+.choice-card {
+    width: 100%;
+    max-width: 620px;
+    margin: 0 auto;
+    background: var(--panel-bg);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: var(--shadow-soft);
+    position: relative;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    user-select: none;
+    width: 100%;
+}
+
+.header-center-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+}
+
+.header-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.header-icon {
+    font-size: 16px;
+    color: var(--accent-color);
+    line-height: 1;
+    transition: transform var(--transition);
+}
+
+.card-header:hover .header-icon {
+    transform: scale(1.12) rotate(10deg);
+}
+
+.mode-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.55);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+    line-height: 1.2;
+    flex-shrink: 0;
+    box-shadow: var(--shadow-soft);
+}
+
+.mode-btn:hover {
+    background: rgba(255,255,255,0.85);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-hover);
+}
+
+.mode-btn.active {
+    color: #ffffff;
+    border-color: var(--accent-color);
+    background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
+}
+
+.options-container {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--transition);
+    overflow: hidden;
+}
+
+.options-container.collapsed {
+    grid-template-rows: 0fr;
+}
+
+.options-wrapper {
+    overflow: hidden;
+    min-height: 0;
+}
+
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.option-item {
+    margin: 0;
+    position: relative;
+    cursor: pointer;
+    padding: 10px 15px;
+    border-radius: 10px;
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: var(--item-bg);
+    border: 1px solid var(--border-soft);
+    box-shadow: none;
+}
+
+.option-item:hover {
+    background: var(--item-bg-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.option-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.option-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    width: 24px;
+    height: 24px;
+    margin-top: 1px;
+    border-radius: 8px;
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    box-shadow: var(--shadow-soft);
+}
+
+.option-content {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.option-title {
+    color: var(--accent-strong);
+    font-weight: 700;
+    margin-right: 6px;
+}
+
+.option-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.send-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    height: 34px;
+    padding: 7px 10px;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    box-shadow: var(--shadow-soft);
+}
+
+.send-btn:hover {
+    background: linear-gradient(135deg, #e9ecef, #dee2e6);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+.custom-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    opacity: 0;
+    padding: 16px;
+    animation: modalFadeIn 0.2s ease-out forwards;
+}
+
+@keyframes modalFadeIn {
+    to { opacity: 1; }
+}
+
+.custom-modal {
+    width: min(500px, 100%);
+    background: var(--panel-bg);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-input {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    padding: 10px 15px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.55;
+    background: rgba(255,255,255,0.82);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 15px;
+}
+
+.modal-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: rgba(255,255,255,0.8);
+    color: var(--text-primary);
+}
+
+.modal-btn-primary {
+    background: linear-gradient(135deg, var(--accent-color), var(--accent-strong));
+    color: #ffffff;
+    border-color: var(--accent-color);
+}
+
+.modal-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-soft);
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.option-item:nth-child(1) { animation: fadeIn 0.3s ease-out 0.05s both; }
+.option-item:nth-child(2) { animation: fadeIn 0.3s ease-out 0.10s both; }
+.option-item:nth-child(3) { animation: fadeIn 0.3s ease-out 0.15s both; }
+.option-item:nth-child(4) { animation: fadeIn 0.3s ease-out 0.20s both; }
+.option-item:nth-child(5) { animation: fadeIn 0.3s ease-out 0.25s both; }
+.option-item:nth-child(n+6) { animation: fadeIn 0.3s ease-out 0.30s both; }
+
+@media (max-width: 768px) {
+    body { padding: 8px; }
+    .choice-card { padding: 12px; }
+    .card-header { gap: 8px; }
+    .header-title { font-size: 15px; }
+    .header-icon { font-size: 14px; }
+    .mode-btn { min-width: 38px; padding: 5px 8px; font-size: 11px; }
+    .option-item { align-items: flex-start; gap: 8px; padding: 8px 12px; }
+    .option-main { gap: 8px; }
+    .option-content { font-size: 14px; }
+    .option-actions { gap: 6px; }
+    .send-btn { min-width: 36px; height: 30px; padding: 5px 8px; font-size: 12px; }
+}
+
+@media (max-width: 420px) {
+    .option-item { flex-direction: column; }
+    .option-actions { width: 100%; justify-content: flex-end; }
+    .modal-buttons { justify-content: stretch; }
+    .modal-btn { flex: 1; }
+}
+</style>
+</head>
+<body>
+
+<div class="choice-card" id="choiceCard">
+    <div class="card-header" id="cardHeader">
+        <span class="mode-btn" id="btnSend">直发</span>
+        <div class="header-center-group">
+            <span class="header-icon">✦</span>
+            <span class="header-title">行动选项</span>
+            <span class="header-icon">✦</span>
+        </div>
+        <span class="mode-btn" id="btnAppend">追加</span>
+    </div>
+
+    <div class="options-container" id="optionsContainer">
+        <div class="options-wrapper">
+            <ul class="options-list" id="optionsList"></ul>
+        </div>
+    </div>
+</div>
+
+<div id="rawData" style="display:none;">$1</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rawData          = document.getElementById('rawData');
+    const optionsList      = document.getElementById('optionsList');
+    const optionsContainer = document.getElementById('optionsContainer');
+    const cardHeader       = document.getElementById('cardHeader');
+    const btnSend          = document.getElementById('btnSend');
+    const btnAppend        = document.getElementById('btnAppend');
+    const STORAGE_KEY      = 'st_choice_card_mode';
+
+    let currentMode = localStorage.getItem(STORAGE_KEY) || 'append';
+
+    function updateBtnUI() {
+        btnSend.className = currentMode === 'send' ? 'mode-btn active' : 'mode-btn';
+        btnAppend.className = currentMode === 'append' ? 'mode-btn active' : 'mode-btn';
+    }
+
+    function setMode(mode) {
+        currentMode = mode;
+        localStorage.setItem(STORAGE_KEY, currentMode);
+        updateBtnUI();
+    }
+
+    btnSend.addEventListener('click', function(e) {
+        e.stopPropagation();
+        setMode('send');
+    });
+
+    btnAppend.addEventListener('click', function(e) {
+        e.stopPropagation();
+        setMode('append');
+    });
+
+    function getParentWindow() {
+        try {
+            return window.parent && window.parent !== window ? window.parent : window;
+        } catch (err) {
+            return window;
+        }
+    }
+
+    function getParentDocument() {
+        try {
+            return getParentWindow().document || document;
+        } catch (err) {
+            return document;
+        }
+    }
+
+    function getTriggerSlash() {
+        const parentWin = getParentWindow();
+        return parentWin.triggerSlash || window.triggerSlash || null;
+    }
+
+    function getInput() {
+        return getParentDocument().querySelector('#send_textarea');
+    }
+
+    function dispatchInput(input) {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function parseOptionLine(line) {
+        const trimmed = line.trim();
+        const fullMatch = trimmed.match(/^([A-Z])[：:]\s*([^：:]+)[：:]\s*(.+)$/);
+        if (fullMatch) {
+            return {
+                label: fullMatch[1],
+                title: fullMatch[2].trim(),
+                content: fullMatch[3].trim(),
+                sendText: fullMatch[3].trim()
+            };
+        }
+
+        const simpleMatch = trimmed.match(/^([A-Z])[：:]\s*(.+)$/);
+        if (simpleMatch) {
+            return {
+                label: simpleMatch[1],
+                title: '',
+                content: simpleMatch[2].trim(),
+                sendText: simpleMatch[2].trim()
+            };
+        }
+
+        return {
+            label: '',
+            title: '',
+            content: trimmed,
+            sendText: trimmed
+        };
+    }
+
+    function createTextSpan(className, text) {
+        const span = document.createElement('span');
+        span.className = className;
+        span.textContent = text;
+        return span;
+    }
+
+    function createOptionItem(option) {
+        const optionDiv = document.createElement('li');
+        optionDiv.className = 'option-item';
+        optionDiv.dataset.action = option.sendText;
+
+        const mainDiv = document.createElement('div');
+        mainDiv.className = 'option-main';
+
+        if (option.label) {
+            mainDiv.appendChild(createTextSpan('option-label', option.label));
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'option-content';
+
+        if (option.title) {
+            contentDiv.appendChild(createTextSpan('option-title', option.title + '：'));
+        }
+
+        contentDiv.appendChild(document.createTextNode(option.content));
+        mainDiv.appendChild(contentDiv);
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'option-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'send-btn';
+        editBtn.type = 'button';
+        editBtn.title = '修改并发送';
+        editBtn.dataset.action = 'edit-send';
+        editBtn.textContent = '📝➜';
+        actionsDiv.appendChild(editBtn);
+
+        optionDiv.appendChild(mainDiv);
+        optionDiv.appendChild(actionsDiv);
+
+        return optionDiv;
+    }
+
+    function setupOptionList(dataEl, targetContainer) {
+        const rawText = dataEl.textContent.trim();
+        const lines = rawText.split(/\r?\n+/).filter(function(line) {
+            return line.trim() !== '';
+        });
+        const fragment = document.createDocumentFragment();
+
+        lines.forEach(function(line) {
+            fragment.appendChild(createOptionItem(parseOptionLine(line)));
+        });
+
+        targetContainer.innerHTML = '';
+        targetContainer.appendChild(fragment);
+    }
+
+    function useSetInputFallback(text, shouldSend) {
+        const input = getInput();
+        const trigger = getTriggerSlash();
+
+        if (input) {
+            input.value = text;
+            dispatchInput(input);
+        } else if (trigger) {
+            trigger('/setinput ' + text);
+        } else {
+            copyToClipboard(text);
+            showToast('无法自动写入，已尝试复制', 'warning');
+            return false;
+        }
+
+        if (shouldSend) {
+            setTimeout(function() {
+                try {
+                    const sendBtn = getParentDocument().querySelector('#send_but');
+                    if (sendBtn) sendBtn.click();
+                } catch (err) {}
+            }, 100);
+        }
+
+        return true;
+    }
+
+    function sendDirectly(text) {
+        const trigger = getTriggerSlash();
+        if (trigger) {
+            try {
+                trigger('/send ' + text + ' | /trigger await=true');
+                showToast('已发送消息', 'success');
+                return;
+            } catch (err) {
+                console.error('发送失败:', err);
+            }
+        }
+
+        if (useSetInputFallback(text, true)) {
+            showToast('已发送消息', 'success');
+        } else {
+            showToast('发送失败，请手动复制', 'error');
+        }
+    }
+
+    function appendToInput(text) {
+        try {
+            const input = getInput();
+            if (input) {
+                const existing = input.value;
+                const separator = existing.trim() === '' ? '' : ' ';
+                input.value = existing + separator + text;
+                dispatchInput(input);
+                showToast('已追加到输入框', 'success');
+                return;
+            }
+
+            const trigger = getTriggerSlash();
+            if (trigger) {
+                trigger('/setinput ' + text);
+                showToast('无法读取输入框，已改为写入', 'warning');
+                return;
+            }
+
+            copyToClipboard(text);
+            showToast('无法自动追加，已尝试复制', 'warning');
+        } catch (err) {
+            console.error('追加失败:', err);
+            showToast('追加失败，请手动复制', 'error');
+        }
+    }
+
+    function handleOptionClick(text) {
+        if (currentMode === 'send') {
+            sendDirectly(text);
+        } else {
+            appendToInput(text);
+        }
+    }
+
+    function setupEventDelegation() {
+        optionsList.addEventListener('click', function(e) {
+            const editBtn = e.target.closest('.send-btn');
+            if (editBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const item = editBtn.closest('.option-item');
+                if (item && item.dataset.action) {
+                    editAndSend(item.dataset.action);
+                }
+                return;
+            }
+
+            const item = e.target.closest('.option-item');
+            if (item && item.dataset.action) {
+                handleOptionClick(item.dataset.action);
+            }
+        });
+    }
+
+    function setupCollapsible() {
+        cardHeader.addEventListener('click', function(e) {
+            if (e.target.closest('.mode-btn')) return;
+            optionsContainer.classList.toggle('collapsed');
+        });
+    }
+
+    function showCustomPrompt(title, value) {
+        return new Promise(function(resolve) {
+            const overlay = document.createElement('div');
+            overlay.className = 'custom-modal-overlay';
+            overlay.tabIndex = -1;
+
+            const modal = document.createElement('div');
+            modal.className = 'custom-modal';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'modal-title';
+            titleEl.textContent = title;
+
+            const input = document.createElement('textarea');
+            input.className = 'modal-input';
+            input.value = value || '';
+
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'modal-buttons';
+
+            function closeModal(result) {
+                document.body.classList.remove('modal-open');
+                if (document.body.contains(overlay)) {
+                    document.body.removeChild(overlay);
+                }
+                resolve(result);
+            }
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'modal-btn';
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = '取消';
+            cancelBtn.onclick = function() { closeModal(null); };
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'modal-btn modal-btn-primary';
+            confirmBtn.type = 'button';
+            confirmBtn.textContent = '发送';
+            confirmBtn.onclick = function() { closeModal(input.value); };
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    confirmBtn.click();
+                }
+            });
+
+            overlay.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    cancelBtn.click();
+                }
+            });
+
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) {
+                    cancelBtn.click();
+                }
+            });
+
+            buttonsDiv.appendChild(cancelBtn);
+            buttonsDiv.appendChild(confirmBtn);
+            modal.appendChild(titleEl);
+            modal.appendChild(input);
+            modal.appendChild(buttonsDiv);
+            overlay.appendChild(modal);
+            document.body.classList.add('modal-open');
+            document.body.appendChild(overlay);
+
+            setTimeout(function() {
+                input.focus();
+                input.select();
+            }, 80);
+        });
+    }
+
+    async function editAndSend(originalText) {
+        const editedText = await showCustomPrompt('修改选项后发送', originalText);
+        if (editedText === null) return;
+
+        const finalText = editedText.trim();
+        if (!finalText) {
+            showToast('未输入内容', 'warning');
+            return;
+        }
+
+        sendDirectly(finalText);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).catch(function(err) {
+                console.error('复制失败:', err);
+                fallbackCopyTextToClipboard(text);
+            });
+        } else {
+            fallbackCopyTextToClipboard(text);
+        }
+    }
+
+    function fallbackCopyTextToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            document.execCommand('copy');
+        } catch (err) {
+            console.error('降级复制失败:', err);
+        }
+
+        document.body.removeChild(textArea);
+    }
+
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        const bgColor = type === 'success' ? '#28a745' :
+                        type === 'error' ? '#dc3545' : '#ffa500';
+
+        toast.style.cssText = [
+            'position: fixed',
+            'top: 20px',
+            'right: 20px',
+            'background: ' + bgColor,
+            'color: white',
+            'padding: 12px 20px',
+            'border-radius: 8px',
+            'font-size: 14px',
+            'z-index: 10000',
+            'box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2)',
+            'animation: slideInRight 0.3s ease-out',
+            'display: flex',
+            'align-items: center',
+            'gap: 8px',
+            'max-width: calc(100vw - 40px)'
+        ].join(';');
+        toast.textContent = message;
+
+        document.body.appendChild(toast);
+
+        setTimeout(function() {
+            toast.style.animation = 'slideOutRight 0.3s ease-in';
+            setTimeout(function() {
+                if (document.body.contains(toast)) {
+                    document.body.removeChild(toast);
+                }
+            }, 300);
+        }, 1800);
+    }
+
+    updateBtnUI();
+    setupOptionList(rawData, optionsList);
+    setupEventDelegation();
+    setupCollapsible();
+});
+</script>
+</body>
+</html>
+```

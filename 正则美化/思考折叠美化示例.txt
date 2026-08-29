@@ -1,0 +1,235 @@
+``` text
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>思考折叠正则</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
+            font-family: 'Noto Sans SC', sans-serif;
+            color: #333;
+        }
+
+        .container {
+            padding: 10px;
+        }
+
+        .thinking-card {
+            width: 100%;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: 1px solid rgba(255,255,255,0.35);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .thinking-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #8aa4ff, #9bd8c7, #f1cf7a);
+        }
+
+        .thinking-fold {
+            width: 100%;
+        }
+
+        .thinking-fold summary {
+            cursor: pointer;
+            list-style: none;
+            min-height: 44px;
+            padding: 12px 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: #333;
+            transition: background 0.25s ease, transform 0.25s ease;
+            user-select: none;
+        }
+
+        .thinking-fold summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .summary-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .thinking-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #ffffff, #e9ecef);
+            border: 1px solid rgba(255,255,255,0.45);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            font-size: 14px;
+        }
+
+        .summary-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .summary-title {
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.25;
+            color: #333;
+        }
+
+        .summary-subtitle {
+            font-size: 11px;
+            font-weight: 400;
+            color: rgba(51,51,51,0.58);
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thinking-arrow {
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(255,255,255,0.35);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            color: #555;
+            transition: transform 0.25s ease, background 0.25s ease;
+        }
+
+        .thinking-arrow::before {
+            content: "▸";
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .thinking-fold summary:hover {
+            background: rgba(255,255,255,0.45);
+        }
+
+        .thinking-fold[open] summary {
+            background: rgba(255,255,255,0.55);
+            border-bottom: 1px solid rgba(255,255,255,0.45);
+        }
+
+        .thinking-fold[open] .thinking-arrow {
+            transform: rotate(90deg);
+            background: rgba(255,255,255,0.8);
+        }
+
+        .thinking-body-wrap {
+            padding: 12px 15px 15px;
+        }
+
+        .thinking-body {
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.58);
+            border: 1px solid rgba(255,255,255,0.42);
+            box-shadow: inset 0 1px 4px rgba(0,0,0,0.04);
+            color: #333;
+            font-size: 13px;
+            font-weight: 400;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        #rawThinkingSource {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 8px;
+            }
+
+            .thinking-fold summary {
+                padding: 10px 12px;
+            }
+
+            .summary-title {
+                font-size: 13px;
+            }
+
+            .thinking-body-wrap {
+                padding: 10px 12px 12px;
+            }
+
+            .thinking-body {
+                font-size: 12px;
+                padding: 10px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="rawThinkingSource">$1</div>
+
+    <div class="container">
+        <div class="thinking-card">
+            <details class="thinking-fold">
+                <summary>
+                    <span class="summary-left">
+                        <span class="thinking-icon">✦</span>
+                        <span class="summary-text">
+                            <span class="summary-title">AI 思考过程</span>
+                            <span class="summary-subtitle">点击展开查看本次回复前的推理记录</span>
+                        </span>
+                    </span>
+                    <span class="thinking-arrow" aria-hidden="true"></span>
+                </summary>
+
+                <div class="thinking-body-wrap">
+                    <div class="thinking-body" id="thinkingBody"></div>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const source = document.getElementById('rawThinkingSource');
+            const target = document.getElementById('thinkingBody');
+            if (!source || !target) return;
+
+            const text = source.textContent || source.innerText || '';
+            target.textContent = text.trim() || '（未捕获到思考内容）';
+        });
+    </script>
+</body>
+</html>
+```
